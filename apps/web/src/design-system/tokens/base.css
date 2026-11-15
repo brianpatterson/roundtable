@@ -1,0 +1,21 @@
+/* The page itself, in the theme's colors and type. The only element selectors in the app. */
+body {
+  margin: 0;
+  background: var(--ds-color-surface);
+  color: var(--ds-color-on-surface);
+  font: var(--ds-type-body-large);
+}
+
+h1 {
+  margin: 0;
+  font: var(--ds-type-headline-small);
+}
+
+h2 {
+  margin: 0;
+  font: var(--ds-type-title-large);
+}
+
+a {
+  color: var(--ds-color-primary);
+}

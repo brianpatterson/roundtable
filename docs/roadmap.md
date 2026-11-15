@@ -122,11 +122,19 @@ without untangling anything first.
    colocated tests and each module's tables in its own `schema.ts` (no migration). The contract
    is `@roundtable/contract`, one file per module. The web app is `shell/`, `modules/` and
    `shared/`. `pnpm check:boundaries` enforces the import rules.
-2. **Design system:** themed, reusable components in `apps/web/src/design-system/` (tokens,
-   theme, components), consumed by every web module through its `index.ts`. Its own ADR first:
-   styling approach, unstyled primitives for accessibility, theme switching, and whether to add
-   Storybook. It's the first part likely to become a package (`packages/design-system`) once
-   microfrontends build separately.
+2. ✅ **Design system** ([ADR-0024](adr/0024-design-system.md)): our own Material-style
+   components in `apps/web/src/design-system/`, with behavior from Base UI and styles from CSS
+   Modules reading `--ds-*` tokens. Light, dark and system themes, remembered per browser. First
+   components: Button, TextField (with real labels, replacing placeholder-only inputs), Select
+   and Alert, each with colocated Vitest + Testing Library tests, the web app's first. Every
+   page uses them, and the global stylesheet is gone. `check:boundaries` keeps Base UI inside the
+   design system.
+3. **Storybook**, once the design system has about ten components: a browsable catalog to build
+   and review components in isolation, and a place the factory's reviewer agent can check visual
+   changes.
+4. **More components as features need them:** dialog (in place of `confirm()` for deletes),
+   menu, snackbar for mutation errors, a data table. When microfrontends build separately, the
+   design system moves to `packages/design-system`.
 
 ## Phase 3: The software factory
 

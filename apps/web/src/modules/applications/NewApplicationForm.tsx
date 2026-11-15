@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Alert, Button, TextField } from '../../design-system';
 import { api } from '../../shared/api';
+import styles from './NewApplicationForm.module.css';
 import { applicationsQueryKey } from './queries';
 
 export function NewApplicationForm() {
@@ -26,29 +28,32 @@ export function NewApplicationForm() {
   }
 
   return (
-    <form className="new-application" onSubmit={onSubmit}>
-      <input
-        placeholder="Company"
+    <form className={styles.form} onSubmit={onSubmit}>
+      <TextField
+        label="Company"
         value={company}
         onChange={(e) => setCompany(e.target.value)}
         required
       />
-      <input
-        placeholder="Job title"
+      <TextField
+        label="Job title"
         value={jobTitle}
         onChange={(e) => setJobTitle(e.target.value)}
         required
       />
-      <input
-        placeholder="Job description link (optional)"
+      <TextField
+        label="Job description link"
+        description="Optional"
         type="url"
         value={jobUrl}
         onChange={(e) => setJobUrl(e.target.value)}
       />
-      <button type="submit" disabled={create.isPending}>
-        Add
-      </button>
-      {create.isError && <p className="error">{create.error.message}</p>}
+      <div className={styles.submit}>
+        <Button type="submit" disabled={create.isPending}>
+          Add
+        </Button>
+      </div>
+      {create.isError && <Alert tone="error">{create.error.message}</Alert>}
     </form>
   );
 }

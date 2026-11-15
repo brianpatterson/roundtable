@@ -1,0 +1,18 @@
+.alert {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border-radius: var(--ds-shape-small);
+  font: var(--ds-type-body-medium);
+}
+
+.error {
+  background: var(--ds-color-error-container);
+  color: var(--ds-color-on-error-container);
+}
+
+.info {
+  background: var(--ds-color-secondary-container);
+  color: var(--ds-color-on-secondary-container);
+}

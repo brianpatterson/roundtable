@@ -25,7 +25,12 @@ each module is what a future service or microfrontend would become.
   - `shell/`: the host. Providers, layout, and which module shows when.
   - `modules/{identity,applications}/`: each exports one root component from `index.ts` and owns
     its own query keys.
-  - `shared/`: web-only plumbing (the API client instance, global styles).
+  - `design-system/`: our Material-style components on Base UI, styled with CSS Modules and the
+    `--ds-*` tokens in `tokens/`, plus the `ThemeProvider` (light, dark, system)
+    ([ADR-0024](docs/adr/0024-design-system.md)). Everything is imported from its `index.ts`.
+  - `shared/`: web-only plumbing (the API client instance).
+  - Component tests: Vitest + jsdom + Testing Library, colocated (`Button.test.tsx`). Query by
+    role and label, the way a user finds things, never by class name.
 - `packages/contract` (`@roundtable/contract`): the API contract, consumed as TS source, one file
   per module. `src/index.ts` composes the Effect `HttpApi` (endpoints, schemas, errors);
   `src/client/` (`@roundtable/contract/client`) is the typed client generated from it, which the
@@ -99,6 +104,11 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
     `users` is the one exception). `pnpm check:boundaries` enforces these. A new module gets a
     folder in `modules/` (API and web, as needed), a file in `packages/contract`, and a line in
     `docs/architecture.md`.
+12. **Design system** (ADR-0024): UI goes through `design-system/`, never raw `<button>` or
+    `<input>` styling in a module, and only `design-system/` imports `@base-ui/react`. Styles use
+    the `--ds-*` tokens, never raw colors or font sizes, so every theme applies. A module's own
+    `.module.css` handles only its layout. A new component gets a folder in
+    `design-system/components/` with its CSS module and test, and an export in `index.ts`.
 
 ## Conventions
 

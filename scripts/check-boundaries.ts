@@ -4,6 +4,8 @@
 //   3. platform/, shared/ and design-system/ never import from modules/ (their tests may).
 //   4. An API module never imports another module's tables, except in its own schema.ts (a
 //      foreign key).
+//   5. Code outside design-system/ imports it only through its index.ts, and only design-system/
+//      imports @base-ui/react (ADR-0024), so replacing Base UI touches one folder.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
@@ -26,6 +28,8 @@ function walk(dir: string): string[] {
 function moduleOf(path: string): string | undefined {
   return /^(apps\/\w+\/src\/modules\/[\w-]+)\//.exec(path)?.[1];
 }
+
+const designSystem = 'apps/web/src/design-system/';
 
 function isAssembly(path: string): boolean {
   return (
@@ -68,12 +72,23 @@ for (const file of sources.flatMap(walk)) {
   const text = readFileSync(join(root, file), 'utf8');
 
   for (const [, names = '', specifier = ''] of text.matchAll(importPattern)) {
+    const where = `${file}: imports ${specifier}`;
+
+    if (specifier.startsWith('@base-ui/') && !file.startsWith(designSystem))
+      problems.push(`${where} (only the design system uses Base UI; import from design-system)`);
+
     if (!specifier.startsWith('.')) continue;
     const target = resolve(file, specifier);
 
     if (!target) continue;
     const toModule = moduleOf(target);
-    const where = `${file}: imports ${specifier}`;
+
+    if (
+      target.startsWith(designSystem) &&
+      !file.startsWith(designSystem) &&
+      target !== `${designSystem}index.ts`
+    )
+      problems.push(`${where} (the design system's internals; import its index.ts)`);
 
     if (toModule && toModule !== fromModule && !/^index\.tsx?$/.test(relative(toModule, target)))
       problems.push(`${where} (another module's internals; import its index.ts)`);
@@ -102,7 +117,9 @@ for (const file of sources.flatMap(walk)) {
 for (const problem of problems) console.error(`✗ ${problem}`);
 
 if (problems.length > 0) {
-  console.error('\nModule boundaries: see docs/adr/0023-modular-monolith-layout.md');
+  console.error(
+    '\nModule boundaries: see docs/adr/0023-modular-monolith-layout.md and 0024-design-system.md',
+  );
   process.exit(1);
 }
 
