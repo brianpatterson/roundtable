@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AuthProvider } from '@roundtable/contract';
+import { Alert, Button, TextField } from '../../design-system';
 import { api } from '../../shared/api';
 import { authClient } from './auth-client';
+import styles from './auth.module.css';
 
 type Mode = 'sign-in' | 'sign-up' | 'forgot';
 
@@ -68,7 +70,7 @@ export function SignInPage() {
   }
 
   return (
-    <main className="auth">
+    <main className={styles.page}>
       <h1>Roundtable</h1>
       <h2>
         {mode === 'sign-in'
@@ -80,35 +82,35 @@ export function SignInPage() {
 
       {mode !== 'forgot' && config.data && config.data.providers.length > 0 && (
         <>
-          <div className="providers">
+          <div className={styles.stack}>
             {config.data.providers.map((provider) => (
-              <button
+              <Button
                 key={provider}
-                type="button"
+                variant="outlined"
                 onClick={() =>
                   authClient.signIn.social({ provider, callbackURL: '/', errorCallbackURL: '/' })
                 }
               >
                 Continue with {providerLabels[provider]}
-              </button>
+              </Button>
             ))}
           </div>
-          <p className="divider">or</p>
+          <p className={styles.divider}>or</p>
         </>
       )}
 
-      <form onSubmit={onSubmit}>
+      <form className={styles.stack} onSubmit={onSubmit}>
         {mode === 'sign-up' && (
-          <input
-            placeholder="Name"
+          <TextField
+            label="Name"
             autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
         )}
-        <input
-          placeholder="Email"
+        <TextField
+          label="Email"
           type="email"
           autoComplete="email"
           value={email}
@@ -116,8 +118,9 @@ export function SignInPage() {
           required
         />
         {mode !== 'forgot' && (
-          <input
-            placeholder="Password (10+ characters)"
+          <TextField
+            label="Password"
+            description={mode === 'sign-up' ? 'At least 10 characters' : undefined}
             type="password"
             autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
             minLength={10}
@@ -126,32 +129,31 @@ export function SignInPage() {
             required
           />
         )}
-        <button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending}>
           {mode === 'sign-in'
             ? 'Sign in'
             : mode === 'sign-up'
               ? 'Create account'
               : 'Send reset link'}
-        </button>
-        {error && <p className="error">{error}</p>}
-        {notice && <p>{notice}</p>}
+        </Button>
+        {error && <Alert tone="error">{error}</Alert>}
+        {notice && <Alert>{notice}</Alert>}
       </form>
 
-      <p className="auth-links">
+      <p className={styles.links}>
         {mode === 'sign-in' ? (
           <>
-            <button className="link" onClick={() => switchMode('sign-up')}>
+            <Button variant="text" onClick={() => switchMode('sign-up')}>
               Create an account
-            </button>
-            {' · '}
-            <button className="link" onClick={() => switchMode('forgot')}>
+            </Button>
+            <Button variant="text" onClick={() => switchMode('forgot')}>
               Forgot password?
-            </button>
+            </Button>
           </>
         ) : (
-          <button className="link" onClick={() => switchMode('sign-in')}>
+          <Button variant="text" onClick={() => switchMode('sign-in')}>
             Back to sign in
-          </button>
+          </Button>
         )}
       </p>
     </main>
@@ -167,7 +169,7 @@ function redirectErrorMessage(code: string | null): string | null {
 
   if (code === 'account_not_linked') {
     // The email already has an account that either isn't confirmed or wasn't confirmed by the
-    // provider, so the two aren't joined automatically (see apps/api/src/auth.ts).
+    // provider, so the two aren't joined automatically (see apps/api/src/modules/identity/better-auth.ts).
     return "That email already has an account here. Sign in with your email and password instead (confirm your email first if you haven't).";
   }
 

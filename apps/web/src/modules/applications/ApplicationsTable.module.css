@@ -1,0 +1,23 @@
+/* Narrow screens scroll the table sideways inside this box, not the whole page. */
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--ds-type-body-medium);
+  white-space: nowrap;
+
+  & th,
+  & td {
+    padding: var(--ds-space-2) var(--ds-space-3);
+    border-bottom: 1px solid var(--ds-color-outline-variant);
+    text-align: left;
+  }
+
+  & th {
+    font: var(--ds-type-label-large);
+    color: var(--ds-color-on-surface-variant);
+  }
+}

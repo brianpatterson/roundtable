@@ -1,5 +1,7 @@
+import { Button, ThemeSelect } from '../design-system';
 import { ApplicationsPage } from '../modules/applications';
 import { AuthGate } from '../modules/identity';
+import styles from './App.module.css';
 
 // The shell (ADR-0023): composes the modules and owns the layout around them. Modules never
 // import each other or the shell; what one needs from another arrives here as props.
@@ -7,15 +9,16 @@ export function App() {
   return (
     <AuthGate>
       {({ userName, signOut }) => (
-        <main>
-          <header className="app-header">
+        <main className={styles.main}>
+          <header className={styles.header}>
             <h1>Roundtable</h1>
-            <span>
-              {userName} ·{' '}
-              <button className="link" onClick={signOut}>
+            <div className={styles.actions}>
+              <span>{userName}</span>
+              <ThemeSelect />
+              <Button variant="text" onClick={signOut}>
                 Sign out
-              </button>
-            </span>
+              </Button>
+            </div>
           </header>
           <ApplicationsPage />
         </main>

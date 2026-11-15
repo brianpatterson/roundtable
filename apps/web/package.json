@@ -6,15 +6,22 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.10",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
-    "vite": "^8.3.7"
+    "jsdom": "^31.0.1",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
+    "@base-ui/react": "1.9.0",
     "@roundtable/contract": "workspace:*",
     "@tanstack/react-query": "^5.107.1",
     "better-auth": "^1.7.18",

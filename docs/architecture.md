@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-12_
+_Last updated: 2026-11-15_
 
 ## 1. What the system does
 
@@ -82,8 +82,9 @@ flowchart TB
   end
   subgraph web[apps/web/src]
     shell[shell/<br/>providers, layout] --> wapps[modules/applications] & wid[modules/identity]
-    wapps --> wshared[shared/<br/>API client, styles]
+    wapps --> wshared[shared/<br/>API client]
     wid --> wshared
+    shell & wapps & wid --> ds[design-system/<br/>tokens, theme, components on Base UI]
   end
 ```
 
@@ -93,6 +94,13 @@ flowchart TB
 | identity     | Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, sign-in and password-reset pages      | `identity.ts`     |
 | email        | `Mailer` (sending limits), `EmailTransport` (Resend), `email_sends`          | none                                              | none              |
 | (system)     | `/api/health`, in `server.ts`                                                | none                                              | `system.ts`       |
+
+**Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
+the web app's components (Button, TextField, Select, Alert so far) and its theme. Base UI gives
+each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
+Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
+each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
+`data-theme` on `<html>`. Modules import only its `index.ts`, and only it imports Base UI.
 
 Each module's `index.ts` is its public interface, and its tests sit next to it. A future split
 moves a module folder and its tables out, and gives the remaining modules a second adapter at

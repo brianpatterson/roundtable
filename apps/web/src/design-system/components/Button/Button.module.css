@@ -1,0 +1,95 @@
+.button {
+  --container: transparent;
+  --content: var(--ds-color-primary);
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 0 var(--ds-space-6);
+  border: none;
+  border-radius: var(--ds-shape-full);
+  background: var(--container);
+  color: var(--content);
+  font: var(--ds-type-label-large);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  isolation: isolate;
+  transition: box-shadow var(--ds-motion-short);
+
+  /* The state layer: the content color, laid over the container at low opacity. */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--content);
+    opacity: 0;
+    transition: opacity var(--ds-motion-short);
+  }
+
+  @media (hover: hover) {
+    &:hover:not([data-disabled])::before {
+      opacity: var(--ds-state-hover);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ds-color-primary);
+    outline-offset: 2px;
+  }
+
+  &:focus-visible::before,
+  &:active:not([data-disabled])::before {
+    opacity: var(--ds-state-pressed);
+  }
+
+  &[data-disabled] {
+    cursor: default;
+    color: color-mix(
+      in srgb,
+      var(--ds-color-on-surface) var(--ds-state-disabled-content),
+      transparent
+    );
+  }
+}
+
+.filled {
+  --container: var(--ds-color-primary);
+  --content: var(--ds-color-on-primary);
+}
+
+.tonal {
+  --container: var(--ds-color-secondary-container);
+  --content: var(--ds-color-on-secondary-container);
+}
+
+.filled[data-disabled],
+.tonal[data-disabled] {
+  background: color-mix(
+    in srgb,
+    var(--ds-color-on-surface) var(--ds-state-disabled-container),
+    transparent
+  );
+}
+
+.outlined {
+  border: 1px solid var(--ds-color-outline);
+}
+
+.outlined[data-disabled] {
+  border-color: color-mix(
+    in srgb,
+    var(--ds-color-on-surface) var(--ds-state-disabled-container),
+    transparent
+  );
+}
+
+.text {
+  padding: 0 var(--ds-space-3);
+}
