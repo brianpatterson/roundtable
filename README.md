@@ -17,6 +17,7 @@ Track software-engineering job applications. Also a learning project for systems
 - [Dependency register](docs/dependencies.md): every dependency, its alternative, and why it won
 - [Roadmap](docs/roadmap.md): production deploy, the software factory, and quality layers
 - [CLAUDE.md](CLAUDE.md): rules for AI agents (and humans) changing this repo
+- [Software factory](docs/adr/0025-software-factory-implementer.md): issues written with the feature or bug form and labeled `ready` by the owner are built into pull requests by an agent
 
 ## Run it
 
