@@ -3,6 +3,9 @@
 import { Context, ErrorReporter, Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from 'effect/http-api';
 
+/** The shortest password Better Auth accepts; the web app's forms say and check the same. */
+export const PASSWORD_MIN_LENGTH = 10;
+
 export const AuthProvider = Schema.Literals(['github', 'google']);
 
 export type AuthProvider = typeof AuthProvider.Type;

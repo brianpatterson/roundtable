@@ -1,52 +1,67 @@
-import { Redacted } from 'effect';
-import type { AuthProvider } from '@roundtable/contract';
+import { Cause, Context, Effect, ErrorReporter, Layer, Redacted, Schema } from 'effect';
+import { PASSWORD_MIN_LENGTH, type AuthProvider } from '@roundtable/contract';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import type { Db } from '../../platform/database/promise.js';
+import { PromiseDatabase, type Db } from '../../platform/database/promise.js';
 import { accounts, sessions, users, verifications } from './schema.js';
-import type { SendEmail } from '../email/index.js';
+import { Mailer, type SendEmail } from '../email/index.js';
 import type { Env } from '../../platform/config/env.js';
-import { betterAuthLogger } from '../../platform/observability/logging.js';
+import { betterAuthLogger, type Log } from '../../platform/observability/logging.js';
 
-export type { AuthProvider };
-
-export function enabledProviders(env: Env): AuthProvider[] {
-  const providers: AuthProvider[] = [];
-
-  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) providers.push('github');
-
-  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) providers.push('google');
-
-  return providers;
+interface ConfiguredProvider {
+  readonly name: AuthProvider;
+  readonly clientId: string;
+  readonly clientSecret: Redacted.Redacted<string>;
 }
 
-/** Only the providers whose credentials are configured (same rule as enabledProviders). */
+/**
+ * The social sign-in providers whose credentials are set: the one rule both the auth-config
+ * endpoint (which buttons the sign-in page shows) and Better Auth (which ones it accepts) read.
+ * A new provider is one entry here, plus its name in the contract's AuthProvider.
+ */
+export function configuredProviders(env: Env): ConfiguredProvider[] {
+  const candidates = [
+    { name: 'github', clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
+    { name: 'google', clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
+  ] as const;
+
+  return candidates.flatMap(({ name, clientId, clientSecret }) =>
+    clientId && clientSecret ? [{ name, clientId, clientSecret }] : [],
+  );
+}
+
 function socialProviders(env: Env): NonNullable<BetterAuthOptions['socialProviders']> {
-  const providers: NonNullable<BetterAuthOptions['socialProviders']> = {};
+  return Object.fromEntries(
+    configuredProviders(env).map(({ name, clientId, clientSecret }) => [
+      name,
+      { clientId, clientSecret: Redacted.value(clientSecret) },
+    ]),
+  );
+}
 
-  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
-    providers.github = {
-      clientId: env.GITHUB_CLIENT_ID,
-      clientSecret: Redacted.value(env.GITHUB_CLIENT_SECRET),
-    };
+/**
+ * An unexpected failure inside Better Auth (a 5xx: the database down, a bug), which it catches
+ * and answers itself, so the server's own error reporting never sees it. `cause` is the
+ * original error, so its stack and Postgres fields reach Sentry (redacted like any other).
+ */
+export class BetterAuthFailed extends Schema.TaggedError<
+  BetterAuthFailed,
+  { readonly brand: unique symbol }
+>()('BetterAuthFailed', { cause: Schema.Defect() }) {
+  override readonly message = 'Unexpected error in Better Auth';
+
+  // Which part of the app failed, for triage: never user data.
+  get [ErrorReporter.attributes]() {
+    return { source: 'better-auth' };
   }
-
-  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
-    providers.google = {
-      clientId: env.GOOGLE_CLIENT_ID,
-      clientSecret: Redacted.value(env.GOOGLE_CLIENT_SECRET),
-    };
-  }
-
-  return providers;
 }
 
 export function createAuth(
   db: Db,
   env: Env,
   sendEmail: SendEmail,
-  log: Parameters<typeof betterAuthLogger>[0],
+  log: Log,
   onUnexpectedError: (error: Error) => void = () => {},
 ) {
   return betterAuth({
@@ -58,7 +73,7 @@ export function createAuth(
     }),
     emailAndPassword: {
       enabled: true,
-      minPasswordLength: 10,
+      minPasswordLength: PASSWORD_MIN_LENGTH,
       // No session until the user clicks the emailed link: proves they own the address, which
       // account linking (below) relies on, and stops sign-ups with someone else's email.
       requireEmailVerification: true,
@@ -128,3 +143,32 @@ export function createAuth(
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/** Better Auth as a service: its own Promise API, called at the edge (ADR-0022). */
+export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/BetterAuth') {
+  /**
+   * Better Auth calls back with Promises (its emails, its errors), so the callbacks run Effects
+   * on the context this layer is built in: the same logger and error reporter as the routes.
+   */
+  static readonly layer = (env: Env, log: Log) =>
+    Layer.effect(
+      BetterAuth,
+      Effect.gen(function* () {
+        const db = yield* PromiseDatabase;
+        const { send } = yield* Mailer;
+        const run = Effect.runPromiseWith(yield* Effect.context<never>());
+
+        const reportUnexpected = (error: Error) => {
+          const cause = Cause.fail(new BetterAuthFailed({ cause: error }));
+
+          void run(
+            Effect.logError('Unexpected error in Better Auth', cause).pipe(
+              Effect.andThen(ErrorReporter.report(cause)),
+            ),
+          );
+        };
+
+        return createAuth(db, env, (email) => run(send(email)), log, reportUnexpected);
+      }),
+    );
+}

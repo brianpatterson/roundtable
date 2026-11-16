@@ -7,12 +7,7 @@ import { RoundtableApi } from '@roundtable/contract';
 import { createServer } from 'node:http';
 import { ApplicationsLive } from './modules/applications/index.js';
 import { EmailTransport, Mailer, transportFromEnv } from './modules/email/index.js';
-import {
-  AuthorizationLive,
-  BetterAuthRoute,
-  betterAuthLayer,
-  IdentityLive,
-} from './modules/identity/index.js';
+import { IdentityLive } from './modules/identity/index.js';
 import type { Env } from './platform/config/env.js';
 import { Database } from './platform/database/effect.js';
 import { PromiseDatabase } from './platform/database/promise.js';
@@ -74,14 +69,15 @@ function routesLayer({ env, log, emailTransport }: AppOptions) {
   }).pipe(Layer.provide(emailTransport ?? transportFromEnv(env, log)));
 
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
-    Layer.provide([SystemLive, IdentityLive(env), ApplicationsLive]),
-    Layer.provide(AuthorizationLive),
+    Layer.provide([SystemLive, ApplicationsLive]),
+    // Identity's endpoints, the Authorization middleware the groups above rely on, and Better
+    // Auth's own routes, all in one.
+    Layer.provide(IdentityLive(env, log)),
     // Name the invalid values in 400s: clients, and agents reading a failure, see what was wrong.
     Layer.provide(HttpApiMiddleware.layerProblemDetails({ includeDetails: true })),
   );
 
-  return Layer.mergeAll(api, BetterAuthRoute, ReportErrors).pipe(
-    Layer.provide(betterAuthLayer(env, log)),
+  return Layer.mergeAll(api, ReportErrors).pipe(
     Layer.provide(mailer),
     Layer.provide(Database.layer(env.DATABASE_URL)),
     Layer.provide(PromiseDatabase.layer(env.DATABASE_URL)),
