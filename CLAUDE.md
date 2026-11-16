@@ -135,6 +135,10 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
   commit SHA with the version in a comment. Dependabot keeps the pins current. Give every workflow
   an explicit `permissions:` block (default `contents: read`). Every job sets `timeout-minutes` (GitHub's
   default is 6 hours, so a hung step blocks a PR for that long).
+  The repository also only runs actions on its allowlist (Settings → Actions → General): GitHub's
+  own, `docker/*`, `pnpm/action-setup`, `opentofu/setup-opentofu`, `anthropics/claude-code-action`,
+  and `oven-sh/setup-bun` at the one commit the Claude action uses. A new third-party action, or a
+  bump that changes an action's own nested actions, fails at startup until the owner allows it.
 
 ## Effect conventions
 

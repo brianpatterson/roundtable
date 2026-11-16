@@ -84,6 +84,17 @@ jobs:
             --allowedTools "Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
             --disallowedTools "WebFetch,WebSearch"
 
+      # The action hides Claude's messages from the public log, including the one that says why
+      # a run failed (a rejected token, an unknown model). Show only that final message.
+      - name: Explain a failed run
+        if: always() && steps.claude.outcome == 'failure'
+        run: |
+          file="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$file" ] || { echo "::error::The agent failed before writing its output."; exit 0; }
+          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
+          echo "::error::The agent failed: $reason"
+          printf '### The agent failed\n\n~~~\n%s\n~~~\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+
       # Deterministic checks on what the agent left, whatever it reported.
       - name: Check the result
         if: always() && github.event_name == 'issues'
