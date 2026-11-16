@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { PASSWORD_MIN_LENGTH } from '@roundtable/contract';
 import { Alert, Button, TextField } from '../../design-system';
 import { authClient } from './auth-client';
 import styles from './auth.module.css';
@@ -33,10 +34,10 @@ export function ResetPasswordPage() {
         <form className={styles.stack} onSubmit={onSubmit}>
           <TextField
             label="New password"
-            description="At least 10 characters"
+            description={`At least ${PASSWORD_MIN_LENGTH} characters`}
             type="password"
             autoComplete="new-password"
-            minLength={10}
+            minLength={PASSWORD_MIN_LENGTH}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

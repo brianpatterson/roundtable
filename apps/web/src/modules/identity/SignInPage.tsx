@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { AuthProvider } from '@roundtable/contract';
+import { PASSWORD_MIN_LENGTH, type AuthProvider } from '@roundtable/contract';
 import { Alert, Button, TextField } from '../../design-system';
 import { api } from '../../shared/api';
 import { authClient } from './auth-client';
@@ -120,10 +120,12 @@ export function SignInPage() {
         {mode !== 'forgot' && (
           <TextField
             label="Password"
-            description={mode === 'sign-up' ? 'At least 10 characters' : undefined}
+            description={
+              mode === 'sign-up' ? `At least ${PASSWORD_MIN_LENGTH} characters` : undefined
+            }
             type="password"
             autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-            minLength={10}
+            minLength={PASSWORD_MIN_LENGTH}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

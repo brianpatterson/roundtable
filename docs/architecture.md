@@ -88,12 +88,12 @@ flowchart TB
   end
 ```
 
-| Module       | API                                                                          | Web                                               | Contract          |
-| ------------ | ---------------------------------------------------------------------------- | ------------------------------------------------- | ----------------- |
-| applications | CRUD handlers, `applications` table                                          | `ApplicationsPage` (form + table), its query keys | `applications.ts` |
-| identity     | Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, sign-in and password-reset pages      | `identity.ts`     |
-| email        | `Mailer` (sending limits), `EmailTransport` (Resend), `email_sends`          | none                                              | none              |
-| (system)     | `/api/health`, in `server.ts`                                                | none                                              | `system.ts`       |
+| Module       | API                                                                                                    | Web                                               | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ----------------- |
+| applications | CRUD handlers, `applications` table                                                                    | `ApplicationsPage` (form + table), its query keys | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, sign-in and password-reset pages      | `identity.ts`     |
+| email        | `Mailer` (sending limits), `EmailTransport` (Resend), `email_sends`                                    | none                                              | none              |
+| (system)     | `/api/health`, in `server.ts`                                                                          | none                                              | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, TextField, Select, Alert so far) and its theme. Base UI gives
@@ -101,6 +101,14 @@ each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Mo
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
 `data-theme` on `<html>`. Modules import only its `index.ts`, and only it imports Base UI.
+
+**Identity** gives the App one layer, `IdentityLive`: its endpoint (`/api/auth-config`), the
+`Authorization` middleware every protected group relies on, and Better Auth's `/api/auth/*`
+routes, with Better Auth built inside. One rule decides which sign-in providers are configured,
+for both the sign-in page and Better Auth. Better Auth answers its own failures, so identity
+reports the unexpected ones (`BetterAuthFailed`) through `ErrorReporter`, like every other
+module. The password minimum is part of the identity contract, so the web forms check the same
+length the API enforces.
 
 **The App** (`server.ts`) is the one module that knows every other. Callers pass `{ env, log }`
 and pick one of two adapters: `serveApp` (a Node server, for production) or `appWebHandler`
