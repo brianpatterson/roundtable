@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { Redacted } from 'effect';
 import type { ErrorEvent } from '@sentry/node';
 import { initErrorTracking, scrubEvent, Sentry } from './error-tracking.js';
@@ -53,27 +53,15 @@ describe('redactQueryParams', () => {
 
 describe('error reporting', () => {
   const events: ErrorEvent[] = [];
-  beforeAll(() => {
-    initErrorTracking(
-      { ...env, SENTRY_DSN: Redacted.make('https://public@o0.ingest.sentry.io/0') },
-      {
-        // Capture instead of sending anywhere.
-        beforeSend: (event, hint) => {
-          events.push(scrubEvent(event, hint));
 
-          return null;
-        },
-      },
-    );
-  });
   afterEach(() => {
     events.length = 0;
   });
-  afterAll(() => Sentry.close());
 
-  // Built after init: SentryErrorReporter only reports when a Sentry client exists at build time.
+  // Each app starts Sentry when it's built, reporting into `events`, and closes it when closed.
   const failing = () =>
     setupTestApp({
+      errorEvents: events,
       sendEmail: async () => {
         throw new Error('Resend is down');
       },
@@ -103,7 +91,7 @@ describe('error reporting', () => {
   });
 
   it('reports the daily email limit once it drops an email', async () => {
-    const t = setupTestApp({ env: { EMAIL_LIMIT_PER_DAY: 1 } });
+    const t = setupTestApp({ env: { EMAIL_LIMIT_PER_DAY: 1 }, errorEvents: events });
     await t.migrate();
     await t.reset();
 
@@ -125,7 +113,7 @@ describe('error reporting', () => {
   });
 
   it('reports a crash in one of our own routes, without the query string', async () => {
-    const t = setupTestApp({ crashRoute: true });
+    const t = setupTestApp({ crashRoute: true, errorEvents: events });
     const res = await t.inject({ method: 'GET', url: '/api/test-crash?token=leak' });
 
     expect(res.statusCode).toBe(500);
@@ -149,7 +137,7 @@ describe('error reporting', () => {
 
     // Same request against an unreachable database: Better Auth's session lookup fails, and
     // Drizzle's error message ends with the query's parameters (here, the raw token).
-    const broken = setupTestApp({ databaseUrl: DEAD_DATABASE });
+    const broken = setupTestApp({ databaseUrl: DEAD_DATABASE, errorEvents: events });
 
     const res = await broken.inject({
       method: 'GET',
@@ -174,6 +162,17 @@ describe('error reporting', () => {
   });
 
   it("adds Postgres's diagnostic fields to a database error, without its values", async () => {
+    // Sentry on its own, no App: this checks scrubEvent on a captured error.
+    initErrorTracking(
+      { ...env, SENTRY_DSN: Redacted.make('https://public@o0.ingest.sentry.io/0') },
+      {
+        beforeSend: (event, hint) => {
+          events.push(scrubEvent(event, hint));
+
+          return null;
+        },
+      },
+    );
     const t = setupTestApp();
     await t.migrate();
     await t.reset();
@@ -198,11 +197,12 @@ describe('error reporting', () => {
       constraint: 'users_email_unique',
     });
     expect(JSON.stringify(event)).not.toContain(email);
+    await Sentry.close();
     await t.close();
   });
 
   it('does not report expected errors like a wrong password', async () => {
-    const t = setupTestApp();
+    const t = setupTestApp({ errorEvents: events });
     await t.migrate();
     await t.reset();
     const { email } = await signUp(t);

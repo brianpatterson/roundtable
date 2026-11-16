@@ -112,9 +112,18 @@ const reporterLayer = ErrorReporter.layer(
   { mergeWithExisting: true },
 );
 
-export const SentryErrorReporter = Layer.unwrap(
-  // Checked when the layer is built, i.e. after initErrorTracking (production with a DSN, tests).
-  Effect.sync(() => (Sentry.getClient() ? reporterLayer : Layer.empty)),
-);
+/**
+ * Error tracking for the App's lifetime: starts Sentry when built (only with SENTRY_DSN) and
+ * reports Effect's failures to it, then flushes queued events and closes it when released.
+ * Sentry has one client per process, so run at most one App with error tracking at a time.
+ * `overrides` are for tests (a beforeSend that captures events instead of sending them).
+ */
+export const errorTrackingLayer = (env: Env, overrides: Partial<Sentry.NodeOptions> = {}) =>
+  Layer.unwrap(
+    Effect.acquireRelease(
+      Effect.sync(() => initErrorTracking(env, overrides)),
+      (started) => (started ? Effect.promise(() => Sentry.close(2000)) : Effect.void),
+    ).pipe(Effect.map((started) => (started ? reporterLayer : Layer.empty))),
+  );
 
 export { Sentry };

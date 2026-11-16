@@ -1,13 +1,14 @@
-import { sql } from 'drizzle-orm';
-import { Effect, Layer, Redacted } from 'effect';
-import { HttpRouter, HttpServer } from 'effect/http';
+import type { ErrorEvent } from '@sentry/node';
+import { Effect, Redacted } from 'effect';
+import { HttpRouter } from 'effect/http';
 import { HttpApi } from 'effect/http-api';
 import { RoundtableApi } from '@roundtable/contract';
-import { appLayer, observabilityLayer } from '../src/server.js';
+import { appWebHandler } from '../src/server.js';
 import { createDb } from '../src/platform/database/promise.js';
 import { runMigrations } from '../src/platform/database/migrate.js';
-import type { Email, SendEmail } from '../src/modules/email/index.js';
+import { EmailTransport, type Email, type SendEmail } from '../src/modules/email/index.js';
 import { loadEnv, type Env } from '../src/platform/config/env.js';
+import { scrubEvent } from '../src/platform/observability/error-tracking.js';
 import { createLogger } from '../src/platform/observability/logging.js';
 
 export const env = loadEnv({
@@ -56,7 +57,15 @@ export interface TestAppOptions {
   logStream?: { write(line: string): void };
   /** Add GET /api/test-crash, which throws 'route exploded': for error-reporting tests. */
   crashRoute?: boolean;
+  /**
+   * Turn error tracking on, scrubbed as in production, capturing each event here instead of
+   * sending it. Sentry has one client per process: one such app at a time.
+   */
+  errorEvents?: ErrorEvent[];
 }
+
+/** Sentry only starts with a DSN; this one is never sent to, since beforeSend drops events. */
+const TEST_SENTRY_DSN = Redacted.make('https://public@o0.ingest.sentry.io/0');
 
 /**
  * A test app on the test database, reached through `inject` with no network. Tests use only
@@ -64,35 +73,39 @@ export interface TestAppOptions {
  * (ADR-0022 step 4) while the same tests keep checking the same behaviour.
  */
 export function setupTestApp(options: TestAppOptions = {}) {
+  // For migrations and resets: test-only work the App knows nothing about, as in production.
   const admin = createDb(env.DATABASE_URL);
-  const databaseUrl = options.databaseUrl ? Redacted.make(options.databaseUrl) : undefined;
-  const appDb = databaseUrl ? createDb(databaseUrl) : admin;
   const sentEmails: Email[] = [];
-  const appEnv: Env = { ...env, ...options.env, ...(databaseUrl && { DATABASE_URL: databaseUrl }) };
+  const { errorEvents } = options;
 
-  const log = createLogger({ stream: options.logStream, enabled: Boolean(options.logStream) });
+  const appEnv: Env = {
+    ...env,
+    ...options.env,
+    ...(options.databaseUrl && { DATABASE_URL: Redacted.make(options.databaseUrl) }),
+    ...(errorEvents && { SENTRY_DSN: TEST_SENTRY_DSN }),
+  };
 
-  const routes = appLayer({
+  const { handler, dispose } = appWebHandler({
     env: appEnv,
-    db: appDb.db,
-    log,
-    sendEmail:
+    log: createLogger({ stream: options.logStream, enabled: Boolean(options.logStream) }),
+    emailTransport: EmailTransport.fromPromise(
       options.sendEmail ??
-      (async (email) => {
-        sentEmails.push(email);
-      }),
-  });
-
-  const crash = HttpRouter.add('GET', '/api/test-crash', Effect.die(new Error('route exploded')));
-
-  // The same routes index.ts serves, as a fetch-style handler: no port, same pipeline.
-  const { handler, dispose } = HttpRouter.toWebHandler(
-    (options.crashRoute ? Layer.mergeAll(routes, crash) : routes).pipe(
-      Layer.provideMerge(observabilityLayer(log)),
-      Layer.provide(HttpServer.layerServices),
+        (async (email) => {
+          sentEmails.push(email);
+        }),
     ),
-    { disableLogger: !options.logStream },
-  );
+    errorTracking: errorEvents && {
+      // Capture instead of sending anywhere.
+      beforeSend: (event, hint) => {
+        errorEvents.push(scrubEvent(event, hint));
+
+        return null;
+      },
+    },
+    extraRoutes: options.crashRoute
+      ? HttpRouter.add('GET', '/api/test-crash', Effect.die(new Error('route exploded')))
+      : undefined,
+  });
 
   const inject = (request: InjectRequest) => injectWeb(handler, request);
 
@@ -116,17 +129,25 @@ export function setupTestApp(options: TestAppOptions = {}) {
     db: admin.db,
     sentEmails,
     migrate: () => runMigrations(admin.db),
+    /**
+     * Empties every table in `public`, whichever module owns it. Drizzle's migration history is
+     * in its own `drizzle` schema, so it stays.
+     */
     reset: async () => {
       sentEmails.length = 0;
-      await admin.db.execute(
-        sql`truncate table applications, sessions, accounts, verifications, users, email_sends`,
+
+      const { rows } = await admin.pool.query<{ name: string }>(
+        `select quote_ident(tablename) as name from pg_tables where schemaname = 'public'`,
       );
+
+      if (rows.length > 0) {
+        await admin.pool.query(`truncate table ${rows.map((row) => row.name).join(', ')}`);
+      }
     },
+    /** Stops the App (closing its pools, flushing Sentry) and the test's own connections. */
     close: async () => {
       await dispose();
       await admin.pool.end();
-
-      if (appDb !== admin) await appDb.pool.end();
     },
   };
 }

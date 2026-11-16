@@ -1,6 +1,7 @@
 import { PgClient } from '@effect/sql-pg';
 import * as PgDrizzle from 'drizzle-orm/effect-postgres';
 import { Context, Effect, Layer, Redacted } from 'effect';
+import { APPLICATION_NAME } from './promise.js';
 
 // Drizzle's Effect driver on Effect's own Postgres client (ADR-0022): queries and transactions
 // are Effects, so an interrupted request rolls its transaction back. Better Auth and migrations
@@ -16,5 +17,7 @@ export class Database extends Context.Service<Database, Effect.Success<typeof ma
   'roundtable/Database',
 ) {
   static readonly layer = (url: Redacted.Redacted<string>) =>
-    Layer.effect(Database, makeDatabase).pipe(Layer.provide(PgClient.layer({ url })));
+    Layer.effect(Database, makeDatabase).pipe(
+      Layer.provide(PgClient.layer({ url, applicationName: APPLICATION_NAME })),
+    );
 }
