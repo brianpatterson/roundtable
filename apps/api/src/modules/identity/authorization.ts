@@ -3,7 +3,7 @@ import { HttpEffect, HttpRouter, HttpServerRequest } from 'effect/http';
 import { HttpApiBuilder } from 'effect/http-api';
 import { Authorization, CurrentUser, RoundtableApi, Unauthorized } from '@roundtable/contract';
 import type { Env } from '../../platform/config/env.js';
-import type { Db } from '../../platform/database/promise.js';
+import { PromiseDatabase } from '../../platform/database/promise.js';
 import { Sentry } from '../../platform/observability/error-tracking.js';
 import type { Log } from '../../platform/observability/logging.js';
 import { Mailer } from '../email/index.js';
@@ -17,10 +17,11 @@ export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/
  * run through the Mailer on the context this layer is built in: the same logger and error
  * reporter as the routes.
  */
-export const betterAuthLayer = (db: Db, env: Env, log: Log) =>
+export const betterAuthLayer = (env: Env, log: Log) =>
   Layer.effect(
     BetterAuth,
     Effect.gen(function* () {
+      const db = yield* PromiseDatabase;
       const { send } = yield* Mailer;
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
 

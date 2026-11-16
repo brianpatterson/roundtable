@@ -1,17 +1,12 @@
-// The production wiring (serverLayer: the API on a real Node HTTP server), not the web handler the
+// The production wiring (serveApp: the API on a real Node HTTP server), not the web handler the
 // other tests use. A layer provided in the wrong place passed every other test yet sent request
 // logs to the console unredacted under the real server, so this checks the real one.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ErrorEvent } from '@sentry/node';
 import { Effect, Fiber, Layer, Redacted, Schema } from 'effect';
 import { createServer } from 'node:net';
-import { serverLayer } from '../src/server.js';
-import { createDb } from '../src/platform/database/promise.js';
-import {
-  initErrorTracking,
-  scrubEvent,
-  Sentry,
-} from '../src/platform/observability/error-tracking.js';
+import { serveApp } from '../src/server.js';
+import { scrubEvent, Sentry } from '../src/platform/observability/error-tracking.js';
 import { createLogger } from '../src/platform/observability/logging.js';
 import { env, setupTestApp, signUp } from './helpers.js';
 
@@ -29,7 +24,7 @@ const freePort = () =>
     });
   });
 
-describe('the production server (serverLayer)', () => {
+describe('the production server (serveApp)', () => {
   const events: ErrorEvent[] = [];
   const lines: string[] = [];
 
@@ -40,23 +35,12 @@ describe('the production server (serverLayer)', () => {
   // Sign in on a working database, then serve with an unreachable one: the session lookup fails.
   const t = setupTestApp();
   const deadUrl = Redacted.make('postgres://app:app@localhost:1/nowhere');
-  const dead = createDb(deadUrl);
   let cookie = '';
   let token = '';
   let base = '';
   let server: Fiber.Fiber<never, unknown> | undefined;
 
   beforeAll(async () => {
-    initErrorTracking(
-      { ...env, SENTRY_DSN: Redacted.make('https://public@o0.ingest.sentry.io/0') },
-      {
-        beforeSend: (event, hint) => {
-          events.push(scrubEvent(event, hint));
-
-          return null;
-        },
-      },
-    );
     await t.migrate();
     await t.reset();
     ({ cookie } = await signUp(t));
@@ -67,10 +51,20 @@ describe('the production server (serverLayer)', () => {
     base = `http://127.0.0.1:${port}`;
     server = Effect.runFork(
       Layer.launch(
-        serverLayer({
-          env: { ...env, DATABASE_URL: deadUrl },
-          db: dead.db,
+        serveApp({
+          env: {
+            ...env,
+            DATABASE_URL: deadUrl,
+            SENTRY_DSN: Redacted.make('https://public@o0.ingest.sentry.io/0'),
+          },
           log: createLogger({ stream: { write: (line) => void lines.push(line) } }),
+          errorTracking: {
+            beforeSend: (event, hint) => {
+              events.push(scrubEvent(event, hint));
+
+              return null;
+            },
+          },
           port,
           host: '127.0.0.1',
         }),
@@ -95,9 +89,7 @@ describe('the production server (serverLayer)', () => {
     if (server) await Effect.runPromise(Fiber.interrupt(server));
 
     for (const spy of consoleOutput) spy.mockRestore();
-    await dead.pool.end();
     await t.close();
-    await Sentry.close();
   });
 
   it('logs every line, request logs included, as redacted JSON, and reports the failure', async () => {
