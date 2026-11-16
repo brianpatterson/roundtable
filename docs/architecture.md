@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-15_
+_Last updated: 2026-11-16_
 
 ## 1. What the system does
 
@@ -72,7 +72,7 @@ breaks the rules (another module's internals, the assembly, or another module's 
 ```mermaid
 flowchart TB
   subgraph api[apps/api/src]
-    server[server.ts<br/>assembles modules] --> applications & identity & email
+    server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & identity & email
     applications[modules/applications<br/>CRUD, applications table] --> identity
     identity[modules/identity<br/>Better Auth, Authorization, auth tables] --> email
     email[modules/email<br/>Mailer, transport, email_sends] --> platform
@@ -101,6 +101,13 @@ each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Mo
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
 `data-theme` on `<html>`. Modules import only its `index.ts`, and only it imports Base UI.
+
+**The App** (`server.ts`) is the one module that knows every other. Callers pass `{ env, log }`
+and pick one of two adapters: `serveApp` (a Node server, for production) or `appWebHandler`
+(in-process, for tests). Inside, it creates both database pools from `DATABASE_URL` (Effect's for
+the modules, the Promise one Better Auth needs) so they can't point at different databases,
+starts Sentry, wraps everything in logging and error reporting, and on stop closes the pools and
+flushes Sentry. `test/app-lifecycle.test.ts` checks that no connection outlives it.
 
 Each module's `index.ts` is its public interface, and its tests sit next to it. A future split
 moves a module folder and its tables out, and gives the remaining modules a second adapter at
@@ -317,8 +324,9 @@ flowchart LR
   ([ADR-0019](adr/0019-monitoring-and-error-tracking.md)).
 - **Logs:** JSON lines from pino on stdout, kept by Docker. Better Auth logs through the same
   logger, and so does Effect (request logs, failures) through a bridge in `platform/observability/logging.ts`, which
-  must wrap the whole server (`serverLayer`): provided anywhere narrower, Effect's request logs
-  go to the console unredacted. `test/server.test.ts` runs the real server to check it. Errors are logged as type, message and stack only, and every line is
+  must wrap the whole server: provided anywhere narrower, Effect's request logs go to the
+  console unredacted. The App (`server.ts`) applies it in both of its adapters, so no caller
+  places it. `test/server.test.ts` runs the real server to check it. Errors are logged as type, message and stack only, and every line is
   scrubbed of database query parameters before it's written (`platform/observability/`).
 - **Disposable server:** IPs and the data volume are separate OpenTofu resources, so the server
   can be replaced at any time ([infra/README.md](../infra/README.md)).
