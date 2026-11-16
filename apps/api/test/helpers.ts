@@ -74,7 +74,7 @@ const TEST_SENTRY_DSN = Redacted.make('https://public@o0.ingest.sentry.io/0');
  */
 export function setupTestApp(options: TestAppOptions = {}) {
   // For migrations and resets: test-only work the App knows nothing about, as in production.
-  const admin = createDb(env.DATABASE_URL);
+  const admin = createDb(env.DATABASE_URL, 'roundtable-test-admin');
   const sentEmails: Email[] = [];
   const { errorEvents } = options;
 
