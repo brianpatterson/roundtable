@@ -157,12 +157,13 @@ flowchart LR
 
 Building blocks, in order:
 
-1. **Ticket template**: a GitHub Issue form with problem, user story, acceptance criteria
+1. ✅ **Ticket template** ([ADR-0025](adr/0025-software-factory-implementer.md)): a GitHub Issue form with problem, user story, acceptance criteria
    (Given/When/Then), out of scope, and a "docs impact" field. Good tickets are the single biggest
    lever on agent output quality.
-2. **Implementer**: the Claude Code GitHub Action runs when an issue gets the `ready` label. It
-   reads `CLAUDE.md`, implements on a branch, and opens a PR linked to the issue. It can be
-   re-triggered by review comments.
+2. ✅ **Implementer** ([ADR-0025](adr/0025-software-factory-implementer.md)): the Claude Code GitHub Action runs when the owner labels an issue `ready`. It
+   reads `CLAUDE.md`, implements on a branch, and opens a PR linked to the issue. An `@claude`
+   comment from the owner re-triggers it. Feature and bug forms carry the modules touched and
+   the design system components, too. First real ticket: the delete dialog.
 3. **Reviewer**: a second agent with a different prompt and no stake in the implementation
    reviews every PR against the ticket's acceptance criteria and the repo rules. It posts inline
    comments, then a human approves (you stay in the loop at first).

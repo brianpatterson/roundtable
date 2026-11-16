@@ -16,3 +16,5 @@ infra/tfplan
 *.agekey
 *.dump
 *.dump.age
+# The factory implementer's scratch files (the PR description), never committed
+.factory/

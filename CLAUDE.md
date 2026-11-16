@@ -40,6 +40,9 @@ each module is what a future service or microfrontend would become.
   web app calls and `client.test.ts` runs against the real server. Everything here ships to the
   browser: no server code. It's the only code the API and web app share.
 - `infra/`: OpenTofu for production (DigitalOcean droplet, volume, reserved IP, firewall, Cloudflare DNS) and cloud-init. See `infra/README.md`.
+- `.github/workflows/factory.yml` and `.github/factory/implementer.md`: the software factory's
+  implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
+  Tickets come from the forms in `.github/ISSUE_TEMPLATE/`.
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
 - `docs/`: `architecture.md` (current state), `adr/` (decisions), `dependencies.md` (dependency register), `roadmap.md` (where this is going).
 
