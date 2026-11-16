@@ -1,0 +1,53 @@
+name: Bug
+description: Something the app does wrong. Label it `ready` to have the factory fix it.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The fix starts with a failing test that reproduces this, so describe it precisely.
+        Never paste user data: no emails, tokens or application contents. Describe the kind of
+        value instead ("a company name with an emoji", "an empty job URL").
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: What happens instead. Include the error message or status code.
+    validations:
+      required: true
+  - type: input
+    id: sentry
+    attributes:
+      label: Sentry issue
+      description: A link, if the error was reported.
+  - type: checkboxes
+    id: modules
+    attributes:
+      label: Modules touched
+      description: Where you think the bug lives (ADR-0023), if you know.
+      options:
+        - label: 'API: applications'
+        - label: 'API: identity'
+        - label: 'API: email'
+        - label: 'API: platform (config, database, observability)'
+        - label: 'Contract (packages/contract)'
+        - label: 'Web: applications'
+        - label: 'Web: identity'
+        - label: 'Web: shell'
+        - label: 'Web: design system'
+        - label: 'Infra (infra/, deploy)'

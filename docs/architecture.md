@@ -382,11 +382,31 @@ only while every migration in that release was applied by 0.45 itself. Productio
 checked on 2026-11-11 (three rows) before 1.0 was deployed with #33. Local databases that lagged behind may not be: recreate them if a
 pre-upgrade branch fails to migrate.
 
-| Environment | Status                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local       | ✅ running                          | `docker compose` Postgres (databases `app` and `app_test`), `pnpm dev`. The production stack also runs locally: `docker compose -f compose.prod.yml` with `DOMAIN=localhost`.                                                                                                                                                                                                                                                                                   |
-| CI          | ✅ GitHub Actions                   | `check` (required): lint (Oxlint, including the anti-slop rules, [ADR-0021](adr/0021-oxlint-with-anti-slop-rules.md)), format, typecheck, Effect diagnostics (`@effect/tsgo`, [ADR-0022](adr/0022-effect-for-the-api.md)), dependency register, migration drift, tests. `images`: both production images build. `infra`: `tofu fmt` + `validate`. Also CodeQL, dependency review and Dependabot ([ADR-0010](adr/0010-public-repo-and-supply-chain-scanning.md)) |
-| Production  | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md))                                                                                                                                                                                                    |
+| Environment | Status                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local       | ✅ running                          | `docker compose` Postgres (databases `app` and `app_test`), `pnpm dev`. The production stack also runs locally: `docker compose -f compose.prod.yml` with `DOMAIN=localhost`.                                                                                                                                                                                                                                                                                                                                                                                                |
+| CI          | ✅ GitHub Actions                   | `check` (required): lint (Oxlint, including the anti-slop rules, [ADR-0021](adr/0021-oxlint-with-anti-slop-rules.md)), format, typecheck, Effect diagnostics (`@effect/tsgo`, [ADR-0022](adr/0022-effect-for-the-api.md)), dependency register, migration drift, tests. `images`: both production images build. `infra`: `tofu fmt` + `validate`. Also CodeQL, dependency review and Dependabot ([ADR-0010](adr/0010-public-repo-and-supply-chain-scanning.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)) |
+| Production  | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md))                                                                                                                                                                                                                                                                                                                 |
+
+### Software factory
+
+Tickets are GitHub issues written from the feature or bug form. When the owner labels one
+`ready` (or mentions `@claude` on an issue or pull request), the Factory workflow runs Claude Code
+in a GitHub Actions runner with Postgres, under `.github/factory/implementer.md` and `CLAUDE.md`.
+It builds the ticket on a branch until `pnpm check` passes and opens a pull request as the Claude
+GitHub App, so the usual CI runs on it; a human reviews and merges. Its token lives in the
+`factory` environment, which only `main` can use, and a deterministic step after each run
+rejects branches that change `.github/`, `.claude/` or `CLAUDE.md`
+([ADR-0025](adr/0025-software-factory-implementer.md)).
+
+```mermaid
+flowchart LR
+  T[Issue from a form] -->|owner labels ready| F[Factory workflow<br/>Claude Code + Postgres]
+  F -->|questions| N[needs-info label]
+  F -->|branch + PR as Claude App| CI[CI: required checks]
+  CI --> H[Human review and merge]
+  H --> D[Delivery pipeline]
+```
 
 ## 8. Known limits and what changes at scale
 
