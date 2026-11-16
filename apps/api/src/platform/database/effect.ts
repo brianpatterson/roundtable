@@ -3,9 +3,10 @@ import * as PgDrizzle from 'drizzle-orm/effect-postgres';
 import { Context, Effect, Layer, Redacted } from 'effect';
 
 // Drizzle's Effect driver on Effect's own Postgres client (ADR-0022): queries and transactions
-// are Effects, so an interrupted request rolls its transaction back. Better Auth, the email
-// limits and migrations keep the Promise-based instance in ./index.ts, so there are two small
-// pools: @effect/sql-pg speaks the Postgres protocol itself and has no pg.Pool to share.
+// are Effects, so an interrupted request rolls its transaction back. Better Auth and migrations
+// keep the Promise-based instance in ./promise.ts, so there are two small pools: @effect/sql-pg
+// speaks the Postgres protocol itself and has no pg.Pool to share. The App (server.ts) creates
+// both from one URL, so they always reach the same database.
 
 // paramsInErrors: failed queries carry their values inside the process, so error reports can
 // show each value's kind; redact.ts strips the values before anything is logged or sent.

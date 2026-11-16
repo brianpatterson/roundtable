@@ -1,12 +1,11 @@
-import { Redacted } from 'effect';
 import { createDb } from './platform/database/promise.js';
 import { runMigrations } from './platform/database/migrate.js';
+import { loadEnv } from './platform/config/env.js';
 
-const url = process.env.DATABASE_URL;
-
-if (!url) throw new Error('DATABASE_URL is not set');
-
-const { db, pool } = createDb(Redacted.make(url));
+// Runs as its own container before each deploy (ADR-0014), with the API's environment, read and
+// validated the same way the server reads it.
+const env = loadEnv();
+const { db, pool } = createDb(env.DATABASE_URL);
 
 await runMigrations(db);
 

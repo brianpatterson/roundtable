@@ -131,7 +131,7 @@ export function setupTestApp(options: TestAppOptions = {}) {
   };
 }
 
-/** `name=value` from each Set-Cookie header, value decoded as Fastify's inject did. */
+/** `name=value` from each Set-Cookie header, with the value URL-decoded. */
 export function parseSetCookies(setCookies: readonly string[]): Cookie[] {
   return setCookies.map((line) => {
     const [pair = '', ...attributes] = line.split(';').map((part) => part.trim());

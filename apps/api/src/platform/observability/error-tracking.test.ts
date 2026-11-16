@@ -71,7 +71,7 @@ describe('error reporting', () => {
   });
   afterAll(() => Sentry.close());
 
-  // Built after init, so the app registers Sentry's Fastify error handler.
+  // Built after init: SentryErrorReporter only reports when a Sentry client exists at build time.
   const failing = () =>
     setupTestApp({
       sendEmail: async () => {

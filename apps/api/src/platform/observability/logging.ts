@@ -2,8 +2,6 @@ import { Cause, Logger as EffectLogger, References } from 'effect';
 import pino from 'pino';
 import { causeChain, describeError, postgresFields, redactQueryParamsInJson } from './redact.js';
 
-// A type alias, not an interface: Fastify's serializer type has an index signature, which
-// object-literal types satisfy implicitly.
 type SerializedError = {
   type: string;
   message: string;

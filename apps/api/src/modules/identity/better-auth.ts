@@ -110,9 +110,9 @@ export function createAuth(
       },
     },
     // Better Auth catches errors from its endpoints (and from our email callbacks) and answers
-    // with an error response, so they never reach Fastify's error handler. Report the unexpected
-    // ones; 4xx (wrong password, expired token) are normal traffic. Replaces Better Auth's own
-    // error logging, so the callback logs too.
+    // with an error response, so they never reach the server's error reporting. Report the
+    // unexpected ones; 4xx (wrong password, expired token) are normal traffic. Replaces Better
+    // Auth's own error logging, so the callback logs too.
     onAPIError: {
       onError: (error) => {
         if (error instanceof APIError && error.statusCode < 500) return;
