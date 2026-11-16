@@ -158,8 +158,8 @@ The API is moving to Effect 4 ([ADR-0022](docs/adr/0022-effect-for-the-api.md), 
   instance it uses). Never run an Effect inside a Promise callback that holds a resource: an
   interrupted request leaked a pooled connection that way in the spike. When a library calls
   back with Promises (Better Auth's email hooks), capture the context while building its layer
-  and run the service with `Effect.runPromiseWith(context)`, as identity's `betterAuthLayer`
-  does for the `Mailer`: the callback then logs and reports like a route.
+  and run the service with `Effect.runPromiseWith(context)`, as identity's `BetterAuth.layer`
+  does for the `Mailer` and for Better Auth's own unexpected errors: the callback then logs and reports like a route.
 - **Report failures you handle** with `ErrorReporter.report(cause)` rather than calling Sentry,
   and give the error `[ErrorReporter.attributes]` for what helps triage (the email kind): the
   reporter sends them as `extra`. Never put user data in them.
