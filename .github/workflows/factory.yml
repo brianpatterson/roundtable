@@ -61,7 +61,12 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
     steps:
+      # Keeps no credentials (as fix-ci, ADR-0028): a follow-up push made with this job's token
+      # gets its CI held for manual approval (#75, #76). The Claude App's token, which the action
+      # sets on the remote, is the only one left.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # Copied out of the workspace before the agent switches branches, so the instructions it
       # runs under are main's, whatever a branch contains.
       - name: Load the implementer's instructions and the secret guard from main
