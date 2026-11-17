@@ -6,7 +6,7 @@ import { HttpApiBuilder, HttpApiMiddleware } from 'effect/http-api';
 import { RoundtableApi } from '@roundtable/contract';
 import { createServer } from 'node:http';
 import { ApplicationsLive } from './modules/applications/index.js';
-import { EmailTransport, Mailer, transportFromEnv } from './modules/email/index.js';
+import { EmailLive, type EmailTransport } from './modules/email/index.js';
 import { IdentityLive } from './modules/identity/index.js';
 import type { Env } from './platform/config/env.js';
 import { Database } from './platform/database/effect.js';
@@ -63,11 +63,6 @@ const ReportErrors = HttpRouter.middleware((httpEffect) => Effect.withErrorRepor
 
 /** Every route, with the modules and the resources they need. */
 function routesLayer({ env, log, emailTransport }: AppOptions) {
-  const mailer = Mailer.layer({
-    perAddress: env.EMAIL_LIMIT_PER_ADDRESS,
-    perDay: env.EMAIL_LIMIT_PER_DAY,
-  }).pipe(Layer.provide(emailTransport ?? transportFromEnv(env, log)));
-
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
     Layer.provide([SystemLive, ApplicationsLive]),
     // Identity's endpoints, the Authorization middleware the groups above rely on, and Better
@@ -78,7 +73,8 @@ function routesLayer({ env, log, emailTransport }: AppOptions) {
   );
 
   return Layer.mergeAll(api, ReportErrors).pipe(
-    Layer.provide(mailer),
+    // The Mailer identity sends through, with email's limits and transport chosen inside.
+    Layer.provide(EmailLive(env, log, { transport: emailTransport })),
     Layer.provide(Database.layer(env.DATABASE_URL)),
     Layer.provide(PromiseDatabase.layer(env.DATABASE_URL)),
   );
