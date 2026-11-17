@@ -92,7 +92,7 @@ flowchart TB
 | ------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ----------------- |
 | applications | CRUD handlers, `applications` table                                                                    | `ApplicationsPage` (form + table), its query keys | `applications.ts` |
 | identity     | One `IdentityLive` layer: Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, sign-in and password-reset pages      | `identity.ts`     |
-| email        | `Mailer` (sending limits), `EmailTransport` (Resend), `email_sends`                                    | none                                              | none              |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`  | none                                              | none              |
 | (system)     | `/api/health`, in `server.ts`                                                                          | none                                              | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
@@ -109,6 +109,14 @@ for both the sign-in page and Better Auth. Better Auth answers its own failures,
 reports the unexpected ones (`BetterAuthFailed`) through `ErrorReporter`, like every other
 module. The password minimum is part of the identity contract, so the web forms check the same
 length the API enforces.
+
+**Email** gives the App one layer too, `EmailLive(env, log)`: the `Mailer` identity sends
+through. Inside, it reads its sending limits (the per-address and per-day caps,
+`EMAIL_LIMIT_PER_ADDRESS` and `EMAIL_LIMIT_PER_DAY`) and picks its transport (Resend when
+configured, otherwise the log), so a new limit or email kind never touches `server.ts`. The
+email kinds (password reset, verification) are one `EmailKind` schema; limits are counted per
+kind, per address. The App provides the `Database` it shares, and tests swap the transport
+through `AppOptions.emailTransport`.
 
 **The App** (`server.ts`) is the one module that knows every other. Callers pass `{ env, log }`
 and pick one of two adapters: `serveApp` (a Node server, for production) or `appWebHandler`
