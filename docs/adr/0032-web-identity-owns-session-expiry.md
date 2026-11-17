@@ -37,9 +37,11 @@ Sign in again.". The contract client no longer words `Unauthorized`; feature mod
 it.
 
 `AuthGate` remembers which session ended by its id, because Better Auth may still hold it until the
-re-check answers: a new sign-in is a different session and shows the app again. Signing out marks
-the session the same way without the notice, so a request in flight that answers 401 afterwards
-isn't mistaken for an expiry.
+re-check answers: a new sign-in is a different session and shows the app again. Signing out ignores
+`sessionEnded()` for its session from the moment the request goes out, so a request in flight that
+answers 401 isn't mistaken for an expiry. It shows the sign-in page only once Better Auth's
+`signOut()` succeeds: if it fails, the server may still accept the session, so the app stays signed
+in and says the sign-out didn't happen rather than looking signed out.
 
 ## Consequences
 

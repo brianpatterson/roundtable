@@ -114,7 +114,8 @@ On the web, identity owns the whole session lifecycle, expiry included
 ([ADR-0032](adr/0032-web-identity-owns-session-expiry.md)). The shell's `QueryClient` sends every
 query or mutation that fails with `Unauthorized` to identity's `sessionEnded()` (and doesn't retry
 it); `AuthGate` then clears the query cache, re-checks the session and shows the sign-in page with
-"You were signed out. Sign in again.". No feature module handles a 401.
+"You were signed out. Sign in again.". No feature module handles a 401. Signing out shows the
+sign-in page only once the server confirms it; a failed sign-out stays signed in with an error.
 
 **The App** (`server.ts`) is the one module that knows every other. Callers pass `{ env, log }`
 and pick one of two adapters: `serveApp` (a Node server, for production) or `appWebHandler`

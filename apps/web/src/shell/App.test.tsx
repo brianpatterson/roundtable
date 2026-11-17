@@ -47,6 +47,12 @@ let serverError: boolean;
 /** How many reads of the applications list fail with a 500 before they succeed. */
 let failingReads: number;
 
+/** How many reads of the applications list answered 500. */
+let failedReads: number;
+
+/** Sign-out answers 500, so the server's session stays. */
+let signOutFails: boolean;
+
 /** How many applications calls answered 401. */
 let unauthorizedAnswers: number;
 
@@ -63,6 +69,8 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   }
 
   if (pathname === '/api/auth/sign-out') {
+    if (signOutFails) return new Response(null, { status: 500 });
+
     session = null;
 
     return Response.json({ success: true });
@@ -74,6 +82,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 
   if (pathname.startsWith('/api/applications') && request.method === 'GET' && failingReads > 0) {
     failingReads -= 1;
+    failedReads += 1;
 
     return new Response(null, { status: 500 });
   }
@@ -99,6 +108,8 @@ beforeEach(() => {
   callsBeforeExpiry = 0;
   serverError = false;
   failingReads = 0;
+  failedReads = 0;
+  signOutFails = false;
   unauthorizedAnswers = 0;
   vi.stubGlobal('fetch', fakeServer);
 });
@@ -113,13 +124,18 @@ const renderShell = async () => {
   // (it stays subscribed for a second after unmount). Fresh modules give each test a new one.
   vi.resetModules();
   const { App } = await import('./App');
-  const { createQueryClient, Providers } = await import('./Providers');
+  const { createQueryClient } = await import('./Providers');
+  const { ThemeProvider } = await import('../design-system');
+  const { QueryClientProvider } = await import('@tanstack/react-query');
+  // The app's own cache setup, in a client the test can look inside.
   const queryClient = createQueryClient();
 
   render(
-    <Providers queryClient={queryClient}>
-      <App />
-    </Providers>,
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </ThemeProvider>,
   );
 
   return queryClient;
@@ -212,6 +228,39 @@ describe('App: session expiry', () => {
     expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
+  });
+
+  it('retries a read that keeps failing three times, then shows the error', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    failingReads = Number.POSITIVE_INFINITY;
+    await renderShell();
+
+    await waitFor(() => expect(failedReads).toBe(1));
+    // TanStack waits 1 s, 2 s, then 4 s between retries.
+    await vi.advanceTimersByTimeAsync(1000 + 2000 + 4000);
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    // Long past any further back-off: no fifth read.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(failedReads).toBe(4);
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
+  });
+
+  it('keeps the user signed in, showing the error, when a sign-out fails', async () => {
+    callsBeforeExpiry = 1;
+    signOutFails = true;
+    await renderShell();
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      "Couldn't sign out. Check your connection and try again.",
+    );
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).toBeNull();
   });
 
   it('keeps the user signed in, showing the error, when a request fails for another reason', async () => {

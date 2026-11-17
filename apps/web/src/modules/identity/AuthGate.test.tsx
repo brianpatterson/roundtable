@@ -28,6 +28,11 @@ const signedIn = {
 let firstSession: typeof signedIn | null;
 let sessionChecks: number;
 
+/** What the server answers for sign-out; a test can hold it back until `releaseSignOut()`. */
+let signOutStatus: number;
+let signOutAnswered: Promise<void>;
+let releaseSignOut: () => void;
+
 function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const { pathname } = new URL(new Request(input, init).url);
 
@@ -35,6 +40,14 @@ function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
     sessionChecks += 1;
 
     return Promise.resolve(Response.json(sessionChecks === 1 ? firstSession : null));
+  }
+
+  if (pathname === '/api/auth/sign-out') {
+    return signOutAnswered.then(() =>
+      signOutStatus === 200
+        ? Response.json({ success: true })
+        : new Response(null, { status: signOutStatus }),
+    );
   }
 
   if (pathname === '/api/auth-config') return Promise.resolve(Response.json({ providers: [] }));
@@ -45,6 +58,8 @@ function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
 beforeEach(() => {
   firstSession = signedIn;
   sessionChecks = 0;
+  signOutStatus = 200;
+  signOutAnswered = Promise.resolve();
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -66,10 +81,11 @@ const renderGate = async () => {
   render(
     <QueryClientProvider client={queryClient}>
       <identity.AuthGate>
-        {({ userName, signOut }) => (
+        {({ userName, signOut, signOutError }) => (
           <>
             <p>Signed in as {userName}</p>
             <button onClick={signOut}>Sign out</button>
+            {signOutError && <p role="alert">{signOutError}</p>}
           </>
         )}
       </identity.AuthGate>
@@ -120,10 +136,78 @@ describe('AuthGate: session ended', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
     expect(queryClient.getQueryData(['signed-in-data'])).toBeUndefined();
     // A request that was in flight when the user signed out answers 401: still no notice.
+    await settle();
+    const checksAfterSignOut = sessionChecks;
     act(() => sessionEnded());
     await settle();
     expect(screen.queryByRole('status')).toBeNull();
+    expect(sessionChecks).toBe(checksAfterSignOut);
+  });
+
+  it('shows no notice when a request answers 401 while the sign-out request is in flight', async () => {
+    signOutAnswered = new Promise((resolve) => {
+      releaseSignOut = resolve;
+    });
+    const { sessionEnded, queryClient } = await renderGate();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    act(() => sessionEnded());
+    // Still signed in until the server answers: the cache is untouched and nothing re-checks.
+    expect(screen.getByText('Signed in as Ada')).toBeDefined();
+    expect(queryClient.getQueryData(['signed-in-data'])).toBe('cached');
+    await settle();
     expect(sessionChecks).toBe(1);
+    act(() => releaseSignOut());
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(queryClient.getQueryData(['signed-in-data'])).toBeUndefined();
+  });
+
+  it('stays signed in, with an error, when the sign-out request answers 500', async () => {
+    signOutStatus = 500;
+    const { sessionEnded, queryClient } = await renderGate();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      "Couldn't sign out. Check your connection and try again.",
+    );
+    expect(screen.getByText('Signed in as Ada')).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Sign in' })).toBeNull();
+    expect(queryClient.getQueryData(['signed-in-data'])).toBe('cached');
+
+    // The session still counts as signed in: if it does expire later, that's reported as usual.
+    act(() => sessionEnded());
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.getByRole('status').textContent).toBe('You were signed out. Sign in again.');
+  });
+
+  it('stays signed in, with an error, when the sign-out request cannot reach the server', async () => {
+    const { queryClient } = await renderGate();
+
+    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      "Couldn't sign out. Check your connection and try again.",
+    );
+    expect(screen.getByText('Signed in as Ada')).toBeDefined();
+    expect(queryClient.getQueryData(['signed-in-data'])).toBe('cached');
+  });
+
+  it('clears the sign-out error when the user tries again and succeeds', async () => {
+    signOutStatus = 500;
+    await renderGate();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toBeDefined();
+    signOutStatus = 200;
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('changes nothing when the user is already signed out', async () => {

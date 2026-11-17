@@ -31,17 +31,10 @@ export function createQueryClient() {
 const appQueryClient = createQueryClient();
 
 /** App-wide providers every module relies on: the theme and server-state cache. */
-export function Providers({
-  children,
-  queryClient = appQueryClient,
-}: {
-  children: ReactNode;
-  /** Replaces the app's cache, so a test can look inside its own. */
-  queryClient?: QueryClient;
-}) {
+export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={appQueryClient}>{children}</QueryClientProvider>
     </ThemeProvider>
   );
 }
