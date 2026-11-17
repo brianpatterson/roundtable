@@ -76,9 +76,11 @@ jobs:
           trigger_phrase: '@claude'
           # Only the owner's comments reach the agent; anyone else's text in the thread is dropped.
           include_comments_by_actor: ${{ github.repository_owner }}
+          # The job's 60-minute timeout is the real limit. 60 turns was too few: #53, a feature with a
+          # new component and its tests, took 70 and was marked failed after it had opened its PR.
           claude_args: >-
             --model claude-opus-5-5
-            --max-turns 60
+            --max-turns 150
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
             --allowedTools "Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
