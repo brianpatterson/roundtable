@@ -114,13 +114,13 @@ jobs:
             jq -r --argjson changed "$changed" '
               [.files | to_entries[] | select(.key as $f | $changed | index($f)) | .key as $f
                 | .value.mutants[] | select(.status == "Survived" or .status == "NoCoverage")
-                | "- `apps/web/\($f):\(.location.start.line)` \(.status): \(.mutatorName), `\(.replacement | gsub("\n"; " ") | .[0:80])`"]
+                | "- `apps/web/\($f):\(.location.start.line)` \(.status): \(.mutatorName), `` \(.replacement | gsub("\n"; " ") | .[0:80]) ``"]
               | if length == 0 then "None." else .[] end' "$REPORT"
             echo
             echo '<details><summary>All survivors</summary>'
             echo
             jq -r '.files | to_entries[] | .key as $f | .value.mutants[] | select(.status == "Survived")
-              | "- `apps/web/\($f):\(.location.start.line)` \(.mutatorName), `\(.replacement | gsub("\n"; " ") | .[0:80])`"' "$REPORT"
+              | "- `apps/web/\($f):\(.location.start.line)` \(.mutatorName), `` \(.replacement | gsub("\n"; " ") | .[0:80]) ``"' "$REPORT"
             echo
             echo '</details>'
           } > survivors.md
