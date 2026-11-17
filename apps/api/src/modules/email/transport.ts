@@ -11,10 +11,14 @@ import {
 } from 'effect';
 import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 import type { Log } from '../../platform/observability/logging.js';
-import type { Env } from '../../platform/config/env.js';
 
-/** Limits are counted per kind, so verification retries never block a password reset. */
-export type EmailKind = 'password-reset' | 'verification';
+/**
+ * Which auth email is being sent: the one list of kinds, which the errors below and the Mailer's
+ * use. Limits are counted per kind, so verification retries never block a password reset.
+ */
+export const EmailKind = Schema.Literals(['password-reset', 'verification']);
+
+export type EmailKind = typeof EmailKind.Type;
 
 export type SendEmail = (email: Email) => Promise<void>;
 
@@ -33,7 +37,7 @@ export class EmailSendFailed extends Schema.TaggedError<
   EmailSendFailed,
   { readonly brand: unique symbol }
 >()('EmailSendFailed', {
-  kind: Schema.Literals(['password-reset', 'verification']),
+  kind: EmailKind,
   /** Resend's HTTP status; absent when the request never got an answer. */
   status: Schema.optional(Schema.Int),
   /** Resend's error body (it names the problem and holds no secrets), or what went wrong. */
@@ -191,10 +195,3 @@ export const resendLayer = (options: ResendOptions) =>
   Layer.effect(EmailTransport, makeResendTransport(options)).pipe(
     Layer.provide(FetchHttpClient.layer),
   );
-
-/** Resend when it's configured (always in production; see env.ts), otherwise the log. */
-export function transportFromEnv(env: Env, log: Pick<Log, 'info'>) {
-  return env.RESEND_API_KEY && env.EMAIL_FROM
-    ? resendLayer({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })
-    : EmailTransport.log(log);
-}

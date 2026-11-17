@@ -2,7 +2,7 @@ import { lt, sql } from 'drizzle-orm';
 import { Cause, Context, Effect, ErrorReporter, Layer, Schema } from 'effect';
 import { Database } from '../../platform/database/effect.js';
 import { emailSends } from './schema.js';
-import { EmailTransport, type Email, type EmailSendFailed } from './transport.js';
+import { EmailKind, EmailTransport, type Email, type EmailSendFailed } from './transport.js';
 
 export interface EmailLimits {
   /** Emails of one kind (e.g. password reset) to one address in any 24 hours. */
@@ -19,7 +19,7 @@ export class DailyEmailLimitReached extends Schema.TaggedError<
   DailyEmailLimitReached,
   { readonly brand: unique symbol }
 >()('DailyEmailLimitReached', {
-  kind: Schema.Literals(['password-reset', 'verification']),
+  kind: EmailKind,
   limit: Schema.Int,
 }) {
   get [ErrorReporter.attributes]() {
