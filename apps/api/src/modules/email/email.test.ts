@@ -82,9 +82,10 @@ describe('EmailLive', () => {
       const sent: Email[] = [];
       const five = Array.from({ length: 5 }, () => reset('a@example.com'));
 
-      yield* sendAll(five, { EMAIL_LIMIT_PER_ADDRESS: 3 }, async (e) => void sent.push(e));
+      // Not the default (3), so the test fails if EmailLive ignores the variable.
+      yield* sendAll(five, { EMAIL_LIMIT_PER_ADDRESS: 2 }, async (e) => void sent.push(e));
 
-      assert.lengthOf(sent, 3);
+      assert.lengthOf(sent, 2);
     }),
   );
 
