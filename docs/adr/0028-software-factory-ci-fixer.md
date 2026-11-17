@@ -73,3 +73,10 @@ Option 1:
   and stops.
 - Revisit if fixes start masking problems instead of solving them (the reviewer and the owner
   read every one), or when the triage agent (roadmap block 5) takes over Dependabot.
+
+## Updates
+
+- **2026-11-17:** the first test (#60) worked end to end except one thing: the App token exchange
+  accepted the `workflow_run` run, but the fix was pushed with the job's own token, which
+  `actions/checkout` v7 had left in git's config where the action's cleanup doesn't reach, so
+  CI on the fix waited for a manual approval. The fixer's checkouts now keep no credentials.

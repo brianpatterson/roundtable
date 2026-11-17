@@ -411,6 +411,11 @@ the Factory workflow restarts the implementer on that branch to fix it: it re-ru
 failed for reasons outside the change, fixes the cause otherwise, and stops after two attempts
 with a `needs-human` label ([ADR-0028](adr/0028-software-factory-ci-fixer.md)).
 
+Every agent job scrubs Anthropic credentials and the runner's OIDC tokens from the commands the
+agent runs and isolates them (bubblewrap), allows only named `pnpm` and `git` commands, and checks
+everything the factory publishes for credential patterns
+([ADR-0029](adr/0029-software-factory-credential-hardening.md)).
+
 ```mermaid
 flowchart LR
   T[Issue from a form] -->|owner labels ready| F[Factory workflow<br/>Claude Code + Postgres]
