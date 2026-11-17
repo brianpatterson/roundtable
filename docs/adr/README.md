@@ -35,3 +35,4 @@ you'd want to explain in an interview. Copy [template.md](template.md).
 | 0023 | [Organize the code by module, as a modular monolith](0023-modular-monolith-layout.md)                                | Accepted                                             |
 | 0024 | [Build our own Material-style design system on Base UI and CSS Modules](0024-design-system.md)                       | Accepted                                             |
 | 0025 | [Build labeled tickets with Claude Code in GitHub Actions, gated by the owner](0025-software-factory-implementer.md) | Accepted                                             |
+| 0026 | [Review factory pull requests with a second, read-only agent that never approves](0026-software-factory-reviewer.md) | Accepted                                             |

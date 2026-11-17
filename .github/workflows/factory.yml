@@ -74,8 +74,9 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           label_trigger: ready
           trigger_phrase: '@claude'
-          # Only the owner's comments reach the agent; anyone else's text in the thread is dropped.
-          include_comments_by_actor: ${{ github.repository_owner }}
+          # Only the owner's comments, and the reviewer's (posted by github-actions[bot], ADR-0026),
+          # reach the agent; anyone else's text in the thread is dropped.
+          include_comments_by_actor: ${{ github.repository_owner }},github-actions[bot]
           # The job's 60-minute timeout is the real limit. 60 turns was too few: #53, a feature with a
           # new component and its tests, took 70 and was marked failed after it had opened its PR.
           claude_args: >-
