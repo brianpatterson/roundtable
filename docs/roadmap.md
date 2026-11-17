@@ -199,6 +199,22 @@ Building blocks, in order:
    - **Inject faults** to exercise error paths, the way the leak was found: take away the
      database, make the mailer throw, then inspect every outgoing event and log line.
 
+7. **Mutation testing for the API (spike)**: Stryker already runs on the web app in CI
+   ([ADR-0027](adr/0027-mutation-testing-stryker.md)); the API needs its own spike first, because:
+   - **One shared test database.** API tests use `app_test`, and `reset()` truncates every table,
+     so the suite runs one file at a time (`fileParallelism: false`). Stryker's parallel workers
+     would truncate each other's data. Options: a database per worker (`app_test_1`, …) or
+     `concurrency: 1`.
+   - **Run time.** The suite takes about 12 seconds against Postgres, so a single worker over the
+     API's ~1,500 lines could take tens of minutes. Measure both setups; the time decides whether
+     the API joins CI on every PR (incremental) or a scheduled full run.
+   - **Effect noise.** Pipelines and generators produce mutants that change nothing observable.
+     Find the `mutator.excludedMutations` or ignorers that remove them before reading the score.
+
+   Done when it has measured run times, a score, the exclusions, and a decision recorded in
+   ADR-0027's updates. The TypeScript 7 workarounds carry over (`apps/api` is as deep as
+   `apps/web`).
+
 ## What "ensuring quality" can mean
 
 Quality comes in layers. Each answers a different question, and they compound. Already in place
