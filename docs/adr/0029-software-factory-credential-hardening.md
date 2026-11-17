@@ -84,17 +84,24 @@ Options 1 and 2 together, plus a guard on what's published:
   command's program and subcommand when they're plain lowercase words, and a path's top-level
   folder, and it passes the secret guard. Denials that reach for credentials or the factory's
   rules (`.git/`, `.github/`, `.claude/`, `CLAUDE.md`, `git config`/`remote`/`credential`/`-c`,
-  `pnpm exec`/`dlx`, `npx`, `curl`, `env`) mark the run suspicious: the job fails, the issue or
+  `pnpm exec`/`dlx`, `npx`, `curl`, `env`; `pnpm exec` and `npx` no longer, see the next entry)
+  mark the run suspicious: the job fails, the issue or
   pull request gets `needs-human` and a comment, and a suspicious review isn't posted. Detection
   is the workflow's, not the agent's: the agent is the party that may be compromised.
-- **2026-11-17:** running a package's binary (`pnpm exec`/`dlx`, `npx`, `pnpx`) is now a gap in
-  the denial report, not suspicious. The #76 implementer run was flagged for one honest
-  `pnpm exec`, the way any agent reaches for a tool's binary, and the deny list refuses those
-  commands at the tool anyway, so flagging them only trained the owner to ignore the label.
-  Credential paths, `git config`/`remote`/`credential`/`-c`, `curl`, `wget`, `env` and `printenv`
-  stay suspicious. The implementer and fixer also allow `cd` (agents chain `cd dir && pnpm …`,
-  and every part of a chain must be allowed), `pnpm format` with arguments, any `pnpm prettier`
-  command (`--check` was refused) and `git merge` (merging `main` to resolve a conflict was refused
-  on #76). The report also classifies each part of a chain on its own (split on `&&`, `||`, `;`,
-  `|`, without leading `VAR=…` or the program's directory), so a refused `cd x && curl …` is
-  flagged like `curl …`.
+- **2026-11-17:** running an installed binary (`pnpm exec`, `npx`) is now a gap in the denial
+  report, not suspicious. The #76 implementer run was flagged for one honest `pnpm exec`, the way
+  any agent reaches for a tool's binary, and the deny list refuses those commands at the tool
+  anyway, so flagging them only trained the owner to ignore the label. Downloading a package to
+  run it (`pnpm dlx`, `pnpx`) stays suspicious, since that is how a manipulated agent would bring
+  in its own code, as do credential paths, `git config`/`remote`/`credential`/`-c`, `curl`,
+  `wget`, `env` and `printenv`.
+  - The report classifies each part of a command on its own: it splits at `;`, `|`, `&`,
+    newlines, backticks and parentheses, and skips leading quotes, `VAR=…`, wrappers such as
+    `bash -c`, `xargs` and `timeout`, and the program's directory. So `cd x && curl …`,
+    `$(curl …)` and `bash -c 'curl …'` are flagged like `curl …`. It is best effort, not a shell
+    parser: a separator inside quotes also splits (a false alarm), and an encoded command isn't
+    seen. The deny list is the boundary; the report only decides who looks.
+  - The implementer and fixer also allow `cd` (agents chain `cd dir && pnpm …`, and every part of
+    a chain must be allowed), `pnpm format` with arguments, any `pnpm prettier` command
+    (`--check` was refused) and `git merge` (merging `main` to resolve a conflict was refused on
+    #76). Their instructions say to merge `main` only when the owner asks to resolve a conflict.

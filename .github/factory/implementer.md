@@ -81,6 +81,8 @@ and which attempt this is (you get two). The pull request's branch is checked ou
 3. **Fix the cause, not the check.** Make the smallest change that makes the failing check pass
    for the right reason, in the pull request's own scope. Run `pnpm check`, commit with a
    conventional subject (`fix:`, `test:` …) and push to the same branch. Return `fixed`.
+   Don't merge `main` into the branch to fix CI: you merge `main` only when the owner asks you
+   to resolve a conflict.
 4. **Security failures** (dependency review, CodeQL). A failed CodeQL run lists its findings in
    the changed files as `::error file=…,line=…::CodeQL <rule>: …` lines in its log. Fix, in this order of preference: bump the
    direct dependency to a fixed version; or override the indirect one in `pnpm-workspace.yaml`,
