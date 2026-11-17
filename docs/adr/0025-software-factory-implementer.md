@@ -77,3 +77,9 @@ setup-token`), stored in a `factory` GitHub Environment that admits only `main`.
   it; the deterministic step covers both outcomes.
 - Revisit when the reviewer agent (building block 3) lands, if the owner-only trigger blocks a
   collaborator, or if subscription limits get in the way.
+
+## Updates
+
+- **2026-11-17:** the turn cap is 150, not 60. The first feature ticket (#53) took 70 turns and
+  was marked failed after it had already opened its pull request. The 60-minute job timeout
+  stays the real limit.
