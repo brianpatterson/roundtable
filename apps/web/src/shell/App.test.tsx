@@ -44,6 +44,12 @@ let callsBeforeExpiry: number;
 /** Changes fail with a 500, which has nothing to do with the session. */
 let serverError: boolean;
 
+/** How many reads of the applications list fail with a 500 before they succeed. */
+let failingReads: number;
+
+/** How many applications calls answered 401. */
+let unauthorizedAnswers: number;
+
 async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init);
   const { pathname } = new URL(request.url);
@@ -66,6 +72,12 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 
   if (request.method !== 'GET' && serverError) return new Response(null, { status: 500 });
 
+  if (pathname.startsWith('/api/applications') && request.method === 'GET' && failingReads > 0) {
+    failingReads -= 1;
+
+    return new Response(null, { status: 500 });
+  }
+
   if (pathname.startsWith('/api/applications')) {
     if (session && callsBeforeExpiry > 0) {
       callsBeforeExpiry -= 1;
@@ -74,6 +86,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     }
 
     session = null;
+    unauthorizedAnswers += 1;
 
     return Response.json({ _tag: 'Unauthorized' }, { status: 401 });
   }
@@ -85,10 +98,13 @@ beforeEach(() => {
   session = sessionFor('session-1');
   callsBeforeExpiry = 0;
   serverError = false;
+  failingReads = 0;
+  unauthorizedAnswers = 0;
   vi.stubGlobal('fetch', fakeServer);
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -128,6 +144,8 @@ describe('App: session expiry', () => {
 
     await expectSignInPageWithNotice();
     expectSignedInCacheCleared(queryClient);
+    // Not retried: asking again won't bring the session back.
+    expect(unauthorizedAnswers).toBe(1);
   });
 
   it('returns to the sign-in page, with a notice, when an applications mutation answers 401', async () => {
@@ -161,6 +179,39 @@ describe('App: session expiry', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows no old notice when the new session later ends without a 401', async () => {
+    await renderShell();
+
+    await expectSignInPageWithNotice();
+    callsBeforeExpiry = 1;
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse battery');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+
+    // The new session ends on the server; Better Auth finds out when the tab is shown again.
+    session = null;
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('retries a read that fails for another reason, and shows the list once it succeeds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    failingReads = 1;
+    callsBeforeExpiry = 1;
+    await renderShell();
+
+    await waitFor(() => expect(failingReads).toBe(0));
+    // TanStack waits a second before its first retry.
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
   });
 
   it('keeps the user signed in, showing the error, when a request fails for another reason', async () => {
