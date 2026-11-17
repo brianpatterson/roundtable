@@ -42,7 +42,8 @@ each module is what a future service or microfrontend would become.
 - `infra/`: OpenTofu for production (DigitalOcean droplet, volume, reserved IP, firewall, Cloudflare DNS) and cloud-init. See `infra/README.md`.
 - `.github/workflows/factory.yml` and `.github/factory/implementer.md`: the software factory's
   implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
-  Tickets come from the forms in `.github/ISSUE_TEMPLATE/`.
+  Tickets come from the forms in `.github/ISSUE_TEMPLATE/`. The same workflow fixes CI failures on
+  factory PRs and on PRs labeled `autofix` ([ADR-0028](docs/adr/0028-software-factory-ci-fixer.md)).
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on factory PRs once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.

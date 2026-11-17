@@ -406,12 +406,19 @@ rules, and a deterministic step posts its verdict as one comment, updated in pla
 approves; the owner merges, and can ask the implementer to address the review
 ([ADR-0026](adr/0026-software-factory-reviewer.md)).
 
+When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`),
+the Factory workflow restarts the implementer on that branch to fix it: it re-runs jobs that
+failed for reasons outside the change, fixes the cause otherwise, and stops after two attempts
+with a `needs-human` label ([ADR-0028](adr/0028-software-factory-ci-fixer.md)).
+
 ```mermaid
 flowchart LR
   T[Issue from a form] -->|owner labels ready| F[Factory workflow<br/>Claude Code + Postgres]
   F -->|questions| N[needs-info label]
   F -->|branch + PR as Claude App| CI[CI: required checks]
   CI -->|green| RV[Reviewer agent<br/>read-only, one comment]
+  CI -->|red, up to 2 times| X[Fixer: the implementer<br/>on the same branch]
+  X --> CI
   RV --> H[Human review and merge]
   H -.->|@claude address the review| F
   H --> D[Delivery pipeline]

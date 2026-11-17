@@ -165,6 +165,8 @@ Building blocks, in order:
    reads `CLAUDE.md`, implements on a branch, and opens a PR linked to the issue. An `@claude`
    comment from the owner re-triggers it. Feature and bug forms carry the modules touched and
    the design system components, too. First real ticket: the delete dialog.
+   It also fixes CI failures on its own pull requests, and on any labeled `autofix`: two attempts,
+   then `needs-human` ([ADR-0028](adr/0028-software-factory-ci-fixer.md)).
 3. ✅ **Reviewer** ([ADR-0026](adr/0026-software-factory-reviewer.md)): a second agent with a different prompt and no stake in the implementation
    reviews every PR against the ticket's acceptance criteria and the repo rules. It posts inline
    comments, then a human approves (you stay in the loop at first).
