@@ -2,10 +2,13 @@
 # comment from the repository owner on an issue or pull request, runs Claude Code on a branch.
 # It builds the ticket to `pnpm check`'s bar and opens a pull request; a human always merges.
 #
-# Only `issues` and `issue_comment` trigger it (pull request conversation comments are
-# `issue_comment` events). Both always run this file and the agent's instructions from `main`,
-# never from a branch, and the `factory` environment, which holds the Claude token, only admits
-# `main`. A branch can't change what the agent is told or reach the token.
+# When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`),
+# the same agent fixes it: up to two attempts, then it stops and asks for a human (ADR-0028).
+#
+# Only `issues`, `issue_comment` (pull request conversation comments included) and `workflow_run`
+# trigger it. All three always run this file and the agent's instructions from `main`, never from
+# a branch, and the `factory` environment, which holds the Claude token, only admits `main`. A
+# branch can't change what the agent is told or reach the token.
 name: Factory
 
 on:
@@ -13,13 +16,16 @@ on:
     types: [labeled]
   issue_comment:
     types: [created]
+  workflow_run:
+    workflows: [CI, Dependency review, CodeQL]
+    types: [completed]
 
 permissions:
   contents: read
 
 # One run per ticket or pull request at a time; a second request waits rather than racing.
 concurrency:
-  group: factory-${{ github.event.issue.number }}
+  group: factory-${{ github.event.issue.number || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
@@ -131,3 +137,168 @@ jobs:
             body=$(printf 'Closes #%s\n\nThe implementer pushed this branch but did not open the pull request. **CI has not run: close and reopen this PR to start it.**' "$ISSUE")
             gh pr create --base main --head "$BRANCH" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
           fi
+
+  # Which failing pull request to fix, if any, and which attempt this is. Holds no secrets.
+  select-fix:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      issues: write
+    outputs:
+      pr: ${{ steps.pick.outputs.pr }}
+      sha: ${{ steps.pick.outputs.sha }}
+      branch: ${{ steps.pick.outputs.branch }}
+      attempt: ${{ steps.pick.outputs.attempt }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          MARKER: '<!-- factory-ci-fix -->'
+        run: |
+          pr=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$RUN_BRANCH" --state open --json number --jq '.[0].number // empty')
+          [ -n "$pr" ] || { echo "No open pull request for $RUN_BRANCH."; exit 0; }
+
+          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,labels,commits)
+          sha=$(jq -r .headRefOid <<<"$info")
+          labels=$(jq -c '[.labels[].name]' <<<"$info")
+
+          [ "$sha" = "$RUN_SHA" ] || { echo "#$pr has moved past $RUN_SHA; its own CI run decides."; exit 0; }
+          jq -e 'any(. == "factory" or . == "autofix")' <<<"$labels" >/dev/null ||
+            { echo "#$pr is neither a factory pull request nor labeled autofix."; exit 0; }
+          ! jq -e 'any(. == "needs-human")' <<<"$labels" >/dev/null ||
+            { echo "#$pr is waiting for a human."; exit 0; }
+
+          # Attempts since the last commit a human pushed: a push from the owner resets the count.
+          since=$(jq -r '[.commits[] | select(all(.authors[]; (.login // "") | test("^(claude|dependabot)") | not)) | .committedDate] | max // "1970-01-01T00:00:00Z"' <<<"$info")
+          attempts=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate \
+            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")) and .created_at > \"$since\")] | length" |
+            jq -s add)
+
+          if [ "${attempts:-0}" -ge 2 ]; then
+            gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --add-label needs-human
+            gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory tried to fix CI twice and it still fails. Over to you; push a fix, or remove \`needs-human\` to let it try again."
+            exit 0
+          fi
+
+          {
+            echo "pr=$pr"
+            echo "sha=$sha"
+            echo "branch=$RUN_BRANCH"
+            echo "attempt=$(( ${attempts:-0} + 1 ))"
+          } >> "$GITHUB_OUTPUT"
+
+  fix-ci:
+    needs: select-fix
+    if: needs.select-fix.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: factory
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write # re-runs failed jobs when the failure isn't the pull request's fault
+      id-token: write # exchanged for the Claude GitHub App's short-lived token
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
+      PR: ${{ needs.select-fix.outputs.pr }}
+      SHA: ${{ needs.select-fix.outputs.sha }}
+      BRANCH: ${{ needs.select-fix.outputs.branch }}
+      ATTEMPT: ${{ needs.select-fix.outputs.attempt }}
+    steps:
+      # main first, for the instructions; then the pull request's branch to work on.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Load the implementer's instructions from main
+        run: cp .github/factory/implementer.md "$RUNNER_TEMP/implementer.md"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BRANCH }}
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # The lockfile may be what's broken; the agent reinstalls if so.
+      - run: pnpm install --frozen-lockfile
+        continue-on-error: true
+
+      - name: Fix CI
+        id: claude
+        uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # CI on factory and Dependabot pull requests is started by those bots, and the action
+          # checks the upstream run's actor; select-fix already decided this pull request is ours.
+          allowed_bots: claude[bot],dependabot[bot]
+          prompt: |
+            CI failed on pull request #${{ env.PR }} (branch ${{ env.BRANCH }}, commit ${{ env.SHA }}).
+            The failed run: ${{ github.event.workflow_run.html_url }} (${{ github.event.workflow_run.name }}).
+            This is fix attempt ${{ env.ATTEMPT }} of 2. The branch is checked out. Follow "Fixing CI"
+            in your instructions and return the structured output.
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 100
+            --permission-mode acceptEdits
+            --append-system-prompt-file ${{ runner.temp }}/implementer.md
+            --allowedTools "Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
+            --disallowedTools "WebFetch,WebSearch"
+            --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","reran","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
+
+      - name: Explain a failed run
+        if: always() && steps.claude.outcome == 'failure'
+        run: |
+          file="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$file" ] || { echo "::error::The fixer failed before writing its output."; exit 0; }
+          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
+          echo "::error::The fixer failed: $reason"
+
+      # Deterministic: what the fixer pushed, and one marked comment per attempt (select-fix counts
+      # them). Runs even when the agent failed, so a failed attempt still counts.
+      - name: Check and report the attempt
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          outcome=$(jq -r '.outcome // "failed"' <<<"${RESULT:-{\}}")
+          summary=$(jq -r '.summary // "The fixer stopped without a summary; see the run log."' <<<"${RESULT:-{\}}")
+
+          # The fixer never changes its own rules or CI, whatever the pull request itself touches.
+          if gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...$BRANCH" --jq '.files[].filename' 2>/dev/null |
+            grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
+            outcome=protected
+            summary="The fix changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
+          fi
+
+          case "$outcome" in
+            fixed) head="pushed a fix" ;;
+            reran) head="re-ran the failed jobs: the failure wasn't caused by this pull request" ;;
+            *) head="couldn't fix it"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
+          esac
+
+          body=$(printf '<!-- factory-ci-fix -->\n### CI fix, attempt %s of 2: %s\n\n%s\n\n<sub>[Run](%s), for commit %s. ADR-0028.</sub>\n' \
+            "$ATTEMPT" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")
+          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
+          [ "$outcome" != protected ] || exit 1
