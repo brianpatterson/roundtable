@@ -2,15 +2,31 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   APPLICATION_STATUSES,
+  ApplicationNotFound,
   type Application,
   type ApplicationStatus,
 } from '@roundtable/contract';
+import { ApiError } from '@roundtable/contract/client';
 import { Alert, Button, Dialog, Select } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './ApplicationsTable.module.css';
 import { applicationsQueryKey } from './queries';
 
 const formatDate = (date: Date) => date.toLocaleDateString();
+
+/**
+ * Deletes an application. One that is already gone (deleted in another tab) is the outcome the
+ * user asked for, so its 404 counts as done: the list refetches and the dialog closes.
+ */
+async function deleteApplication(id: string) {
+  try {
+    await api.deleteApplication(id);
+  } catch (error) {
+    if (error instanceof ApiError && error.cause instanceof ApplicationNotFound) return;
+
+    throw error;
+  }
+}
 
 const statusOptions = APPLICATION_STATUSES.map((status) => ({
   value: status,
@@ -33,7 +49,7 @@ export function ApplicationsTable() {
   const [confirming, setConfirming] = useState(false);
   // Returning invalidate's promise keeps the mutation pending until the list has refetched, so the
   // row is gone by the time the dialog closes.
-  const remove = useMutation({ mutationFn: api.deleteApplication, onSuccess: invalidate });
+  const remove = useMutation({ mutationFn: deleteApplication, onSuccess: invalidate });
 
   const askToDelete = (application: Application) => {
     remove.reset();
@@ -116,7 +132,7 @@ export function ApplicationsTable() {
         }
         actions={
           <>
-            <Button variant="text" onClick={closeDialog}>
+            <Button variant="text" disabled={remove.isPending} onClick={closeDialog}>
               Cancel
             </Button>
             <Button

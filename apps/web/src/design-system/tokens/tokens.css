@@ -36,6 +36,8 @@
   --ds-color-on-error: light-dark(#ffffff, #601410);
   --ds-color-error-container: light-dark(#f9dedc, #8c1d18);
   --ds-color-on-error-container: light-dark(#410e0b, #f9dedc);
+  /* Dims the page behind a modal: Material's scrim role (black in both themes) at 32% */
+  --ds-color-scrim: light-dark(rgb(0 0 0 / 32%), rgb(0 0 0 / 32%));
 
   /* State layers: an overlay of the content color at these opacities */
   --ds-state-hover: 8%;
