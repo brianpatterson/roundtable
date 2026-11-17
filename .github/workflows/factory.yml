@@ -226,15 +226,20 @@ jobs:
       BRANCH: ${{ needs.select-fix.outputs.branch }}
       ATTEMPT: ${{ needs.select-fix.outputs.attempt }}
     steps:
-      # main first, for the instructions; then the pull request's branch to work on.
+      # main first, for the instructions; then the pull request's branch to work on. Neither keeps
+      # this job's token: a push made with it starts CI only after a manual approval
+      # ("action_required"), and the action's cleanup misses where checkout v7 stores it. The
+      # only credential left is the Claude App's, which the action sets on the remote.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - name: Load the implementer's instructions from main
         run: cp .github/factory/implementer.md "$RUNNER_TEMP/implementer.md"
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.BRANCH }}
+          persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@v7
         with:
