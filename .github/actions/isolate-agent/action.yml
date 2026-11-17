@@ -1,0 +1,24 @@
+# Prepares the runner so Claude Code can isolate what its agent runs (ADR-0029). The Claude action
+# does the same only when it serves non-write users; ours are trusted, but what they read (CI
+# logs, dependency code, tests) isn't always, and the job holds the Claude token and the App's.
+#
+# Pair it with `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'` on the Claude step: every command the agent
+# runs then starts without Anthropic credentials or the runner's OIDC and runtime tokens (which
+# could mint fresh App tokens), in its own PID namespace (bubblewrap).
+name: Isolate the agent
+description: Install bubblewrap and allow unprivileged user namespaces for Claude Code's subprocess isolation.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        for attempt in 1 2 3; do
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+          echo "apt-get attempt $attempt failed, retrying"
+          sleep 5
+        done
+        command -v bwrap >/dev/null || { echo "::error::bubblewrap is missing; the agent would run without isolation."; exit 1; }
+        # Ubuntu 24.04+ restricts unprivileged user namespaces through AppArmor; bubblewrap needs them.
+        if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        fi
