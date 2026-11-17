@@ -69,3 +69,11 @@ Options 1 and 2 together, plus a guard on what's published:
   release changes what it scrubs, this ADR's guarantees change with it.
 - Revisit with option 4 if the factory starts handling code from people other than the owner,
   or if the action gains a mode that separates the agent from the credentials.
+
+## Updates
+
+- **2026-11-17:** the first hardened run (#60) diagnosed the failure but couldn't fix it: with
+  `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` set, Claude Code forces the `default` permission mode and
+  ignores `acceptEdits`, so file edits were denied. The implementer and fixer now allow `Edit`,
+  `Write` and `MultiEdit` by name, and deny them on `.git/`, `.github/`, `.claude/` and
+  `CLAUDE.md`: the protected paths are now refused at the tool, not only checked afterwards.
