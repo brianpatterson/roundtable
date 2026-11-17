@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { authClient } from './auth-client';
 import { ResetPasswordPage } from './ResetPasswordPage';
@@ -38,8 +38,9 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
   // re-checks would unmount the sign-in page and lose its state (like "check your email").
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [ended, setEnded] = useState<EndedSession>();
-  // The session a sign-out request is ending. A ref, so the listener sees it before a re-render.
-  const signingOut = useRef<string>(undefined);
+  // The session a sign-out request is ending. Set from a click, which React renders (and
+  // re-subscribes the listener for) before any request's answer can call `sessionEnded()`.
+  const [signingOut, setSigningOut] = useState<string>();
   const [signOutFailed, setSignOutFailed] = useState(false);
   const sessionId = session.data?.session.id;
 
@@ -49,7 +50,7 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
         // No session, one already ended, or one the user is signing out of: nothing more to do.
         if (sessionId === undefined) return;
 
-        if (sessionId === ended?.id || sessionId === signingOut.current) return;
+        if (sessionId === ended?.id || sessionId === signingOut) return;
 
         setEnded({ id: sessionId, expired: true });
         // An earlier failed sign-out no longer applies to the next session.
@@ -57,7 +58,7 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
         // Before the signed-in view unmounts, so none of its queries refetch into another 401.
         queryClient.clear();
       }),
-    [sessionId, ended, queryClient],
+    [sessionId, ended, signingOut, queryClient],
   );
 
   // Once per expired session, however many requests failed: Better Auth then forgets it too.
@@ -82,8 +83,9 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
 
   async function signOut() {
     // Before the request goes out: a query that answers 401 meanwhile isn't an expiry.
-    signingOut.current = signedInId;
+    setSigningOut(signedInId);
     setSignOutFailed(false);
+
     const succeeded = await authClient.signOut().then(
       (result) => !result.error,
       () => false,
@@ -91,7 +93,7 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
 
     // The server may still accept the session: keep showing it as signed in, never fail open.
     if (!succeeded) {
-      signingOut.current = undefined;
+      setSigningOut(undefined);
       setSignOutFailed(true);
 
       return;

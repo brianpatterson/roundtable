@@ -30,10 +30,34 @@ let sessionChecks: number;
 
 /** What the server answers for sign-out; a test can hold it back until `releaseSignOut()`. */
 let signOutStatus: number;
+
+/** The sign-out request never reaches the server (no connection). */
+let signOutUnreachable: boolean;
 let signOutAnswered: Promise<void>;
 let releaseSignOut: () => void;
 
-function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+/** The fake server of the running test. */
+let currentServer: Fetch | undefined;
+
+/**
+ * A fake server for one test. Better Auth's client keeps the `fetch` it was created with, and an
+ * earlier test's client can still re-check its session for a moment after that test: its requests
+ * go nowhere, so they can't count as this test's.
+ */
+function fakeServer(): Fetch {
+  const server: Fetch = (input, init) =>
+    server === currentServer
+      ? answer(input, init)
+      : Promise.reject(new TypeError('Failed to fetch'));
+
+  currentServer = server;
+
+  return server;
+}
+
+function answer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const { pathname } = new URL(new Request(input, init).url);
 
   if (pathname === '/api/auth/get-session') {
@@ -43,6 +67,8 @@ function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   }
 
   if (pathname === '/api/auth/sign-out') {
+    if (signOutUnreachable) return Promise.reject(new TypeError('Failed to fetch'));
+
     return signOutAnswered.then(() =>
       signOutStatus === 200
         ? Response.json({ success: true })
@@ -59,8 +85,9 @@ beforeEach(() => {
   firstSession = signedIn;
   sessionChecks = 0;
   signOutStatus = 200;
+  signOutUnreachable = false;
   signOutAnswered = Promise.resolve();
-  vi.stubGlobal('fetch', fakeServer);
+  vi.stubGlobal('fetch', fakeServer());
 });
 
 afterEach(() => {
@@ -184,11 +211,11 @@ describe('AuthGate: session ended', () => {
   });
 
   it('stays signed in, with an error, when the sign-out request cannot reach the server', async () => {
+    // Through the fake server: Better Auth's client keeps the `fetch` it was created with.
+    signOutUnreachable = true;
     const { queryClient } = await renderGate();
 
-    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
-    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
-    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
 
     expect((await screen.findByRole('alert')).textContent).toBe(
       "Couldn't sign out. Check your connection and try again.",
