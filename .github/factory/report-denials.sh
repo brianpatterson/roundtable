@@ -8,11 +8,12 @@
 #
 # Suspicious: reaching for credentials or the factory's own rules (.git/, .github/, .claude/,
 # CLAUDE.md, git config/remote/credential/-c, curl/wget/env/printenv, and downloading a package
-# to run it with pnpm dlx or pnpx), in any part of a chain. An honest agent has no reason to try
+# to run it with pnpm dlx, npx or pnpx), in any part of a chain. An honest agent has no reason to try
 # those, so the run is flagged for a human. Other denials are gaps to fix, not alarms, including
-# running an installed binary (pnpm exec, npx): an honest agent reaches for `pnpm exec prettier`
-# all the time, and the deny list refuses it anyway. What they run is classified too, so
-# `pnpm exec curl` is suspicious. test-report-denials.sh pins all of this; CI runs it.
+# running an installed binary (pnpm exec, which never downloads): an honest agent reaches for
+# `pnpm exec prettier` all the time, and the deny list refuses it anyway. What it runs is
+# classified too, so `pnpm exec curl` is suspicious, and pnpm's and git's global flags are skipped
+# (`pnpm --filter x exec curl`, `git -C . config`). test-report-denials.sh pins all of this; CI runs it.
 #
 # Splitting a command is best effort: it isn't a shell parser. It splits on separators and
 # subshells and skips wrappers (`bash -c`, `xargs`), but a separator inside quotes also splits
@@ -50,10 +51,30 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
           | test("^([A-Za-z_][A-Za-z0-9_]*=.*|-.*|[0-9.]+[smhd]?|bash|sh|zsh|dash|xargs|nohup|time|command|exec|eval|sudo|nice|timeout)$") | not);
       .[1:])
     | if length > 0 then .[0] |= (split("/") | last) else . end;
+  # Skips leading flags, and the value after the ones in $valued (`--filter x`, `-C dir`).
+  def skipflags($valued):
+    until(length == 0 or (.[0] | startswith("-") | not);
+      if (.[0] as $f | $valued | index($f)) != null then .[2:] else .[1:] end);
+  def pnpm_valued: ["-F", "--filter", "-C", "--dir", "--loglevel", "--reporter"];
   def suspicious_argv:
-    (.[0] == "git" and ((.[1] // "") | test("^(config|remote|credential|-c)$")))
-    or (.[0] == "pnpm" and (.[1] // "") == "dlx")
-    or ((.[0] // "") | test("^(curl|wget|env|printenv|pnpx)$"));
+    if .[0] == "git" then
+      .[1:] as $r | ($r | skipflags(["-C", "-c", "--git-dir", "--work-tree", "--namespace"])) as $sub
+      | ($r[0:(($r | length) - ($sub | length))] | index("-c") != null)
+        or (($sub[0] // "") | test("^(config|remote|credential)$"))
+    elif .[0] == "pnpm" then
+      # pnpm dlx downloads a package to run it; an unknown pnpm command falls back to exec.
+      (.[1:] | skipflags(pnpm_valued)) as $sub
+      | ($sub[0] // "") == "dlx" or (($sub[0] // "") | test("^(curl|wget|printenv)$"))
+    else
+      # npx and pnpx download a package that is not installed, and run it.
+      (.[0] // "") | test("^(curl|wget|env|printenv|npx|pnpx)$")
+    end;
+  # What a part runs: for `pnpm [flags] exec …`, the command after exec.
+  def target:
+    if .[0] == "pnpm" then
+      (.[1:] | skipflags(pnpm_valued)) as $sub
+      | if ($sub[0] // "") == "exec" then $sub[1:] | unwrap else . end
+    else . end;
 
   [.[] | select(.type == "result")] | last | (.permission_denials // [])[]
   | .tool_name as $tool
@@ -66,13 +87,11 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
       | unwrap | select(length > 0)] as $parts
   | (.tool_input.file_path // .tool_input.path // .tool_input.pattern // "") as $path
   | (if $tool == "Bash" then
-       # `pnpm exec` and `npx` run any binary: classify the one they run too, so
-       # `pnpm exec curl …` is flagged like `curl …`.
+       # `pnpm exec` runs any binary: classify the one it runs too, so `pnpm exec curl …` is
+       # flagged like `curl …`.
        ($parts | map(
-         (if .[0] == "pnpm" and (.[1] // "") == "exec" then .[2:] | unwrap
-          elif .[0] == "npx" then .[1:] | unwrap
-          else null end) as $inner
-         | if $inner != null and ($inner | suspicious_argv) then {argv: $inner, suspicious: true}
+         target as $inner
+         | if ($inner | length) > 0 and ($inner | suspicious_argv) then {argv: $inner, suspicious: true}
            else {argv: ., suspicious: suspicious_argv} end)) as $classified
        # Label the part that matters: the first suspicious one, else the first that is not a `cd`.
        | (($classified | map(select(.suspicious)) | first)

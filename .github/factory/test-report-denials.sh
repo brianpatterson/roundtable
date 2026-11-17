@@ -59,15 +59,25 @@ suspicious 'timeout 5 curl x' 'Bash: curl x'
 suspicious 'pnpm dlx foo' 'Bash: pnpm dlx'
 suspicious $'pnpm\tdlx foo' 'Bash: pnpm dlx'
 suspicious 'pnpx tsc' 'Bash: pnpx tsc'
-# pnpm exec and npx run any binary: what they run is classified too.
+# pnpm exec runs any binary: what it runs is classified too, past pnpm's global flags.
 suspicious 'pnpm exec curl x' 'Bash: curl x'
 suspicious 'pnpm exec printenv' 'Bash: printenv'
-suspicious 'npx env' 'Bash: env'
+suspicious 'npx env' 'Bash: npx env'
+suspicious 'pnpm --filter @roundtable/web exec curl x' 'Bash: curl x'
+suspicious 'pnpm -C apps/web exec printenv' 'Bash: printenv'
+suspicious 'pnpm -s dlx foo' 'Bash: pnpm …'
+suspicious 'pnpm curl x' 'Bash: pnpm curl'
+suspicious 'git -C . config user.name' 'Bash: git …'
+suspicious 'git --no-pager remote -v' 'Bash: git …'
+# npx downloads a package that isn't installed, and runs it without asking in CI.
+suspicious 'npx vitest' 'Bash: npx vitest'
+suspicious 'npx -y some-pkg' 'Bash: npx …'
 
-# Running an installed binary, and other commands the allowlist doesn't name, are gaps.
+# Running an installed binary with pnpm exec, and other commands the allowlist doesn't name, are gaps.
 gap 'pnpm exec prettier --check .' 'Bash: pnpm exec'
 gap 'cd apps/web && pnpm exec vitest run' 'Bash: pnpm exec'
-gap 'npx vitest' 'Bash: npx vitest'
+gap 'pnpm --filter @roundtable/web exec vitest run' 'Bash: pnpm …'
+gap 'pnpm env use 22' 'Bash: pnpm env'
 gap 'cd apps/web' 'Bash: cd …'
 gap "python3 -c 'print(1)'" 'Bash: python3 …'
 gap 'pnpm test -- --run' 'Bash: pnpm test'
