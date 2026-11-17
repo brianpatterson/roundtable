@@ -2,9 +2,9 @@
 # stake in the change, reviews a pull request against its ticket and the repo's rules, then
 # updates one review comment. It never approves; the owner merges.
 #
-# It reviews the factory's pull requests once CI passes on each new commit, and any pull request
-# the owner labels `review`. Both triggers run this file from `main`, never from a branch, and the
-# pull request's code is only read, never run.
+# It reviews every pull request from this repository, except Dependabot's, once CI passes on each
+# new commit (ADR-0033), and any pull request the owner labels `review` at once. Both triggers run
+# this file from `main`, never from a branch, and the pull request's code is only read, never run.
 name: Review
 
 on:
@@ -52,14 +52,15 @@ jobs:
             [ -n "$pr" ] || { echo "No open pull request for $RUN_BRANCH."; exit 0; }
           fi
 
-          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,labels)
+          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,author)
           sha=$(echo "$info" | jq -r .headRefOid)
 
           if [ "$EVENT" = workflow_run ]; then
             # A newer commit gets its own CI run, and its own review.
             [ "$sha" = "$RUN_SHA" ] || { echo "#$pr has moved past $RUN_SHA."; exit 0; }
-            echo "$info" | jq -e '[.labels[].name] | any(. == "factory" or . == "review")' >/dev/null ||
-              { echo "#$pr is neither a factory pull request nor labeled review."; exit 0; }
+            # Dependabot's are left to the triage agent (roadmap block 5). ADR-0033.
+            echo "$info" | jq -e '.author.login | test("dependabot") | not' >/dev/null ||
+              { echo "#$pr is Dependabot's."; exit 0; }
           fi
 
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
