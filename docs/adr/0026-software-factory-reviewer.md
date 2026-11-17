@@ -67,6 +67,9 @@ Option 2 for automatic reviews, plus an on-demand trigger, with these constraint
   an agent that didn't write it, at the cost of one more run per green commit.
 - Findings are one comment with `file:line` references, not inline review comments: the action
   only offers its inline-comment tool on pull request events, and `workflow_run` isn't one.
+- The reviewer runs with the workflow's own `GITHUB_TOKEN`, not the Claude App's: the App's
+  token exchange rejected the first `pull_request_target` run ("Invalid OIDC token"). It only
+  needs to read, and the job's token is scoped to this run.
 - `allowed_bots: claude[bot]` is needed because the factory's pushes start CI as the Claude App,
   and the action checks the upstream run's actor. It admits only that App.
 - The reviewer can't run anything, so it can't catch what only running would show; CI, and the
