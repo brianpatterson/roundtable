@@ -64,8 +64,9 @@ jobs:
       - uses: actions/checkout@v7
       # Copied out of the workspace before the agent switches branches, so the instructions it
       # runs under are main's, whatever a branch contains.
-      - name: Load the implementer's instructions from main
-        run: cp .github/factory/implementer.md "$RUNNER_TEMP/implementer.md"
+      - name: Load the implementer's instructions and the secret guard from main
+        run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh "$RUNNER_TEMP/"
+      - uses: ./.github/actions/isolate-agent
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@v7
         with:
@@ -76,6 +77,10 @@ jobs:
       - name: Implement
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        env:
+          # Commands the agent runs get no Anthropic credentials and no OIDC or runtime tokens
+          # (ADR-0029); `gh` keeps its token. Requires ./.github/actions/isolate-agent.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           label_trigger: ready
@@ -90,8 +95,8 @@ jobs:
             --max-turns 150
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --allowedTools "Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
-            --disallowedTools "WebFetch,WebSearch"
+            --allowedTools "Bash(pnpm check:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**)"
 
       # The action hides Claude's messages from the public log, including the one that says why
       # a run failed (a rejected token, an unknown model). Show only that final message.
@@ -137,6 +142,31 @@ jobs:
             body=$(printf 'Closes #%s\n\nThe implementer pushed this branch but did not open the pull request. **CI has not run: close and reopen this PR to start it.**' "$ISSUE")
             gh pr create --base main --head "$BRANCH" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
           fi
+
+      # The agent posts its own comments and pull request description, so they're checked after
+      # the fact (ADR-0029): anything that looks like a credential is taken down, and the run fails
+      # so the owner rotates it.
+      - name: Take down anything that looks like a credential
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.claude.outputs.branch_name }}
+        run: |
+          leaked=0
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/comments" --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id'); do
+            if ! gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$id"
+              leaked=1
+            fi
+          done
+          for pr in $( { [ -n "$BRANCH" ] && gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'; } || true) $(gh pr view "$NUMBER" --json number --jq .number 2>/dev/null || true); do
+            if ! gh pr view "$pr" --json body --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
+              gh pr edit "$pr" --body "The description was removed because it matched a credential pattern (ADR-0029)."
+              leaked=1
+            fi
+          done
+          [ "$leaked" = 0 ] || { echo "::error::The agent published something that looks like a credential. It was taken down; rotate the credential."; exit 1; }
 
   # Which failing pull request to fix, if any, and which attempt this is. Holds no secrets.
   select-fix:
@@ -234,8 +264,10 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - name: Load the implementer's instructions from main
-        run: cp .github/factory/implementer.md "$RUNNER_TEMP/implementer.md"
+      - name: Load the implementer's instructions and the secret guard from main
+        run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh "$RUNNER_TEMP/"
+      # From main too, before the branch replaces the workspace: it runs with sudo.
+      - uses: ./.github/actions/isolate-agent
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.BRANCH }}
@@ -252,6 +284,8 @@ jobs:
       - name: Fix CI
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' # ADR-0029, as in the implement job
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # CI on factory and Dependabot pull requests is started by those bots, and the action
@@ -267,8 +301,8 @@ jobs:
             --max-turns 100
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --allowedTools "Bash(pnpm:*),Bash(git:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
-            --disallowedTools "WebFetch,WebSearch"
+            --allowedTools "Bash(pnpm check:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**)"
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","reran","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
       - name: Explain a failed run
@@ -302,6 +336,11 @@ jobs:
             reran) head="re-ran the failed jobs: the failure wasn't caused by this pull request" ;;
             *) head="couldn't fix it"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
           esac
+
+          # Never publish what looks like a credential (ADR-0029).
+          if ! "$RUNNER_TEMP/guard-secrets.sh" <<<"$summary"; then
+            summary="The fixer's summary was withheld because it matched a credential pattern. See the run, and rotate the credential."
+          fi
 
           body=$(printf '<!-- factory-ci-fix -->\n### CI fix, attempt %s of 2: %s\n\n%s\n\n<sub>[Run](%s), for commit %s. ADR-0028.</sub>\n' \
             "$ATTEMPT" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")

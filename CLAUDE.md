@@ -44,6 +44,8 @@ each module is what a future service or microfrontend would become.
   implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
   Tickets come from the forms in `.github/ISSUE_TEMPLATE/`. The same workflow fixes CI failures on
   factory PRs and on PRs labeled `autofix` ([ADR-0028](docs/adr/0028-software-factory-ci-fixer.md)).
+  Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
+  publish only through `.github/factory/guard-secrets.sh` ([ADR-0029](docs/adr/0029-software-factory-credential-hardening.md)).
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on factory PRs once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.

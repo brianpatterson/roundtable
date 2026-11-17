@@ -90,6 +90,9 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - name: Load the secret guard from main
+        run: cp .github/factory/guard-secrets.sh "$RUNNER_TEMP/"
+      - uses: ./.github/actions/isolate-agent
       # The pull request's code, to read. Nothing in it is installed or run.
       - uses: actions/checkout@v7
         with:
@@ -100,6 +103,8 @@ jobs:
       - name: Review
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' # ADR-0029: what it runs gets no Anthropic credentials
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # This job's own token, not the Claude App's: the App's token exchange rejects runs started
@@ -140,6 +145,9 @@ jobs:
             changes) verdict='✋ Changes needed' ;;
             *) echo "::error::The reviewer returned no verdict."; exit 1 ;;
           esac
+
+          # Never publish what looks like a credential (ADR-0029).
+          "$RUNNER_TEMP/guard-secrets.sh" <<<"$RESULT" || exit 1
 
           marker='<!-- factory-review -->'
           body=$(printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s, reviewed by the factory'"'"'s reviewer agent (ADR-0026). It never approves; the owner merges.</sub>\n' \
