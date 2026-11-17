@@ -1,0 +1,181 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QueryClient } from '@tanstack/react-query';
+
+// Session expiry, for every module at once: the whole shell renders against a stand-in `fetch`.
+// The session answers once with a user; then the server's session expires, the way one runs out:
+// applications calls answer 401 and Better Auth's session answers null.
+const sessionFor = (id: string) => ({
+  session: {
+    id,
+    userId: 'user-1',
+    token: `token-${id}`,
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    createdAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-01T00:00:00.000Z',
+  },
+  user: {
+    id: 'user-1',
+    name: 'Ada',
+    email: 'ada@example.com',
+    emailVerified: true,
+    createdAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-01T00:00:00.000Z',
+  },
+});
+
+const acme = {
+  id: '00000000-0000-4000-8000-000000000001',
+  company: 'Acme',
+  jobTitle: 'Engineer',
+  jobUrl: null,
+  status: 'applied',
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-02T00:00:00.000Z',
+};
+
+/** The server's session: null once it has expired. */
+let session: ReturnType<typeof sessionFor> | null;
+
+/** How many applications calls succeed before the session expires. */
+let callsBeforeExpiry: number;
+
+/** Changes fail with a 500, which has nothing to do with the session. */
+let serverError: boolean;
+
+async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const request = new Request(input, init);
+  const { pathname } = new URL(request.url);
+
+  if (pathname === '/api/auth/get-session') return Response.json(session);
+
+  if (pathname === '/api/auth/sign-in/email') {
+    session = sessionFor('session-2');
+
+    return Response.json({ redirect: false, token: session.session.token, user: session.user });
+  }
+
+  if (pathname === '/api/auth/sign-out') {
+    session = null;
+
+    return Response.json({ success: true });
+  }
+
+  if (pathname === '/api/auth-config') return Response.json({ providers: [] });
+
+  if (request.method !== 'GET' && serverError) return new Response(null, { status: 500 });
+
+  if (pathname.startsWith('/api/applications')) {
+    if (session && callsBeforeExpiry > 0) {
+      callsBeforeExpiry -= 1;
+
+      return Response.json([acme]);
+    }
+
+    session = null;
+
+    return Response.json({ _tag: 'Unauthorized' }, { status: 401 });
+  }
+
+  return new Response(null, { status: 404 });
+}
+
+beforeEach(() => {
+  session = sessionFor('session-1');
+  callsBeforeExpiry = 0;
+  serverError = false;
+  vi.stubGlobal('fetch', fakeServer);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+const renderShell = async () => {
+  // Better Auth keeps the session in a store created with the client, which outlives a test
+  // (it stays subscribed for a second after unmount). Fresh modules give each test a new one.
+  vi.resetModules();
+  const { App } = await import('./App');
+  const { createQueryClient, Providers } = await import('./Providers');
+  const queryClient = createQueryClient();
+
+  render(
+    <Providers queryClient={queryClient}>
+      <App />
+    </Providers>,
+  );
+
+  return queryClient;
+};
+
+/** Every query and mutation of the signed-in app is gone; only the sign-in page's own remain. */
+const expectSignedInCacheCleared = (queryClient: QueryClient) => {
+  expect(queryClient.getQueryCache().findAll({ queryKey: ['applications'] })).toEqual([]);
+  expect(queryClient.getMutationCache().getAll()).toEqual([]);
+};
+
+const expectSignInPageWithNotice = async () => {
+  expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+  expect(screen.getByRole('status').textContent).toBe('You were signed out. Sign in again.');
+  expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+};
+
+describe('App: session expiry', () => {
+  it('returns to the sign-in page, with a notice, when an applications query answers 401', async () => {
+    const queryClient = await renderShell();
+
+    await expectSignInPageWithNotice();
+    expectSignedInCacheCleared(queryClient);
+  });
+
+  it('returns to the sign-in page, with a notice, when an applications mutation answers 401', async () => {
+    callsBeforeExpiry = 1;
+    const queryClient = await renderShell();
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    await userEvent.type(screen.getByLabelText('Company'), 'Globex');
+    await userEvent.type(screen.getByLabelText('Job title'), 'Designer');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await expectSignInPageWithNotice();
+    expectSignedInCacheCleared(queryClient);
+  });
+
+  it('shows the signed-in app once the user signs in again, and no notice after signing out', async () => {
+    const queryClient = await renderShell();
+
+    await expectSignInPageWithNotice();
+    callsBeforeExpiry = 1;
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse battery');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    expect(screen.getByText('Ada')).toBeDefined();
+    expect(screen.queryByRole('status')).toBeNull();
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps the user signed in, showing the error, when a request fails for another reason', async () => {
+    callsBeforeExpiry = 1;
+    serverError = true;
+    await renderShell();
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    await userEvent.type(screen.getByLabelText('Company'), 'Globex');
+    await userEvent.type(screen.getByLabelText('Job title'), 'Designer');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
+  });
+});
