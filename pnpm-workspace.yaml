@@ -3,3 +3,8 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+# Security fixes a direct dependency hasn't shipped (docs/dependencies.md → Overrides).
+overrides:
+  # GHSA-g3hv-75wg-m249 (moderate, ReDoS), fixed only in minimatch 11. Stryker 10.1.1 pins
+  # ~10.2.4 but uses only `minimatch` and `Minimatch`, which 11 keeps.
+  '@stryker-mutator/core>minimatch': ^11.0.1
