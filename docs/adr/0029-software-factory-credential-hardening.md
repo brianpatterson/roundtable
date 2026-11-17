@@ -111,3 +111,9 @@ Options 1 and 2 together, plus a guard on what's published:
     Both entries are broader than their use: `pnpm prettier` also takes `--plugin` (code from the
     workspace, which `pnpm test` already runs) and `git merge` takes any fetched ref; only the
     instructions narrow them.
+- **2026-11-17:** the denial report also classifies what pnpm runs for an unknown command
+  (`pnpm git config …`, `pnpm bash -c 'curl …'`: pnpm runs it like `exec`), treats git's
+  `--config-env` like `-c`, and skips more global flags that take a value (`--filter-prod`,
+  `--workspace-concurrency`, `--exec-path`, `--super-prefix`). The implementer and fixer deny
+  `git --config-env` outright, like `git -c`: it was refused only because no allowlist entry
+  matched it. Each case is pinned in `.github/factory/test-report-denials.sh`.

@@ -13,7 +13,8 @@
 # running an installed binary (pnpm exec, which never downloads): an honest agent reaches for
 # `pnpm exec prettier` all the time, and the deny list refuses it anyway. What it runs is
 # classified too, so `pnpm exec curl` is suspicious, and pnpm's and git's global flags are skipped
-# (`pnpm --filter x exec curl`, `git -C . config`). test-report-denials.sh pins all of this; CI runs it.
+# (`pnpm --filter x exec curl`, `git -C . config`). A global flag that takes a value but isn't
+# listed hides what follows it. test-report-denials.sh pins all of this; CI runs it.
 #
 # Splitting a command is best effort: it isn't a shell parser. It splits on separators and
 # subshells and skips wrappers (`bash -c`, `xargs`), but a separator inside quotes also splits
@@ -55,25 +56,31 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
   def skipflags($valued):
     until(length == 0 or (.[0] | startswith("-") | not);
       if (.[0] as $f | $valued | index($f)) != null then .[2:] else .[1:] end);
-  def pnpm_valued: ["-F", "--filter", "-C", "--dir", "--loglevel", "--reporter"];
+  def pnpm_valued:
+    ["-F", "--filter", "--filter-prod", "-C", "--dir", "--loglevel", "--reporter", "--workspace-concurrency"];
   def suspicious_argv:
     if .[0] == "git" then
-      .[1:] as $r | ($r | skipflags(["-C", "-c", "--git-dir", "--work-tree", "--namespace"])) as $sub
-      | ($r[0:(($r | length) - ($sub | length))] | index("-c") != null)
+      # `-c` and `--config-env` set config for one command, like `git config` does.
+      .[1:] as $r
+      | ($r | skipflags(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"])) as $sub
+      | ($r[0:(($r | length) - ($sub | length))] | any(. == "-c" or startswith("--config-env")))
         or (($sub[0] // "") | test("^(config|remote|credential)$"))
     elif .[0] == "pnpm" then
-      # pnpm dlx downloads a package to run it; an unknown pnpm command falls back to exec.
-      (.[1:] | skipflags(pnpm_valued)) as $sub
-      | ($sub[0] // "") == "dlx" or (($sub[0] // "") | test("^(curl|wget|printenv)$"))
+      # pnpm dlx downloads a package to run it. (An unknown pnpm command runs like exec: see target.)
+      (.[1:] | skipflags(pnpm_valued)) as $sub | ($sub[0] // "") == "dlx"
     else
       # npx and pnpx download a package that is not installed, and run it.
       (.[0] // "") | test("^(curl|wget|env|printenv|npx|pnpx)$")
     end;
-  # What a part runs: for `pnpm [flags] exec …`, the command after exec.
+  # What a part runs: for `pnpm [flags] exec …`, the command after exec. pnpm runs an unknown
+  # command the same way (`pnpm git config …`), so that is classified too, except `env` and `dlx`,
+  # which are pnpm commands of its own.
   def target:
     if .[0] == "pnpm" then
       (.[1:] | skipflags(pnpm_valued)) as $sub
-      | if ($sub[0] // "") == "exec" then $sub[1:] | unwrap else . end
+      | if ($sub[0] // "") == "exec" then $sub[1:] | unwrap
+        elif ($sub[0] // "") | test("^(env|dlx)?$") then .
+        else $sub | unwrap end
     else . end;
 
   [.[] | select(.type == "result")] | last | (.permission_denials // [])[]
