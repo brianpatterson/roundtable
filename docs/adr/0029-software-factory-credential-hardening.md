@@ -95,4 +95,6 @@ Options 1 and 2 together, plus a guard on what's published:
   stay suspicious. The implementer and fixer also allow `cd` (agents chain `cd dir && pnpm …`,
   and every part of a chain must be allowed), `pnpm format` with arguments, any `pnpm prettier`
   command (`--check` was refused) and `git merge` (merging `main` to resolve a conflict was refused
-  on #76).
+  on #76). The report also classifies each part of a chain on its own (split on `&&`, `||`, `;`,
+  `|`, without leading `VAR=…` or the program's directory), so a refused `cd x && curl …` is
+  flagged like `curl …`.

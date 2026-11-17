@@ -7,9 +7,9 @@
 # like one (lowercase words, nothing that could carry encoded data), and a file's top-level folder.
 #
 # Suspicious: reaching for credentials or the factory's own rules (.git/, .github/, .claude/,
-# CLAUDE.md, git config/remote/credential/-c, curl/wget/env/printenv). An honest agent has no
-# reason to try those, so the run is flagged for a human. Other denials are gaps to fix, not
-# alarms, including running a package's binary (pnpm exec/dlx, npx, pnpx): an honest agent
+# CLAUDE.md, git config/remote/credential/-c, curl/wget/env/printenv, in any part of a chain).
+# An honest agent has no reason to try those, so the run is flagged for a human. Other denials
+# are gaps to fix, not alarms, including running a package's binary (pnpm exec/dlx, npx, pnpx): an honest agent
 # reaches for `pnpm exec prettier` all the time, and the deny list refuses it anyway.
 #
 # Writes `suspicious=true|false` to $GITHUB_OUTPUT.
@@ -36,13 +36,25 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
 
   [.[] | select(.type == "result")] | last | (.permission_denials // [])[]
   | .tool_name as $tool
-  | (.tool_input.command // "" | split(" ") | map(select(. != ""))) as $argv
+  # A command is a chain (`cd dir && pnpm …`): classify every part, so a refused
+  # `cd x && curl …` is flagged like `curl …`. Each part drops leading `VAR=…` assignments and
+  # the directory of its program (`/usr/bin/curl` is `curl`).
+  | [(.tool_input.command // "") | splits("&&|\\|\\||;|\\||\n")
+      | split(" ") | map(select(. != ""))
+      | until(length == 0 or (.[0] | test("^[A-Za-z_][A-Za-z0-9_]*=") | not); .[1:])
+      | select(length > 0) | .[0] |= (split("/") | last)] as $parts
   | (.tool_input.file_path // .tool_input.path // .tool_input.pattern // "") as $path
   | (if $tool == "Bash" then
-       ($argv[0:2] | map(word) | join(" ")) as $cmd
-       | [(if ($argv[0] == "git" and (($argv[1] // "") | test("^(config|remote|credential|-c)$")))
-             or ($argv[0] | test("^(curl|wget|env|printenv)$"))
-           then "suspicious" else "gap" end), "Bash: " + $cmd]
+       ($parts | map(
+         {argv: ., suspicious: ((.[0] == "git" and ((.[1] // "") | test("^(config|remote|credential|-c)$")))
+                                or (.[0] | test("^(curl|wget|env|printenv)$")))})) as $classified
+       # Label the part that matters: the first suspicious one, else the first that is not a `cd`.
+       | (($classified | map(select(.suspicious)) | first)
+          // ($classified | map(select(.argv[0] != "cd")) | first)
+          // $classified[0]
+          // {argv: [], suspicious: false}) as $shown
+       | [(if $shown.suspicious then "suspicious" else "gap" end),
+          "Bash: " + ($shown.argv[0:2] | map(word) | join(" "))]
      elif $path != "" then
        [(if ($path | ltrimstr($workspace) | ltrimstr("./") | test("^(\\.git|\\.github|\\.claude)(/|$)|^CLAUDE\\.md$"))
          then "suspicious" else "gap" end), ($tool | tool) + ": " + ($path | folder)]

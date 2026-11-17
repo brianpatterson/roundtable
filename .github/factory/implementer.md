@@ -54,7 +54,8 @@ acceptance criterion), and the docs checklist, honestly ticked. The first line m
 Push your branch, then open the pull request yourself:
 `gh pr create --base main --title "<conventional subject>" --body-file .factory/pr-body.md --label factory`.
 Add `--draft` if `pnpm check` still fails. CI runs on it either way, and a human reviews and
-merges; you never merge.
+merges; you never merge the pull request. Merge `main` into your branch (`git merge origin/main`)
+only when the owner asks you to resolve a conflict.
 
 ## Follow-ups
 
