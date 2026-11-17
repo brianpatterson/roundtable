@@ -77,3 +77,13 @@ Options 1 and 2 together, plus a guard on what's published:
   ignores `acceptEdits`, so file edits were denied. The implementer and fixer now allow `Edit`,
   `Write` and `MultiEdit` by name, and deny them on `.git/`, `.github/`, `.claude/` and
   `CLAUDE.md`: the protected paths are now refused at the tool, not only checked afterwards.
+- **2026-11-17:** every agent job reports the tool calls it was refused
+  (`.github/factory/report-denials.sh`), so allowlist gaps are visible (the #65 run had 12
+  denials and no way to tell what they were). The report is public and a manipulated agent
+  chooses what it tries, so it must not become a way to publish data: it shows only the tool, a
+  command's program and subcommand when they're plain lowercase words, and a path's top-level
+  folder, and it passes the secret guard. Denials that reach for credentials or the factory's
+  rules (`.git/`, `.github/`, `.claude/`, `CLAUDE.md`, `git config`/`remote`/`credential`/`-c`,
+  `pnpm exec`/`dlx`, `npx`, `curl`, `env`) mark the run suspicious: the job fails, the issue or
+  pull request gets `needs-human` and a comment, and a suspicious review isn't posted. Detection
+  is the workflow's, not the agent's: the agent is the party that may be compromised.

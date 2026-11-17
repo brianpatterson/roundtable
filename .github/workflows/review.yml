@@ -90,8 +90,8 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - name: Load the secret guard from main
-        run: cp .github/factory/guard-secrets.sh "$RUNNER_TEMP/"
+      - name: Load the secret guard and the denial report from main
+        run: cp .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
       # The pull request's code, to read. Nothing in it is installed or run.
       - uses: actions/checkout@v7
@@ -147,6 +147,22 @@ jobs:
           [ -f "$file" ] || { echo "::error::The reviewer failed before writing its output."; exit 0; }
           reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
           echo "::error::The reviewer failed: $reason"
+
+      # Lists what the agent was refused, and flags the run for a human if it reached for
+      # credentials or the factory's own rules (ADR-0029).
+      - name: Report denied tool calls
+        id: denials
+        if: always()
+        run: '"$RUNNER_TEMP/report-denials.sh"'
+      - name: Flag a suspicious run
+        if: always() && steps.denials.outputs.suspicious == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ env.PR }}
+        run: |
+          gh issue edit "$NUMBER" -R "$GITHUB_REPOSITORY" --add-label needs-human
+          gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
+          exit 1
 
       # One review comment per pull request, updated in place on every new commit.
       - name: Post the review
