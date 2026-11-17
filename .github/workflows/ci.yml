@@ -66,6 +66,73 @@ jobs:
       - name: Test
         run: pnpm test
 
+  # Mutation testing (ADR-0027), advisory: Stryker changes the web app's code in small ways and
+  # reports every change no test notices. It never fails on the score; it fails only if Stryker
+  # itself can't run. The reviewer reads the survivors from this run's artifact (ADR-0026).
+  mutation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read # which files the pull request changed
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The whole web app takes about 20 seconds, so every run is a full run.
+      - name: Mutate the web app
+        run: pnpm --filter @roundtable/web test:mutation
+      - name: Report the survivors
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPORT: apps/web/reports/mutation/mutation.json
+        run: |
+          changed=$(gh pr diff "$PR" -R "$GITHUB_REPOSITORY" --name-only | sed -n 's|^apps/web/||p' | jq -R . | jq -s .)
+
+          {
+            echo '## Mutation testing (web)'
+            echo
+            jq -r '
+              [.files[].mutants[]] as $all
+              | ([$all[] | select(.status == "Killed" or .status == "Timeout")] | length) as $killed
+              | ([$all[] | select(.status == "Survived")] | length) as $survived
+              | ([$all[] | select(.status == "NoCoverage")] | length) as $uncovered
+              | "\($all | length) mutants: \($killed) killed, \($survived) survived, \($uncovered) not covered by any test. "
+                + "Score \(if ($killed + $survived + $uncovered) > 0 then (100 * $killed / ($killed + $survived + $uncovered) | floor) else 0 end)%, "
+                + "\(if ($killed + $survived) > 0 then (100 * $killed / ($killed + $survived) | floor) else 0 end)% of covered code."' "$REPORT"
+            echo
+            echo '### Survivors in files this pull request changed'
+            echo
+            jq -r --argjson changed "$changed" '
+              [.files | to_entries[] | select(.key as $f | $changed | index($f)) | .key as $f
+                | .value.mutants[] | select(.status == "Survived" or .status == "NoCoverage")
+                | "- `apps/web/\($f):\(.location.start.line)` \(.status): \(.mutatorName), `` \(.replacement | gsub("\n"; " ") | .[0:80]) ``"]
+              | if length == 0 then "None." else .[] end' "$REPORT"
+            echo
+            echo '<details><summary>All survivors</summary>'
+            echo
+            jq -r '.files | to_entries[] | .key as $f | .value.mutants[] | select(.status == "Survived")
+              | "- `apps/web/\($f):\(.location.start.line)` \(.mutatorName), `` \(.replacement | gsub("\n"; " ") | .[0:80]) ``"' "$REPORT"
+            echo
+            echo '</details>'
+          } > survivors.md
+
+          cat survivors.md >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p mutation-report && mv survivors.md mutation-report/ && cp "$REPORT" mutation-report/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: mutation-report/
+          retention-days: 14
+
   # The production images must build. They're not pushed here; the deploy pipeline does that.
   images:
     runs-on: ubuntu-latest

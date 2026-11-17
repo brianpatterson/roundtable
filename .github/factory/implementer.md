@@ -33,10 +33,16 @@ Write specific questions in your comment, commit nothing, and stop: the workflow
 4. If you added or bumped a dependency, run `pnpm audit --audit-level moderate` and fix what it
    finds the way "Security failures" below says, before going on. CI's dependency review fails on
    the same advisories.
-5. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
+5. If you changed `apps/web/src`, run `pnpm --filter @roundtable/web test:mutation` (about 20
+   seconds) and look at the survivors in the files you changed
+   (`apps/web/reports/mutation/mutation.json`, status `Survived` or `NoCoverage`). Each is a small
+   change to your code that no test noticed: strengthen a test to catch it, or, if the mutant
+   changes nothing observable, say so in the PR description. CI runs the same and the reviewer
+   reads what survives ([ADR-0027](../../docs/adr/0027-mutation-testing-stryker.md)).
+6. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
    test to get there. If you can't make it pass, say exactly what fails and why in the PR
    description.
-6. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
+7. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
 
 ## The pull request
 
