@@ -40,3 +40,4 @@ you'd want to explain in an interview. Copy [template.md](template.md).
 | 0028 | [Let the factory fix CI failures on its pull requests, twice, then hand over](0028-software-factory-ci-fixer.md)              | Accepted, amended by [0030](0030-factory-code-scanning-findings.md) |
 | 0029 | [Keep the factory's credentials out of what its agents run and publish](0029-software-factory-credential-hardening.md)        | Accepted                                                            |
 | 0030 | [Route code scanning findings into the factory, and keep agent jobs off main's cache](0030-factory-code-scanning-findings.md) | Accepted                                                            |
+| 0031 | [Review the architecture weekly with Matt Pocock's skill, and check design on every PR](0031-weekly-architecture-review.md)   | Accepted                                                            |
