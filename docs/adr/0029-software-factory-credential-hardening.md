@@ -93,5 +93,6 @@ Options 1 and 2 together, plus a guard on what's published:
   commands at the tool anyway, so flagging them only trained the owner to ignore the label.
   Credential paths, `git config`/`remote`/`credential`/`-c`, `curl`, `wget`, `env` and `printenv`
   stay suspicious. The implementer and fixer also allow `cd` (agents chain `cd dir && pnpm …`,
-  and every part of a chain must be allowed), `pnpm format` with arguments and any `pnpm prettier`
-  command (`--check` was refused).
+  and every part of a chain must be allowed), `pnpm format` with arguments, any `pnpm prettier`
+  command (`--check` was refused) and `git merge` (merging `main` to resolve a conflict was refused
+  on #76).
