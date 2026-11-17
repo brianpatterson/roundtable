@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  pull-requests: read # which files a pull request changed
 
 jobs:
   analyze:
@@ -30,3 +31,25 @@ jobs:
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
+          output: sarif-results
+      # A finding doesn't fail this workflow on its own, so the factory's fixer, which runs when it
+      # fails, never heard of one (ADR-0030). On a pull request, fail on findings in the files it
+      # changed, and print them, so the fixer can read them with `gh run view --log-failed`.
+      # Findings elsewhere are older alerts; they're triaged from the Security tab.
+      - name: Fail on findings in changed files
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          changed=$(gh pr diff "$PR" -R "$GITHUB_REPOSITORY" --name-only | jq -R . | jq -s .)
+          findings=$(jq -r --argjson changed "$changed" '
+            .runs[].results[]
+            | (.locations[0].physicalLocation // {}) as $where
+            | ($where.artifactLocation.uri // "") as $file
+            | select($changed | index($file))
+            | "::error file=\($file),line=\($where.region.startLine // 1)::CodeQL \(.ruleId): \(.message.text | gsub("\n"; " "))"
+          ' sarif-results/*.sarif)
+          [ -z "$findings" ] && { echo "No CodeQL findings in the files this pull request changed."; exit 0; }
+          echo "$findings"
+          exit 1
