@@ -78,6 +78,13 @@ gaps=$(summarize gap)
   fi
 } >> "$GITHUB_STEP_SUMMARY"
 
+# The same labels as log notices: run summaries can't be read through the API or signed out, but
+# annotations can, so whoever checks the run sees which calls were refused.
+while read -r count label; do
+  [ -n "$label" ] && echo "::notice::Denied ${count}x: $label"
+done <<<"$flagged
+$gaps"
+
 if [ -n "$flagged" ]; then
   suspicious=true
   echo "::warning::The agent tried tool calls that reach for credentials or the factory's rules; the run summary lists them."

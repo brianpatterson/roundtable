@@ -57,7 +57,7 @@ jobs:
             --append-system-prompt-file ${{ runner.temp }}/architect.md
             --allowedTools "Read,Glob,Grep,Task,Agent,Edit(./architecture-report/**),Write(./architecture-report/**),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(ls:*),Bash(gh issue list:*),Bash(gh issue view:*)"
             --disallowedTools "WebFetch,WebSearch,Read(./.git/**),Grep(./.git/**),Glob(./.git/**)"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["candidates","top_recommendation"],"properties":{"top_recommendation":{"type":"string"},"candidates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["title","strength","files","problem","solution","benefits","adr_conflict","questions","glossary"],"properties":{"title":{"type":"string"},"strength":{"type":"string","enum":["Strong","Worth exploring","Speculative"]},"files":{"type":"array","items":{"type":"string"}},"problem":{"type":"string"},"solution":{"type":"string"},"benefits":{"type":"string"},"adr_conflict":{"type":"string"},"questions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["question","recommendation"],"properties":{"question":{"type":"string"},"recommendation":{"type":"string"}}}},"glossary":{"type":"array","items":{"type":"string"}}}}}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["candidates","top_recommendation"],"properties":{"top_recommendation":{"type":"string"},"candidates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["title","strength","files","problem","solution","benefits","adr_conflict","questions","glossary","acceptance_criteria","out_of_scope"],"properties":{"title":{"type":"string"},"strength":{"type":"string","enum":["Strong","Worth exploring","Speculative"]},"files":{"type":"array","items":{"type":"string"}},"problem":{"type":"string"},"solution":{"type":"string"},"benefits":{"type":"string"},"adr_conflict":{"type":"string"},"questions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["question","recommendation"],"properties":{"question":{"type":"string"},"recommendation":{"type":"string"}}}},"glossary":{"type":"array","items":{"type":"string"}},"acceptance_criteria":{"type":"array","items":{"type":"string"}},"out_of_scope":{"type":"string"}}}}}}'
 
       - name: Explain a failed run
         if: always() && steps.claude.outcome == 'failure'
@@ -123,10 +123,10 @@ jobs:
               "### Decisions, with recommendations\n\nThe questions the skill would have asked you. Labeling this `ready` accepts every recommendation; to change one, say so in a comment first.\n\n" +
               (.questions | map("- **\(.question)** Recommended: \(.recommendation)") | join("\n")) + "\n\n" +
               "### Acceptance criteria\n\n" +
-              "- Given the change, when the full test suite runs, then behavior is unchanged: every existing test passes, or is replaced by one at the new interface that covers the same behavior.\n" +
-              "- Given the deepened module, then its tests exercise it through its interface, not past it.\n" +
+              (.acceptance_criteria | map("- \(.)") | join("\n")) + "\n" +
+              "- Given the full test suite, then every existing test passes, or is replaced by one at the new interface that covers the same behavior, and the deepened module is tested through its interface.\n" +
               "- Given the decisions above, then the change follows each recommendation unless a comment from the owner changes it.\n\n" +
-              "### Out of scope\n\nAny change in behavior a user could notice.\n\n" +
+              "### Out of scope\n\n\(.out_of_scope)\n\n" +
               "### Docs impact\n\nAn ADR if this changes a module'"'"'s interface across modules or departs from an existing ADR; `docs/architecture.md` if components move." +
               (if (.glossary | length) > 0 then " Proposed `GLOSSARY.md` entries:\n\n" + (.glossary | map("- \(.)") | join("\n")) else "" end) +
               "\n\n<sub>From the weekly architecture review ([run](\($run)), ADR-0031). Not labeled `ready`: that is the owner'"'"'s call.</sub>"
