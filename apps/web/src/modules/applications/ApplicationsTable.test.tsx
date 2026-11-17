@@ -44,8 +44,13 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     return response;
   }
 
-  return new Response(null, { status: 404 });
+  // What the real API answers for an id that isn't (or is no longer) there.
+  if (request.method === 'DELETE') return Response.json({ _tag: 'ApplicationNotFound' }, notFound);
+
+  return new Response(null, notFound);
 }
+
+const notFound = { status: 404 };
 
 beforeEach(() => {
   rows = [row(ACME_ID, 'Acme', 'Engineer'), row(GLOBEX_ID, 'Globex', 'Designer')];
@@ -108,7 +113,7 @@ describe('ApplicationsTable: deleting', () => {
     expect(document.activeElement).toBe(deleteButtonFor('Acme'));
   });
 
-  it('deletes on Delete, disabled while the request is in flight, then closes', async () => {
+  it('deletes on Delete, both buttons disabled while the request is in flight, then closes', async () => {
     let respond = () => {};
 
     answerDelete = () =>
@@ -118,12 +123,19 @@ describe('ApplicationsTable: deleting', () => {
     await renderTable();
     const dialog = await openDialogFor('Acme');
     const confirmButton = within(dialog).getByRole('button', { name: 'Delete' });
+    const cancelButton = within(dialog).getByRole('button', { name: 'Cancel' });
+
+    expect(cancelButton.hasAttribute('data-disabled')).toBe(false);
 
     await userEvent.click(confirmButton);
     await waitFor(() => expect(deletes).toEqual([ACME_ID]));
     expect(confirmButton.hasAttribute('data-disabled')).toBe(true);
+    expect(cancelButton.hasAttribute('data-disabled')).toBe(true);
 
     await userEvent.click(confirmButton);
+    await userEvent.click(cancelButton);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
     respond();
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
@@ -145,6 +157,44 @@ describe('ApplicationsTable: deleting', () => {
     expect(screen.getByRole('alertdialog')).toBe(dialog);
     // The open dialog hides the page from assistive tech, so the row is found among hidden ones.
     expect(screen.getByRole('row', { name: /Acme/, hidden: true })).toBeDefined();
+  });
+
+  it('enables both buttons again once an in-flight delete fails', async () => {
+    let fail = () => {};
+
+    answerDelete = () =>
+      new Promise((resolve) => {
+        fail = () => resolve(new Response(null, { status: 500 }));
+      });
+    await renderTable();
+    const dialog = await openDialogFor('Acme');
+    const confirmButton = within(dialog).getByRole('button', { name: 'Delete' });
+    const cancelButton = within(dialog).getByRole('button', { name: 'Cancel' });
+
+    await userEvent.click(confirmButton);
+    await waitFor(() => expect(cancelButton.hasAttribute('data-disabled')).toBe(true));
+    fail();
+
+    await within(dialog).findByRole('alert');
+    expect(confirmButton.hasAttribute('data-disabled')).toBe(false);
+    expect(cancelButton.hasAttribute('data-disabled')).toBe(false);
+
+    await userEvent.click(cancelButton);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('closes and drops the row, with no error, when it was already deleted elsewhere', async () => {
+    await renderTable();
+    const dialog = await openDialogFor('Acme');
+
+    // Another tab deletes it while this dialog is open.
+    rows = rows.filter((r) => r.id !== ACME_ID);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('row', { name: /Acme/ })).toBeNull();
+    expect(screen.getByRole('row', { name: /Globex/ })).toBeDefined();
   });
 
   it("opens again without the last attempt's error", async () => {

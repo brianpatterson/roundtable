@@ -1,10 +1,10 @@
-/* The scrim: the page behind, dimmed with the on-surface color so it works in every theme. */
+/* The scrim: the page behind, dimmed so the dialog stands out. */
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 20;
   min-height: 100dvh;
-  background: color-mix(in srgb, var(--ds-color-on-surface) 32%, transparent);
+  background: var(--ds-color-scrim);
   transition: opacity var(--ds-motion-short);
 
   &[data-starting-style],
