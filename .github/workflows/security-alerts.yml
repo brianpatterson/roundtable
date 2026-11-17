@@ -1,0 +1,60 @@
+# Code scanning alerts on main reach no one otherwise: no pull request, so the CI fixer never sees
+# them, and alert #9 sat open for six days (ADR-0030). After every CodeQL run on main (each push,
+# and the weekly scan), this opens an issue for each open alert on main that doesn't have one.
+# (`code_scanning_alert` would be the natural trigger, but it's a webhook for GitHub Apps; it can't
+# start a workflow.)
+#
+# The repository is public, so the issue says only which alert to triage: its number, rule and
+# severity, never the file, line or message, which would point at an open vulnerability. The
+# details stay on the Security tab. No agent runs here, and dismissing an alert stays the owner's
+# call (ADR-0028).
+name: Security alerts
+
+on:
+  workflow_run:
+    workflows: [CodeQL]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    # Pushes and scheduled scans of this repository's main; a fork's branch named main doesn't count.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      security-events: read
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts?state=open&ref=$MAIN&per_page=100" --paginate \
+            --jq '.[] | [.number, .rule.id, (.rule.security_severity_level // .rule.severity), .tool.name] | @tsv' |
+          while IFS=$'\t' read -r number rule severity tool; do
+            title="Code scanning alert #$number needs triage"
+            existing=$(gh issue list -R "$GITHUB_REPOSITORY" --state all --label security-triage \
+              --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+            if [ -n "$existing" ]; then
+              echo "Issue #$existing already tracks alert #$number."
+              continue
+            fi
+
+            body="$tool found a $severity-severity issue on main (rule \`$rule\`).
+
+          The details are on the Security tab: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/security/code-scanning/$number. They stay there, because this repository is public.
+
+          - If it's a real problem, fix it, or write it up first as a private draft security advisory.
+          - If it's a false positive, dismiss it on the Security tab with the reason.
+
+          Then close this issue. Opened by the Security alerts workflow (ADR-0030)."
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --label security-triage --body "$body"
+          done
