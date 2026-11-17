@@ -72,3 +72,11 @@ Options 2 and 3, with Strong findings becoming issues the owner accepts by label
 - Rejections need a short reason when closing the issue, or the next run can't tell why.
 - Revisit going straight to implementation for Strong findings once the owner has accepted several
   without changing a recommendation.
+
+## Updates
+
+- **2026-11-17:** the first run's one Strong candidate (#72) fixes a bug, so the fixed criteria
+  ("behavior unchanged", and "any change a user could notice" out of scope) contradicted it. Each
+  candidate now brings its own acceptance criteria and out-of-scope; only two criteria stay fixed:
+  existing tests pass or move to the new interface, and the recommendations are followed. Denied
+  tool calls are also printed as log notices, since run summaries can't be read through the API.

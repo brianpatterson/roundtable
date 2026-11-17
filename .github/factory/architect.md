@@ -30,8 +30,14 @@ Return the structured output:
   imperative, like "Deepen the App assembly"), `strength` (`Strong`, `Worth exploring` or
   `Speculative`, as the skill defines them), `files`, `problem`, `solution`, `benefits` (in terms
   of locality, leverage and tests), `adr_conflict` (empty, or which ADR it contradicts and why it's
-  worth reopening), `questions` (each `question` with its `recommendation`) and `glossary`
-  (proposed `GLOSSARY.md` entries, or empty).
+  worth reopening), `questions` (each `question` with its `recommendation`), `glossary`
+  (proposed `GLOSSARY.md` entries, or empty), `acceptance_criteria` and `out_of_scope`.
+- `acceptance_criteria`: Given/When/Then lines the implementer turns into tests, for what this
+  candidate changes. Most deepenings keep behavior the same and say so; one that fixes a bug or
+  changes what a user sees must say exactly what changes. Every issue also gets two fixed
+  criteria (existing tests pass or move to the new interface; the recommendations are
+  followed), so don't repeat those.
+- `out_of_scope`: what the candidate deliberately doesn't touch.
 - `top_recommendation`: which candidate you'd tackle first, and why, in two or three sentences.
 
 Only `Strong` candidates become issues; the others stay in the report. So mark a candidate
