@@ -1,0 +1,61 @@
+/* The scrim: the page behind, dimmed with the on-surface color so it works in every theme. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  min-height: 100dvh;
+  background: color-mix(in srgb, var(--ds-color-on-surface) 32%, transparent);
+  transition: opacity var(--ds-motion-short);
+
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+  }
+}
+
+.popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+  box-sizing: border-box;
+  width: 28rem;
+  max-width: calc(100vw - 2 * var(--ds-space-6));
+  padding: var(--ds-space-6);
+  border-radius: var(--ds-shape-large);
+  background: var(--ds-color-surface-container-high);
+  color: var(--ds-color-on-surface);
+  box-shadow: var(--ds-elevation-2);
+  outline: none;
+  transform: translate(-50%, -50%);
+  transition:
+    opacity var(--ds-motion-short),
+    transform var(--ds-motion-short);
+
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+
+.title {
+  margin: 0;
+  font: var(--ds-type-headline-small);
+}
+
+.description {
+  margin: 0;
+  font: var(--ds-type-body-medium);
+  color: var(--ds-color-on-surface-variant);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ds-space-2);
+  padding-top: var(--ds-space-2);
+}

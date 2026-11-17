@@ -5,6 +5,8 @@ export { Alert, type AlertProps, type AlertTone } from './components/Alert/Alert
 
 export { Button, type ButtonProps, type ButtonVariant } from './components/Button/Button';
 
+export { Dialog, type DialogProps } from './components/Dialog/Dialog';
+
 export { Select, type SelectOption, type SelectProps } from './components/Select/Select';
 
 export { TextField, type TextFieldProps } from './components/TextField/TextField';
