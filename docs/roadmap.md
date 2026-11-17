@@ -182,6 +182,20 @@ Building blocks, in order:
    every error (`jobUrl: null`, `company: string(0)`), so a validation or handler bug can be
    reproduced from the Sentry issue alone. Agents never get real values: that would expose user
    data and make stored text a prompt-injection path.
+
+   Dependabot already notifies and opens security fix PRs on its own, and dependency review blocks
+   PRs that add a vulnerable package, so its alerts don't need code scanning's pipeline
+   ([ADR-0030](adr/0030-factory-code-scanning-findings.md)). Two pieces for the triage agent:
+   - **Security fix PRs get `autofix` automatically**, so the CI fixer
+     ([ADR-0028](adr/0028-software-factory-ci-fixer.md)) handles any breakage they cause. Today
+     Dependabot PRs are opt-in by label.
+   - **Alerts with no fix get a triage note, deterministically, no agent**: whether production
+     depends on the package (`pnpm why --prod`) or only tooling does, and whether a patched
+     version exists. That separates "wait for Dependabot's PR" from "act now". Example: alert #4,
+     a picomatch ReDoS with no patch yet, reaches the repo only through Vite and Vitest. Verify
+     first whether a workflow's own token can read Dependabot alerts; if not, it needs a GitHub
+     App or a token from the owner.
+
 6. **Security auditor**: a scheduled agent (weekly, and on any PR that touches auth, logging,
    error tracking, `infra/` or a new external service) whose only job is to find security holes.
    It has its own prompt and no stake in the code it audits. Every finding becomes a ticket with
