@@ -2,7 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
+import tokensCss from '../../tokens/tokens.css?raw';
 import { Button } from '../Button/Button';
+import dialogCss from './Dialog.module.css?raw';
 import { Dialog } from './Dialog';
 
 // A caller like the real ones: a button opens the dialog, and its own Cancel closes it.
@@ -86,5 +88,14 @@ describe('Dialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  // jsdom applies no stylesheets, so the styles are checked as text (ADR-0024: tokens, not values).
+  it('dims the page with the scrim token, defined for light and dark themes', () => {
+    const backdrop = /\.backdrop \{[^}]*\}/.exec(dialogCss)?.[0] ?? '';
+
+    expect(backdrop).toContain('background: var(--ds-color-scrim);');
+    expect(dialogCss).not.toContain('color-mix');
+    expect(tokensCss).toMatch(/--ds-color-scrim: light-dark\(.+, .+\);/);
   });
 });

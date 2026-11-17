@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // Vitest replaces CSS with stubs; let `?raw` imports through, so a test can read a stylesheet.
+    css: { include: [/\.css\?raw$/] },
   },
 });
