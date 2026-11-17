@@ -98,10 +98,15 @@ Options 1 and 2 together, plus a guard on what's published:
   - The report classifies each part of a command on its own: it splits at `;`, `|`, `&`,
     newlines, backticks and parentheses, and skips leading quotes, `VAR=…`, wrappers such as
     `bash -c`, `xargs` and `timeout`, and the program's directory. So `cd x && curl …`,
-    `$(curl …)` and `bash -c 'curl …'` are flagged like `curl …`. It is best effort, not a shell
+    `$(curl …)`, `bash -c 'curl …'` and `pnpm exec curl …` are flagged like `curl …` (what
+    `pnpm exec` and `npx` run is classified too). `.github/factory/test-report-denials.sh` pins
+    the classification, and CI runs it. It is best effort, not a shell
     parser: a separator inside quotes also splits (a false alarm), and an encoded command isn't
     seen. The deny list is the boundary; the report only decides who looks.
   - The implementer and fixer also allow `cd` (agents chain `cd dir && pnpm …`, and every part of
     a chain must be allowed), `pnpm format` with arguments, any `pnpm prettier` command
     (`--check` was refused) and `git merge` (merging `main` to resolve a conflict was refused on
     #76). Their instructions say to merge `main` only when the owner asks to resolve a conflict.
+    Both entries are broader than their use: `pnpm prettier` also takes `--plugin` (code from the
+    workspace, which `pnpm test` already runs) and `git merge` takes any fetched ref; only the
+    instructions narrow them.

@@ -11,7 +11,8 @@
 # to run it with pnpm dlx or pnpx), in any part of a chain. An honest agent has no reason to try
 # those, so the run is flagged for a human. Other denials are gaps to fix, not alarms, including
 # running an installed binary (pnpm exec, npx): an honest agent reaches for `pnpm exec prettier`
-# all the time, and the deny list refuses it anyway.
+# all the time, and the deny list refuses it anyway. What they run is classified too, so
+# `pnpm exec curl` is suspicious. test-report-denials.sh pins all of this; CI runs it.
 #
 # Splitting a command is best effort: it isn't a shell parser. It splits on separators and
 # subshells and skips wrappers (`bash -c`, `xargs`), but a separator inside quotes also splits
@@ -40,25 +41,39 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
     ltrimstr($workspace) | ltrimstr("./") | split("/")
     | (.[0] | if . == "CLAUDE.md" or test("^\\.?[a-z][a-z0-9._-]{0,30}$") then . else "…" end) + (if length > 1 then "/" else "" end);
 
+  # Drops what runs the next word: `VAR=…` assignments, flags, durations and wrappers
+  # (`bash -c`, `xargs`, `timeout 5`, also given with a path), then the program directory, so
+  # `/usr/bin/curl` is `curl`.
+  def unwrap:
+    until(length == 0
+      or (.[0] | split("/") | last
+          | test("^([A-Za-z_][A-Za-z0-9_]*=.*|-.*|[0-9.]+[smhd]?|bash|sh|zsh|dash|xargs|nohup|time|command|exec|eval|sudo|nice|timeout)$") | not);
+      .[1:])
+    | if length > 0 then .[0] |= (split("/") | last) else . end;
+  def suspicious_argv:
+    (.[0] == "git" and ((.[1] // "") | test("^(config|remote|credential|-c)$")))
+    or (.[0] == "pnpm" and (.[1] // "") == "dlx")
+    or ((.[0] // "") | test("^(curl|wget|env|printenv|pnpx)$"));
+
   [.[] | select(.type == "result")] | last | (.permission_denials // [])[]
   | .tool_name as $tool
   # A command is a chain (`cd dir && pnpm …`): classify every part, so a refused
   # `cd x && curl …` is flagged like `curl …`. Parts are split at ; | & newlines, backticks and
-  # parentheses (subshells). Each part drops leading quotes, `VAR=…` assignments, wrappers that
-  # run the next word (`bash -c`, `xargs`, `timeout 5`) and the program directory, so
-  # `/usr/bin/curl` is `curl`. Best effort: see the top of this file.
+  # parentheses (subshells), and quotes around each word are dropped. Best effort: see the top
+  # of this file.
   | [(.tool_input.command // "") | splits("[;|&\n`()]")
-      | [splits("[ \t]+")] | map(gsub("^[\"\u0027]+"; "") | select(. != ""))
-      | until(length == 0
-          or (.[0] | test("^([A-Za-z_][A-Za-z0-9_]*=.*|-.*|[0-9.]+[smhd]?|bash|sh|zsh|dash|xargs|nohup|time|command|exec|eval|sudo|nice|timeout)$") | not);
-          .[1:])
-      | select(length > 0) | .[0] |= (split("/") | last)] as $parts
+      | [splits("[ \t]+")] | map(gsub("^[\"\u0027]+|[\"\u0027]+$"; "") | select(. != ""))
+      | unwrap | select(length > 0)] as $parts
   | (.tool_input.file_path // .tool_input.path // .tool_input.pattern // "") as $path
   | (if $tool == "Bash" then
+       # `pnpm exec` and `npx` run any binary: classify the one they run too, so
+       # `pnpm exec curl …` is flagged like `curl …`.
        ($parts | map(
-         {argv: ., suspicious: ((.[0] == "git" and ((.[1] // "") | test("^(config|remote|credential|-c)$")))
-                                or (.[0] == "pnpm" and (.[1] // "") == "dlx")
-                                or (.[0] | test("^(curl|wget|env|printenv|pnpx)$")))})) as $classified
+         (if .[0] == "pnpm" and (.[1] // "") == "exec" then .[2:] | unwrap
+          elif .[0] == "npx" then .[1:] | unwrap
+          else null end) as $inner
+         | if $inner != null and ($inner | suspicious_argv) then {argv: $inner, suspicious: true}
+           else {argv: ., suspicious: suspicious_argv} end)) as $classified
        # Label the part that matters: the first suspicious one, else the first that is not a `cd`.
        | (($classified | map(select(.suspicious)) | first)
           // ($classified | map(select(.argv[0] != "cd")) | first)
