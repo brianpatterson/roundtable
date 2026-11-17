@@ -80,3 +80,6 @@ Option 1:
   accepted the `workflow_run` run, but the fix was pushed with the job's own token, which
   `actions/checkout` v7 had left in git's config where the action's cleanup doesn't reach, so
   CI on the fix waited for a manual approval. The fixer's checkouts now keep no credentials.
+- **2026-11-17:** the implementer had the same problem on follow-ups: after `@claude address the
+review` on #75 and #76, its pushes went out with the job's token and CI on them was held for
+  approval. Its checkout keeps no credentials now either.
