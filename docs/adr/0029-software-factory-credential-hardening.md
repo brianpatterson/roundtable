@@ -87,3 +87,11 @@ Options 1 and 2 together, plus a guard on what's published:
   `pnpm exec`/`dlx`, `npx`, `curl`, `env`) mark the run suspicious: the job fails, the issue or
   pull request gets `needs-human` and a comment, and a suspicious review isn't posted. Detection
   is the workflow's, not the agent's: the agent is the party that may be compromised.
+- **2026-11-17:** running a package's binary (`pnpm exec`/`dlx`, `npx`, `pnpx`) is now a gap in
+  the denial report, not suspicious. The #76 implementer run was flagged for one honest
+  `pnpm exec`, the way any agent reaches for a tool's binary, and the deny list refuses those
+  commands at the tool anyway, so flagging them only trained the owner to ignore the label.
+  Credential paths, `git config`/`remote`/`credential`/`-c`, `curl`, `wget`, `env` and `printenv`
+  stay suspicious. The implementer and fixer also allow `cd` (agents chain `cd dir && pnpm …`,
+  and every part of a chain must be allowed), `pnpm format` with arguments and any `pnpm prettier`
+  command (`--check` was refused).

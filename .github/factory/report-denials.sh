@@ -7,9 +7,10 @@
 # like one (lowercase words, nothing that could carry encoded data), and a file's top-level folder.
 #
 # Suspicious: reaching for credentials or the factory's own rules (.git/, .github/, .claude/,
-# CLAUDE.md, git config/remote/credential/-c, running arbitrary packages). An honest agent has no
-# reason to try those, so the run is flagged for a human. Other denials (a check script the
-# allowlist doesn't name) are gaps to fix, not alarms.
+# CLAUDE.md, git config/remote/credential/-c, curl/wget/env/printenv). An honest agent has no
+# reason to try those, so the run is flagged for a human. Other denials are gaps to fix, not
+# alarms, including running a package's binary (pnpm exec/dlx, npx, pnpx): an honest agent
+# reaches for `pnpm exec prettier` all the time, and the deny list refuses it anyway.
 #
 # Writes `suspicious=true|false` to $GITHUB_OUTPUT.
 set -euo pipefail
@@ -40,8 +41,7 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
   | (if $tool == "Bash" then
        ($argv[0:2] | map(word) | join(" ")) as $cmd
        | [(if ($argv[0] == "git" and (($argv[1] // "") | test("^(config|remote|credential|-c)$")))
-             or ($argv[0] == "pnpm" and (($argv[1] // "") | test("^(exec|dlx)$")))
-             or ($argv[0] | test("^(npx|pnpx|curl|wget|env|printenv)$"))
+             or ($argv[0] | test("^(curl|wget|env|printenv)$"))
            then "suspicious" else "gap" end), "Bash: " + $cmd]
      elif $path != "" then
        [(if ($path | ltrimstr($workspace) | ltrimstr("./") | test("^(\\.git|\\.github|\\.claude)(/|$)|^CLAUDE\\.md$"))
