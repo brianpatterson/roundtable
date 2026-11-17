@@ -3,3 +3,12 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+# Security fixes a direct dependency hasn't shipped (docs/dependencies.md → Overrides).
+overrides:
+  # GHSA-g3hv-75wg-m249 (moderate, ReDoS), fixed only in minimatch 11. Stryker 10.1.1 pins
+  # ~10.2.4 but uses only `minimatch` and `Minimatch`, which 11 keeps.
+  '@stryker-mutator/core>minimatch': ^11.0.1
+  # GHSA-q8mj-m7cp-5q26, GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx, GHSA-6pq8-jhm2-2vcw (moderate,
+  # DoS), all fixed by qs 6.16.1. Stryker's typed-rest-client 2.3.1 pins 6.15.1 exactly; a minor
+  # bump keeps its one call, qs.stringify.
+  'typed-rest-client>qs': ^6.16.2

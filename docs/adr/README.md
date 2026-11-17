@@ -36,4 +36,5 @@ you'd want to explain in an interview. Copy [template.md](template.md).
 | 0024 | [Build our own Material-style design system on Base UI and CSS Modules](0024-design-system.md)                       | Accepted                                             |
 | 0025 | [Build labeled tickets with Claude Code in GitHub Actions, gated by the owner](0025-software-factory-implementer.md) | Accepted                                             |
 | 0026 | [Review factory pull requests with a second, read-only agent that never approves](0026-software-factory-reviewer.md) | Accepted                                             |
+| 0027 | [Measure test strength with Stryker mutation testing, starting with the web app](0027-mutation-testing-stryker.md)   | Accepted                                             |
 | 0028 | [Let the factory fix CI failures on its pull requests, twice, then hand over](0028-software-factory-ci-fixer.md)     | Accepted                                             |
