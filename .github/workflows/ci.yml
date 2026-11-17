@@ -52,6 +52,9 @@ jobs:
         run: pnpm check:effect --format github-actions
       - name: Dependency register is complete
         run: pnpm check:deps
+      # How the factory's denial report classifies refused commands (ADR-0029).
+      - name: Denial report fixtures
+        run: .github/factory/test-report-denials.sh
       - name: Schema and migrations are in sync
         run: |
           pnpm db:generate
