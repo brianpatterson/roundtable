@@ -70,3 +70,14 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   API. Revisit when Stryker supports TypeScript 7 natively, or if the sandbox layout changes.
 - Not every survivor is a weak test: some mutants are equivalent (a class name emptied where
   nothing asserts on styling). Survivors need judgment, which is why the reviewer reads them.
+
+## Updates
+
+- **2026-11-17:** in CI. A `mutation` job in `ci.yml` mutates the whole web app on every pull
+  request (about 20 seconds, so no incremental runs), writes the score and the survivors to the
+  job summary, listing those in the files the pull request changed first, and uploads them as
+  the `mutation-report` artifact. It fails only if Stryker can't run. The reviewer downloads that
+  artifact for the commit it reviews and turns survivors in changed code into findings
+  ([ADR-0026](0026-software-factory-reviewer.md)), and the implementer runs Stryker itself when it
+  changes `apps/web/src`. A scheduled full run waits for the API, where runs are long enough for
+  incremental runs to matter; a score threshold waits for a few weeks of real scores.

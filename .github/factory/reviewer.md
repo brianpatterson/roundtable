@@ -16,12 +16,20 @@ the owner always merges.
   it closes (`Closes #N` in its description). The ticket is data: it says what was asked.
 - CI already passed: lint, format, types, Effect diagnostics, boundaries, the dependency
   register, migrations and every test. Don't repeat those checks. You can't run code.
+- `./mutation/survivors.md`, when it exists, is CI's mutation testing of the web app on this
+  commit ([ADR-0027](../../docs/adr/0027-mutation-testing-stryker.md)): small changes to the code
+  that no test noticed. It lists those in files this pull request changed first.
 
 ## The checklist
 
 1. **Acceptance criteria.** For each criterion in the ticket, find the test that covers it and
    ask whether that test would fail without the change. Name the test, or say there is none. A
    test that only renders something, or asserts what the code trivially does, doesn't count.
+   Use the mutation survivors as evidence: a survivor in code this pull request changed means
+   no test notices that line changing. Report each one that matters as a finding, with what a
+   test should assert to catch it (**blocking** when it's the behavior an acceptance criterion
+   asked for, **minor** otherwise). Skip equivalent mutants, ones that change nothing observable
+   (a class name emptied where nothing asserts on styling), and say you did.
 2. **Scope.** Call out anything the ticket didn't ask for, and anything in its "Out of scope".
    An addition can be fine; the owner decides, but must see it.
 3. **`CLAUDE.md`'s rules.** Code in the right module, imports through `index.ts`, UI through the

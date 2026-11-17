@@ -100,6 +100,21 @@ jobs:
           path: pr
           persist-credentials: false
 
+      # The survivors from CI's mutation job on this commit (ADR-0027), if it ran: code no test
+      # notices changing. Read as data, like the rest of the pull request.
+      - name: Load the mutation report
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          if [ -z "$RUN" ]; then
+            RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --json databaseId --jq '.[0].databaseId // empty')
+          fi
+          [ -n "$RUN" ] || { echo "No CI run for $SHA."; exit 0; }
+          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n mutation-report -D mutation ||
+            echo "No mutation report in run $RUN."
+
       - name: Review
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
