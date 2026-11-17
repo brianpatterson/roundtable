@@ -47,10 +47,14 @@ Option 2 for automatic reviews, plus an on-demand trigger, with these constraint
 - **Read-only:** the working directory is a checkout of `main` (the reviewer's instructions,
   `CLAUDE.md`, Claude Code's settings); the pull request is a second checkout in `./pr/`, read
   and never installed or run. Tools: read, search, `gh pr view/diff` and `gh issue view`. No
-  edits, no shell beyond those, no web. Opus 5.5, 40 turns, 30 minutes.
+  edits, no shell beyond those, no web. Opus 5.5, 60 turns, 30 minutes.
 - **Instructions:** `.github/factory/reviewer.md`: acceptance criteria mapped to tests that
-  would fail without the change, scope against the ticket, `CLAUDE.md`'s rules, security (what
-  leaves the process, auth, tenancy, input), and what only a browser or a human can check.
+  would fail without the change, scope against the ticket, `CLAUDE.md`'s rules, a security
+  review against every category of the [OWASP Top 10:2025](https://owasp.org/Top10/2025/),
+  each written out for this codebase (access control and tenancy, misconfiguration, the supply
+  chain, secrets, injection including prompt injection, missing limits, auth flows, schema
+  decoding at trust boundaries, what leaves the process, and failing safe), and what only a
+  browser or a human can check. The review ends with which categories the change touches.
 - **Output:** structured (`verdict`: `ready` or `changes`, plus Markdown). A deterministic step
   posts it as one comment per pull request, updated in place. It never approves or requests
   changes.

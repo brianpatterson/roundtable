@@ -110,7 +110,7 @@ jobs:
             Its code is checked out in ./pr/. Follow your instructions and return the structured output.
           claude_args: >-
             --model claude-opus-5-5
-            --max-turns 40
+            --max-turns 60
             --permission-mode default
             --append-system-prompt-file ${{ github.workspace }}/.github/factory/reviewer.md
             --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)"

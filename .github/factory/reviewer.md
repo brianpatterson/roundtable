@@ -28,14 +28,63 @@ the owner always merges.
    design system with `--ds-*` tokens, docs and ADRs where a change needs them, the dependency
    register, backward-compatible migrations, a cross-user test for any new resource, the Effect
    conventions. Check the ones the change touches.
-4. **Security.** What leaves the process (logs, Sentry, emails, third parties) and whether user
-   data could ride along; auth and tenancy on any new route; user input reaching a query, a
-   prompt or HTML.
+4. **Security**, against the OWASP Top 10:2025 in the next section. Go through every category
+   for every change; most won't apply, and saying which do is part of the review.
 5. **What CI can't see.** Behavior worth checking in a browser (layout, focus, themes, mobile),
    and anything only a human can judge. Say exactly what to try.
 
 Also note real bugs you find on the way, with the input that triggers them. Skip style
 preferences the linters don't enforce.
+
+## Security: the OWASP Top 10:2025, as they apply here
+
+Scanners (CodeQL, dependency review) already ran and only know patterns. Your job is the
+reasoning they can't do: follow data from where it enters to where it ends up. For each finding,
+name the category, the path an attacker or a failure takes, and what they get. A security
+finding is **blocking** unless it's clearly theoretical.
+
+- **A01 Broken Access Control.** Every endpoint that touches user data is in a group behind the
+  `Authorization` middleware, and every query filters on `CurrentUser`. Another user's row is a
+  404, never a 403 or a leak through a list, count, error message or timing. A new resource
+  has a cross-user test. Ids come from the params schema, never trusted from a body. Any
+  server-side fetch of a user-supplied URL (SSRF) is refused or allowlisted.
+- **A02 Security Misconfiguration.** Caddy's headers and CSP, cookie flags, CORS and trusted
+  origins in Better Auth, the firewall and ports in `infra/`, new environment variables with
+  safe defaults, debug output or stack traces that could reach a response.
+- **A03 Software Supply Chain Failures.** A new or bumped dependency: is it needed, maintained,
+  pinned, registered in `docs/dependencies.md`, free of install scripts it doesn't need? A new
+  GitHub Action pinned by SHA, with least `permissions:`. Anything that widens what a workflow
+  can reach (secrets, environments, `pull_request_target`, `workflow_run`).
+- **A04 Cryptographic Failures.** Secrets are `Redacted` and unwrapped only where they're
+  handed over; nothing secret in code, logs, URLs or the client bundle. Tokens and links are
+  random enough, single-use and expire. No home-made crypto or hashing.
+- **A05 Injection.** SQL only through Drizzle's parameters (`sql` templates parameterize
+  their values; `sql.raw` never takes input); no `dangerouslySetInnerHTML` or HTML built from input;
+  no input in shell commands, file paths, email headers or regexes. User text that could reach
+  an LLM prompt (the factory, future features) is a prompt-injection path.
+- **A06 Insecure Design.** Missing limits: rate limits on anything that sends email or is
+  expensive, size limits on bodies and lists, and abuse paths the happy path ignores (signing up
+  as someone else's address, enumerating accounts through different responses).
+- **A07 Authentication Failures.** Sessions through Better Auth only; no custom session checks.
+  Sign-in, reset and verification flows don't reveal whether an account exists, invalidate old
+  tokens, and keep the password rule from the contract (`PASSWORD_MIN_LENGTH`).
+- **A08 Software or Data Integrity Failures.** Data decoded with Effect Schema at every trust
+  boundary (requests, environment, third-party responses, anything read back from storage) rather
+  than cast. Migrations backward-compatible with the previous release (ADR-0014). Deploy and
+  workflow changes that could run unreviewed code.
+- **A09 Security Logging and Alerting Failures.** Failures that matter are logged and reported
+  through `ErrorReporter`; expected outcomes (401, 404) are marked ignored so they don't drown
+  real ones. Logs, Sentry events and error messages never carry user data, tokens, cookies or
+  query parameters: check what leaves the process, not just what's logged on purpose (the
+  2026-11-10 leak, roadmap block 6).
+- **A10 Mishandling of Exceptional Conditions.** What happens when the database, the mailer or
+  a provider fails mid-request: the error is typed or a defect, never swallowed; nothing fails
+  open (an auth check that errors must deny); transactions roll back; resources (pooled
+  connections) are released on interruption; the user sees a safe message, not internals.
+
+In your review, put security findings under **Findings** like any other, prefixed with the
+category (`A01`). After the findings, add one line: **OWASP Top 10**, listing the categories
+the change touches and "nothing found" or the findings' numbers for each.
 
 ## Your answer
 
