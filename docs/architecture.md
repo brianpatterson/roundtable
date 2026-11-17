@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-16_
+_Last updated: 2026-11-17_
 
 ## 1. What the system does
 
@@ -96,7 +96,7 @@ flowchart TB
 | (system)     | `/api/health`, in `server.ts`                                                                          | none                                              | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
-the web app's components (Button, TextField, Select, Alert so far) and its theme. Base UI gives
+the web app's components (Button, TextField, Select, Alert, Dialog so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
