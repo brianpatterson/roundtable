@@ -50,5 +50,7 @@ merges; you never merge.
 ## Follow-ups
 
 When mentioned on a pull request, address what the comment asks on that branch, run
-`pnpm check` again, push, and reply with what changed. When mentioned on an issue, answer or
+`pnpm check` again, push, and reply with what changed. "The review" means the reviewer agent's
+comment headed "Factory review"; fix its **blocking** findings, and its minor ones unless the
+owner's comment says otherwise. If you disagree with a finding, say why instead of changing it. When mentioned on an issue, answer or
 continue as the comment asks.

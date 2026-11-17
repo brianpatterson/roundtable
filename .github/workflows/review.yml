@@ -1,0 +1,152 @@
+# The software factory's reviewer (ADR-0026): a second agent, with its own instructions and no
+# stake in the change, reviews a pull request against its ticket and the repo's rules, then
+# updates one review comment. It never approves; the owner merges.
+#
+# It reviews the factory's pull requests once CI passes on each new commit, and any pull request
+# the owner labels `review`. Both triggers run this file from `main`, never from a branch, and the
+# pull request's code is only read, never run.
+name: Review
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  # Which pull request and commit, if any. Cheap, and holds no secrets.
+  select:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' &&
+        github.event.label.name == 'review' &&
+        github.actor == github.repository_owner &&
+        github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pick.outputs.pr }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          LABELED_PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" = pull_request_target ]; then
+            pr=$LABELED_PR
+          else
+            pr=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$RUN_BRANCH" --state open --json number --jq '.[0].number // empty')
+            [ -n "$pr" ] || { echo "No open pull request for $RUN_BRANCH."; exit 0; }
+          fi
+
+          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,labels)
+          sha=$(echo "$info" | jq -r .headRefOid)
+
+          if [ "$EVENT" = workflow_run ]; then
+            # A newer commit gets its own CI run, and its own review.
+            [ "$sha" = "$RUN_SHA" ] || { echo "#$pr has moved past $RUN_SHA."; exit 0; }
+            echo "$info" | jq -e '[.labels[].name] | any(. == "factory" or . == "review")' >/dev/null ||
+              { echo "#$pr is neither a factory pull request nor labeled review."; exit 0; }
+          fi
+
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  review:
+    needs: select
+    if: needs.select.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: factory
+    # A newer commit's review replaces one still running for an older commit.
+    concurrency:
+      group: review-${{ needs.select.outputs.pr }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write # exchanged for the Claude GitHub App's short-lived token
+    env:
+      PR: ${{ needs.select.outputs.pr }}
+      SHA: ${{ needs.select.outputs.sha }}
+    steps:
+      # The working directory is main: the reviewer's instructions, CLAUDE.md and Claude Code's
+      # own settings all come from there, so a pull request can't change them.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      # The pull request's code, to read. Nothing in it is installed or run.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          path: pr
+          persist-credentials: false
+
+      - name: Review
+        id: claude
+        uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The factory's pushes start CI as the Claude App, so it's the upstream actor here.
+          allowed_bots: claude[bot]
+          prompt: |
+            Review pull request #${{ env.PR }} in ${{ github.repository }} at commit ${{ env.SHA }}.
+            Its code is checked out in ./pr/. Follow your instructions and return the structured output.
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 40
+            --permission-mode default
+            --append-system-prompt-file ${{ github.workspace }}/.github/factory/reviewer.md
+            --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)"
+            --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch"
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["ready","changes"]},"review":{"type":"string"}},"required":["verdict","review"],"additionalProperties":false}'
+
+      - name: Explain a failed run
+        if: always() && steps.claude.outcome == 'failure'
+        run: |
+          file="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$file" ] || { echo "::error::The reviewer failed before writing its output."; exit 0; }
+          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
+          echo "::error::The reviewer failed: $reason"
+
+      # One review comment per pull request, updated in place on every new commit.
+      - name: Post the review
+        if: steps.claude.outputs.structured_output != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          case "$(jq -r .verdict <<<"$RESULT")" in
+            ready) verdict='✅ Ready for you' ;;
+            changes) verdict='✋ Changes needed' ;;
+            *) echo "::error::The reviewer returned no verdict."; exit 1 ;;
+          esac
+
+          marker='<!-- factory-review -->'
+          body=$(printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s, reviewed by the factory'"'"'s reviewer agent (ADR-0026). It never approves; the owner merges.</sub>\n' \
+            "$marker" "$verdict" "$(jq -r .review <<<"$RESULT")" "$SHA")
+
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | tail -1)
+
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f body="$body" >/dev/null
+          else
+            gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
+          fi

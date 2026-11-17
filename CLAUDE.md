@@ -43,6 +43,8 @@ each module is what a future service or microfrontend would become.
 - `.github/workflows/factory.yml` and `.github/factory/implementer.md`: the software factory's
   implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
   Tickets come from the forms in `.github/ISSUE_TEMPLATE/`.
+  `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
+  comments on factory PRs once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
 - `docs/`: `architecture.md` (current state), `adr/` (decisions), `dependencies.md` (dependency register), `roadmap.md` (where this is going).
 
