@@ -229,6 +229,12 @@ Building blocks, in order:
    ADR-0027's updates. The TypeScript 7 workarounds carry over (`apps/api` is as deep as
    `apps/web`).
 
+8. ✅ **Weekly architecture review** ([ADR-0031](adr/0031-weekly-architecture-review.md)): Matt
+   Pocock's `improve-codebase-architecture` skill runs unattended every Monday and turns each Strong
+   candidate into an `architecture` issue, which the owner labels `ready` to build or closes with
+   a reason. The reviewer checks every PR's design in the same vocabulary. Later: Strong findings
+   straight to implementation, once several have been accepted unchanged.
+
 ## What "ensuring quality" can mean
 
 Quality comes in layers. Each answers a different question, and they compound. Already in place

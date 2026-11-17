@@ -36,9 +36,17 @@ the owner always merges.
    design system with `--ds-*` tokens, docs and ADRs where a change needs them, the dependency
    register, backward-compatible migrations, a cross-user test for any new resource, the Effect
    conventions. Check the ones the change touches.
-4. **Security**, against the OWASP Top 10:2025 in the next section. Go through every category
+4. **Design**, in the vocabulary of `.github/factory/skills/codebase-design/SKILL.md` (read it
+   once): **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**,
+   **locality**. Does this change make a module shallower (an interface that grows faster than
+   what it hides), add a pass-through that fails the deletion test, put a seam where nothing
+   varies (one adapter), or leak across a module's interface (reaching into another module's
+   internals, or making callers know its ordering or error modes)? Judge only what the diff
+   changes; the weekly architecture review covers the rest (ADR-0031). A finding here is
+   **minor** unless it breaks one of `CLAUDE.md`'s module rules.
+5. **Security**, against the OWASP Top 10:2025 in the next section. Go through every category
    for every change; most won't apply, and saying which do is part of the review.
-5. **What CI can't see.** Behavior worth checking in a browser (layout, focus, themes, mobile),
+6. **What CI can't see.** Behavior worth checking in a browser (layout, focus, themes, mobile),
    and anything only a human can judge. Say exactly what to try.
 
 Also note real bugs you find on the way, with the input that triggers them. Skip style
