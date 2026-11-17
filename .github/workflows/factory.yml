@@ -79,7 +79,9 @@ jobs:
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
         env:
           # Commands the agent runs get no Anthropic credentials and no OIDC or runtime tokens
-          # (ADR-0029); `gh` keeps its token. Requires ./.github/actions/isolate-agent.
+          # (ADR-0029); `gh` keeps its token. Requires ./.github/actions/isolate-agent. It also
+          # forces Claude Code's `default` permission mode, ignoring `acceptEdits`: every tool,
+          # file edits included, must be in --allowedTools.
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -95,8 +97,8 @@ jobs:
             --max-turns 150
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --allowedTools "Bash(pnpm check:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
-            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**)"
+            --allowedTools "Edit,Write,MultiEdit,Bash(pnpm check:*),Bash(pnpm prettier --write:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
 
       # The action hides Claude's messages from the public log, including the one that says why
       # a run failed (a rejected token, an unknown model). Show only that final message.
@@ -301,8 +303,8 @@ jobs:
             --max-turns 100
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --allowedTools "Bash(pnpm check:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
-            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**)"
+            --allowedTools "Edit,Write,MultiEdit,Bash(pnpm check:*),Bash(pnpm prettier --write:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","reran","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
       - name: Explain a failed run
