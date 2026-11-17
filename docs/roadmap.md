@@ -132,9 +132,10 @@ without untangling anything first.
 3. **Storybook**, once the design system has about ten components: a browsable catalog to build
    and review components in isolation, and a place the factory's reviewer agent can check visual
    changes.
-4. **More components as features need them:** dialog (in place of `confirm()` for deletes),
-   menu, snackbar for mutation errors, a data table. When microfrontends build separately, the
-   design system moves to `packages/design-system`.
+4. **More components as features need them:** ✅ dialog (on Base UI's alert dialog; deletes
+   confirm in it instead of `confirm()`, and Oxlint's `eslint/no-alert` keeps the browser's
+   dialogs out), menu, snackbar for mutation errors, a data table. When microfrontends build
+   separately, the design system moves to `packages/design-system`.
 
 ## Phase 3: The software factory
 

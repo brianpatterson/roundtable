@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { APPLICATION_STATUSES, type ApplicationStatus } from '@roundtable/contract';
-import { Alert, Button, Select } from '../../design-system';
+import { useState } from 'react';
+import {
+  APPLICATION_STATUSES,
+  type Application,
+  type ApplicationStatus,
+} from '@roundtable/contract';
+import { Alert, Button, Dialog, Select } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './ApplicationsTable.module.css';
 import { applicationsQueryKey } from './queries';
@@ -23,7 +28,23 @@ export function ApplicationsTable() {
     onSuccess: invalidate,
   });
 
+  // The row being deleted stays set while the dialog closes, so its text doesn't vanish mid-fade.
+  const [toDelete, setToDelete] = useState<Application>();
+  const [confirming, setConfirming] = useState(false);
+  // Returning invalidate's promise keeps the mutation pending until the list has refetched, so the
+  // row is gone by the time the dialog closes.
   const remove = useMutation({ mutationFn: api.deleteApplication, onSuccess: invalidate });
+
+  const askToDelete = (application: Application) => {
+    remove.reset();
+    setToDelete(application);
+    setConfirming(true);
+  };
+
+  const closeDialog = () => {
+    // Closing mid-request would hide a failure, so the dialog waits for the answer.
+    if (!remove.isPending) setConfirming(false);
+  };
 
   if (applications.isPending) return <p>Loading…</p>;
 
@@ -31,11 +52,9 @@ export function ApplicationsTable() {
 
   if (applications.data.length === 0) return <p>No applications yet. Add your first one above.</p>;
 
-  const mutationError = updateStatus.error ?? remove.error;
-
   return (
     <>
-      {mutationError && <Alert tone="error">{mutationError.message}</Alert>}
+      {updateStatus.error && <Alert tone="error">{updateStatus.error.message}</Alert>}
       <div className={styles.scroll}>
         <table className={styles.table}>
           <thead>
@@ -73,12 +92,7 @@ export function ApplicationsTable() {
                 <td>{formatDate(a.createdAt)}</td>
                 <td>{formatDate(a.updatedAt)}</td>
                 <td>
-                  <Button
-                    variant="text"
-                    onClick={() => {
-                      if (confirm(`Delete ${a.company} – ${a.jobTitle}?`)) remove.mutate(a.id);
-                    }}
-                  >
+                  <Button variant="text" onClick={() => askToDelete(a)}>
                     Delete
                   </Button>
                 </td>
@@ -87,6 +101,37 @@ export function ApplicationsTable() {
           </tbody>
         </table>
       </div>
+      <Dialog
+        open={confirming}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+        title="Delete application?"
+        description={
+          toDelete && (
+            <>
+              {toDelete.company} – {toDelete.jobTitle} will be deleted. You can’t undo this.
+            </>
+          )
+        }
+        actions={
+          <>
+            <Button variant="text" onClick={closeDialog}>
+              Cancel
+            </Button>
+            <Button
+              disabled={remove.isPending}
+              onClick={() => {
+                if (toDelete) remove.mutate(toDelete.id, { onSuccess: () => setConfirming(false) });
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {remove.error && <Alert tone="error">{remove.error.message}</Alert>}
+      </Dialog>
     </>
   );
 }
