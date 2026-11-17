@@ -18,3 +18,6 @@ infra/tfplan
 *.dump.age
 # The factory implementer's scratch files (the PR description), never committed
 .factory/
+# Mutation testing reports and scratch space (Stryker, ADR-0027)
+apps/web/reports/
+.stryker-tmp/
