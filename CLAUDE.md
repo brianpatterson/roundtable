@@ -52,6 +52,8 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
   [ADR-0033](docs/adr/0033-review-every-pull-request.md)).
+  `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the weekly security
+  auditor, which runs throwaway tests and files private draft advisories ([ADR-0036](docs/adr/0036-weekly-security-audit.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
 - `docs/`: `architecture.md` (current state), `adr/` (decisions), `dependencies.md` (dependency register), `roadmap.md` (where this is going).
 
@@ -79,6 +81,9 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
    action, `claude/issue-<n>-…`.)
    A PR needn't be up to date with `main` to merge (ADR-0035), but update it first ("Update
    branch") when it adds a migration or changes dependencies: a deploy rollback can't undo a migration.
+   Small fixes found along the way that are outside the PR's purpose (a wrong command in a doc, a
+   typo, a stale comment) go in their own commit in the same PR, not a PR of their own: a PR costs a
+   CI run and a review. List them in the description under **Incidental changes**.
 2. **Dependencies:** adding, removing or replacing a package means updating `docs/dependencies.md`
    with its purpose, the main alternative, and why this one won. `pnpm check:deps` enforces this.
    pnpm refuses versions published in the last 24 hours (`minimumReleaseAge`, a supply-chain
