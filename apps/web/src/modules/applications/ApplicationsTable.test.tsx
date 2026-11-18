@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SnackbarProvider } from '../../design-system';
 import { ApplicationsTable } from './ApplicationsTable';
 
 // The table calls the real typed client; only the server behind `fetch` is a stand-in, holding a
@@ -27,6 +28,14 @@ let answerDelete: () => Promise<Response>;
 
 const noContent = () => Promise.resolve(new Response(null, { status: 204 }));
 
+/** How the server answers a PATCH; null applies it. A test can make it fail. */
+let failUpdate: (() => Response) | null;
+
+/** How many PATCHes reached the server. */
+let updates: number;
+
+const serverError = () => new Response(null, { status: 500 });
+
 async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init);
   const { pathname } = new URL(request.url);
@@ -34,6 +43,20 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   if (request.method === 'GET' && pathname === '/api/applications') return Response.json(rows);
 
   const id = pathname.replace('/api/applications/', '');
+  const existing = rows.find((r) => r.id === id);
+
+  if (request.method === 'PATCH' && existing) {
+    updates += 1;
+
+    if (failUpdate) return failUpdate();
+
+    // SAFETY: the typed client encoded this body with the contract's UpdateApplication schema.
+    const { status } = (await request.json()) as { status: string };
+
+    existing.status = status;
+
+    return Response.json(existing);
+  }
 
   if (request.method === 'DELETE' && rows.some((r) => r.id === id)) {
     deletes.push(id);
@@ -56,6 +79,8 @@ beforeEach(() => {
   rows = [row(ACME_ID, 'Acme', 'Engineer'), row(GLOBEX_ID, 'Globex', 'Designer')];
   deletes = [];
   answerDelete = noContent;
+  failUpdate = null;
+  updates = 0;
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -66,12 +91,18 @@ afterEach(() => {
 const renderTable = async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  render(
-    <QueryClientProvider client={queryClient}>
-      <ApplicationsTable />
-    </QueryClientProvider>,
+  // The shell mounts the snackbars once, around every module.
+  const { container } = render(
+    <SnackbarProvider>
+      <QueryClientProvider client={queryClient}>
+        <ApplicationsTable />
+      </QueryClientProvider>
+    </SnackbarProvider>,
   );
+
   await screen.findByRole('table');
+
+  return container;
 };
 
 const deleteButtonFor = (company: string) =>
@@ -88,6 +119,95 @@ const openDialogFor = async (company: string) => {
 
   return dialog;
 };
+
+const statusFor = (company: string) =>
+  screen.getByRole('combobox', { name: `Status for ${company}` });
+
+const changeStatus = async (company: string, status: string) => {
+  await userEvent.click(statusFor(company));
+  await userEvent.click(await screen.findByRole('option', { name: status }));
+};
+
+// The snackbar is announced through Base UI's hidden role="alert" copy; the visible one is hidden
+// from assistive tech until the user moves into the notifications (see Snackbar.test.tsx).
+const snackbars = () => screen.queryAllByRole('alertdialog', { hidden: true });
+
+describe('ApplicationsTable: changing status', () => {
+  it('saves the status the user picks', async () => {
+    await renderTable();
+    await changeStatus('Acme', 'Offer');
+
+    await waitFor(() => expect(rows[0]?.status).toBe('offer'));
+    await waitFor(() => expect(statusFor('Acme').textContent).toContain('Offer'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows a failure in an announced snackbar, not an alert above the table', async () => {
+    failUpdate = serverError;
+    const container = await renderTable();
+
+    await changeStatus('Acme', 'Offer');
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(snackbars()).toHaveLength(1);
+    expect(within(container).queryByRole('alert')).toBeNull();
+  });
+
+  it("keeps showing the server's status in the row after a failed change", async () => {
+    failUpdate = serverError;
+    await renderTable();
+
+    await changeStatus('Acme', 'Offer');
+    await screen.findByRole('alert');
+
+    // The list is asked again, so the row shows what the server has even if it changed elsewhere.
+    await waitFor(() => expect(statusFor('Acme').textContent).toContain('Applied'));
+    expect(statusFor('Acme').textContent).not.toContain('Offer');
+  });
+
+  it('shows the snackbar until it is dismissed', async () => {
+    failUpdate = serverError;
+    await renderTable();
+    await changeStatus('Acme', 'Offer');
+    await screen.findByRole('alert');
+
+    const snackbar = screen.getByRole('alertdialog', { hidden: true });
+
+    await userEvent.click(within(snackbar).getByRole('button', { name: 'Dismiss', hidden: true }));
+
+    await waitFor(() => expect(snackbars()).toEqual([]));
+  });
+
+  it('shows a message for each of two failures in a row', async () => {
+    failUpdate = serverError;
+    await renderTable();
+
+    await changeStatus('Acme', 'Offer');
+    await changeStatus('Globex', 'Rejected');
+
+    await waitFor(() => expect(updates).toBe(2));
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
+    expect(snackbars()).toHaveLength(2);
+  });
+
+  it('shows no snackbar when the session has ended: the shell returns to sign-in instead', async () => {
+    failUpdate = () => Response.json({ _tag: 'Unauthorized' }, { status: 401 });
+    await renderTable();
+
+    await changeStatus('Acme', 'Offer');
+    await waitFor(() => expect(updates).toBe(1));
+    // A later failure for another reason does show, and alone: the 401 left nothing behind.
+    failUpdate = serverError;
+    await changeStatus('Globex', 'Rejected');
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(snackbars()).toHaveLength(1);
+  });
+});
 
 describe('ApplicationsTable: deleting', () => {
   it("asks in a dialog that names the row's company and job title, with focus inside", async () => {

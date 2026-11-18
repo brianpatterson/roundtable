@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Unauthorized } from '@roundtable/contract';
 import { ApiError } from '@roundtable/contract/client';
-import { ThemeProvider } from '../design-system';
+import { SnackbarProvider, ThemeProvider } from '../design-system';
 import { sessionEnded } from '../modules/identity';
 
 /** The API no longer accepts the session. Identity handles it; no feature module does. */
@@ -30,11 +30,13 @@ export function createQueryClient() {
 
 const appQueryClient = createQueryClient();
 
-/** App-wide providers every module relies on: the theme and server-state cache. */
+/** App-wide providers every module relies on: the theme, snackbars and server-state cache. */
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <QueryClientProvider client={appQueryClient}>{children}</QueryClientProvider>
+      <SnackbarProvider>
+        <QueryClientProvider client={appQueryClient}>{children}</QueryClientProvider>
+      </SnackbarProvider>
     </ThemeProvider>
   );
 }

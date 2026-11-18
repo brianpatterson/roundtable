@@ -96,11 +96,15 @@ flowchart TB
 | (system)     | `/api/health`, in `server.ts`                                                                          | none                                                           | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
-the web app's components (Button, TextField, Select, Alert, Dialog so far) and its theme. Base UI gives
+the web app's components (Button, TextField, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
 `data-theme` on `<html>`. Modules import only its `index.ts`, and only it imports Base UI.
+The shell's `Providers` mounts the `SnackbarProvider` once (on Base UI's toast), so a module
+reports a failed change with `useSnackbar()` without moving the page; applications does this
+for status changes. A snackbar is announced as an alert, stacks, and goes after 6 seconds or on
+Dismiss. Errors tied to a form or dialog stay inline as an `Alert`.
 
 **Identity** gives the App one layer, `IdentityLive`: its endpoint (`/api/auth-config`), the
 `Authorization` middleware every protected group relies on, and Better Auth's `/api/auth/*`

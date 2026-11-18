@@ -134,7 +134,8 @@ without untangling anything first.
    changes.
 4. **More components as features need them:** ✅ dialog (on Base UI's alert dialog; deletes
    confirm in it instead of `confirm()`, and Oxlint's `eslint/no-alert` keeps the browser's
-   dialogs out), menu, snackbar for mutation errors, a data table. When microfrontends build
+   dialogs out), ✅ snackbar for mutation errors (on Base UI's toast; failed status changes
+   show in it instead of an alert above the table), menu, a data table. When microfrontends build
    separately, the design system moves to `packages/design-system`.
 
 ## Phase 3: The software factory
