@@ -9,12 +9,18 @@ export const SNACKBAR_TIMEOUT_MS = 6000;
 /** A snackbar for an error: announced at once (an alert). */
 const errorToast = (message: string) => ({ description: message, priority: 'high' as const });
 
+/** Brands a `Snackbars`. Only types carry it, and only `createSnackbars` adds it. */
+declare const fromCreateSnackbars: unique symbol;
+
 /**
  * Snackbars that code outside React can show a message in, such as the shell's query cache. Give
  * the same object to `SnackbarProvider`; `useSnackbar` inside it reaches the same snackbars.
+ * Only `createSnackbars` makes one: another object with a `show` method doesn't type-check, since
+ * the provider couldn't find the snackbars behind it and its messages would never appear.
  */
 export interface Snackbars {
   readonly show: (message: string) => void;
+  readonly [fromCreateSnackbars]: true;
 }
 
 /**
@@ -26,9 +32,13 @@ const managers = new WeakMap<Snackbars, ReturnType<typeof Toast.createToastManag
 export function createSnackbars(): Snackbars {
   const manager = Toast.createToastManager();
 
-  const snackbars: Snackbars = Object.freeze({
-    show: (message: string) => manager.add(errorToast(message)),
-  });
+  // SAFETY: the brand exists only in types, and this is the one place that adds it, right before
+  // registering the object's manager below, so every Snackbars has a manager.
+  const snackbars = Object.freeze({
+    show: (message: string) => {
+      manager.add(errorToast(message));
+    },
+  }) as Snackbars;
 
   managers.set(snackbars, manager);
 
@@ -54,14 +64,14 @@ export function SnackbarProvider({
       {children}
       <Toast.Portal>
         <Toast.Viewport className={styles.viewport}>
-          <Snackbars />
+          <SnackbarList />
         </Toast.Viewport>
       </Toast.Portal>
     </Toast.Provider>
   );
 }
 
-function Snackbars() {
+function SnackbarList() {
   const { toasts, close } = Toast.useToastManager();
 
   return toasts.map((toast) => (

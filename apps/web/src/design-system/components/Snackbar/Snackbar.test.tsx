@@ -100,10 +100,21 @@ describe('Snackbar', () => {
   it('lets code outside React only show a message, not reach the toasts behind it', () => {
     const snackbars = createSnackbars();
 
-    expect(Object.keys(snackbars)).toEqual(['show']);
+    // The brand that makes it a Snackbars exists only in the types: no key carries it.
+    expect(Reflect.ownKeys(snackbars)).toEqual(['show']);
     expect(Object.isFrozen(snackbars)).toBe(true);
   });
 
+  it('accepts only snackbars from createSnackbars, not any object with a show method', () => {
+    const lookalike = { show: (_message: string) => {} };
+
+    // A lookalike would type-check if Snackbars were structural, and its messages would never
+    // appear. tsc fails this file if the line below ever compiles.
+    // @ts-expect-error: only createSnackbars() makes a Snackbars.
+    const element = <SnackbarProvider snackbars={lookalike}>{null}</SnackbarProvider>;
+
+    expect(element.props.snackbars).toBe(lookalike);
+  });
   // jsdom applies no stylesheets, so the styles are checked as text (ADR-0024: tokens, not values).
   it("uses Material's inverse surface, defined for light and dark themes", () => {
     const snackbar = /\.snackbar \{[^}]*\}/.exec(snackbarCss)?.[0] ?? '';
