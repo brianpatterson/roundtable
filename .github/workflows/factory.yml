@@ -81,6 +81,26 @@ jobs:
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
 
+      # Whether this is a follow-up on one of the factory's own pull requests (ADR-0034): opened by
+      # claude[bot] from a claude/ branch in this repository. The author alone isn't enough: every
+      # installation of the Claude App is claude[bot]. Anything else, or any doubt, keeps the
+      # action's restriction on running a pull request's code.
+      - name: Is this the factory's own pull request?
+        id: own_pr
+        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER" \
+            --jq '[.user.login, .head.repo.full_name // "", .head.ref] | @tsv') || pr=""
+          IFS=$'\t' read -r author head_repo head_ref <<<"$pr"
+          if [ "$author" = "claude[bot]" ] && [ "$head_repo" = "$GITHUB_REPOSITORY" ] && [[ "$head_ref" == claude/* ]]; then
+            echo "own=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "own=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Implement
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
@@ -97,6 +117,12 @@ jobs:
           # Only the owner's comments, and the reviewer's (posted by github-actions[bot], ADR-0026),
           # reach the agent; anyone else's text in the thread is dropped.
           include_comments_by_actor: ${{ github.repository_owner }},github-actions[bot]
+          # On a pull request whose author isn't confirmed to have write access, the action refuses
+          # every command that runs the checkout's code (`pnpm check`, the tests). The factory's own
+          # pull requests are opened by claude[bot], so follow-ups (`@claude address the review`)
+          # pushed fixes nobody had run (#76). Lifted only on those, as checked above; any other
+          # pull request keeps it, even when the owner mentions @claude (ADR-0034).
+          restrict_untrusted_prs: ${{ steps.own_pr.outputs.own == 'true' && 'false' || 'true' }}
           # The job's 60-minute timeout is the real limit. 60 turns was too few: #53, a feature with a
           # new component and its tests, took 70 and was marked failed after it had opened its PR.
           claude_args: >-
