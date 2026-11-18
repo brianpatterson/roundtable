@@ -1,6 +1,7 @@
 // The web app's typed client (packages/shared/src/client.ts) against the real server: the same
 // code the browser runs, with fetch pointed at the app in-process instead of the network.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Unauthorized } from '@roundtable/contract';
 import { ApiError, makeApiClient } from '@roundtable/contract/client';
 import { setupTestApp, signUp } from './helpers.js';
 
@@ -45,7 +46,14 @@ describe('the web client', () => {
 
     await expect(missing).rejects.toThrow(ApiError);
     await expect(missing).rejects.toThrow('That application no longer exists.');
-    await expect(clientFor().listApplications()).rejects.toThrow('You have been signed out');
+  });
+
+  it('rejects with the Unauthorized error as the cause when there is no session', async () => {
+    // The web shell routes it to identity by its cause; the client gives it no wording of its own.
+    const signedOut = clientFor().listApplications();
+
+    await expect(signedOut).rejects.toThrow(ApiError);
+    await expect(signedOut).rejects.toHaveProperty('cause', expect.any(Unauthorized));
   });
 
   it('refuses invalid input before sending it', async () => {
