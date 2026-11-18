@@ -77,6 +77,8 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
    create and push a descriptively named branch from `main` instead, without asking. One branch
    per PR; after a merge, start the next change on a new branch from `main`. (The factory's branches are named by its
    action, `claude/issue-<n>-…`.)
+   A PR needn't be up to date with `main` to merge (ADR-0035), but update it first ("Update
+   branch") when it adds a migration or changes dependencies: CI on `main` can't undo a migration.
 2. **Dependencies:** adding, removing or replacing a package means updating `docs/dependencies.md`
    with its purpose, the main alternative, and why this one won. `pnpm check:deps` enforces this.
    pnpm refuses versions published in the last 24 hours (`minimumReleaseAge`, a supply-chain
