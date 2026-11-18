@@ -52,15 +52,17 @@ jobs:
             [ -n "$pr" ] || { echo "No open pull request for $RUN_BRANCH."; exit 0; }
           fi
 
-          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,author)
+          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,author,commits)
           sha=$(echo "$info" | jq -r .headRefOid)
 
           if [ "$EVENT" = workflow_run ]; then
             # A newer commit gets its own CI run, and its own review.
             [ "$sha" = "$RUN_SHA" ] || { echo "#$pr has moved past $RUN_SHA."; exit 0; }
-            # Dependabot's are left to the triage agent (roadmap block 5). ADR-0033.
-            echo "$info" | jq -e '.author.login | test("dependabot") | not' >/dev/null ||
-              { echo "#$pr is Dependabot's."; exit 0; }
+            # Dependabot's own bumps aren't reviewed (ADR-0033), but once the CI fixer or anyone
+            # else has pushed to one, that code is reviewed like any other (ADR-0028).
+            echo "$info" | jq -e '(.author.login | test("dependabot") | not)
+              or any(.commits[]; any(.authors[]; (.login // "") | test("dependabot") | not))' >/dev/null ||
+              { echo "#$pr has only Dependabot's commits."; exit 0; }
           fi
 
           echo "pr=$pr" >> "$GITHUB_OUTPUT"

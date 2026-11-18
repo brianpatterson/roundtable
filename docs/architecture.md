@@ -413,7 +413,7 @@ pre-upgrade branch fails to migrate.
 Every Monday, the Architecture review workflow runs Matt Pocock's `improve-codebase-architecture`
 skill (vendored in `.github/factory/skills/`) unattended over recently changed code, uploads its
 HTML report, and opens an `architecture` issue for each Strong candidate; the owner labels it
-`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)) |
+`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)) |
 | Production | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md)) |
 
 ### Software factory
@@ -428,6 +428,7 @@ rejects branches that change `.github/`, `.claude/` or `CLAUDE.md`
 ([ADR-0025](adr/0025-software-factory-implementer.md)).
 
 Once CI passes on a new commit of any pull request from this repository except Dependabot's
+(unless someone else, such as the CI fixer, has pushed to it)
 ([ADR-0033](adr/0033-review-every-pull-request.md)), or when the owner labels one `review`, the
 Review workflow runs a second agent under `.github/factory/reviewer.md`. It reads the change
 (checked out apart from `main`, never run) against its ticket, or its description when it has
@@ -437,7 +438,8 @@ approves; the owner merges, and can ask the implementer to address the review
 follow-up runs `pnpm check` and the tests before pushing; on anyone else's, the action refuses to
 run the pull request's code ([ADR-0034](adr/0034-implementer-runs-checks-on-its-own-prs.md)).
 
-When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`),
+When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`,
+which Dependabot's npm pull requests get automatically),
 the Factory workflow restarts the implementer on that branch to fix it: it re-runs jobs that
 failed for reasons outside the change, fixes the cause otherwise, and stops after two attempts
 with a `needs-human` label ([ADR-0028](adr/0028-software-factory-ci-fixer.md)).

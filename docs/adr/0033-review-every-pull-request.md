@@ -52,3 +52,9 @@ instead, and lists its claims where it would list acceptance criteria
 - Revisit as ADR-0026 says: once verdicts have proven reliable, make the verdict a required check.
   If the cost shows up in the subscription limits, go back to labels for pull requests that don't
   touch `.github/`, `infra/` or auth.
+
+## Updates
+
+- **2026-11-18:** Dependabot's pull requests are skipped only while every commit is Dependabot's.
+  Its npm pull requests now get `autofix` ([ADR-0028](0028-software-factory-ci-fixer.md)), and
+  once the CI fixer pushes to one, the reviewer reviews it, so no fix goes unread.

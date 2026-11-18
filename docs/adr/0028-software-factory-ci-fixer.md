@@ -89,3 +89,12 @@ review` on #75 and #76, its pushes went out with the job's token and CI on them 
   API, which a workflow's own token can't read. The fixer pushing to a Dependabot branch means
   Dependabot stops rebasing that pull request; it's merged or closed as it is. GitHub Actions and
   Docker updates stay opt-in.
+  - **The fix is reviewed.** The reviewer skips Dependabot's pull requests (ADR-0033) only while
+    every commit is Dependabot's; once the fixer has pushed, it reviews the pull request like any
+    other, so the reviewer still reads every fix. That matters more here: a Dependabot pull
+    request's body carries upstream release notes, text a package's maintainer controls, which
+    the fixer can read.
+  - **Attempts carry over a refresh.** The count resets only on a commit with no bot author. If
+    Dependabot rebuilds a pull request after the fixer used its two attempts (a grouped bump to
+    newer versions, `@dependabot recreate`), it goes straight to `needs-human`; the owner then
+    pushes or labels as needed.
