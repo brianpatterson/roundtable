@@ -111,3 +111,25 @@ Options 1 and 2 together, plus a guard on what's published:
     Both entries are broader than their use: `pnpm prettier` also takes `--plugin` (code from the
     workspace, which `pnpm test` already runs) and `git merge` takes any fetched ref; only the
     instructions narrow them.
+- **2026-11-18:** the denial report splits commands the way a shell does (Python's `shlex`,
+  replacing the regex split in jq), so quoted text is no longer split. The reviewer's run on #80 was
+  flagged for a refused command with `curl` in it, and the report couldn't tell whether `curl`
+  was a program or text in a grep pattern: `gh pr diff 80 | grep -n "exec curl\|curl"` split at
+  the `\|`. It also parses subshells, backticks, `bash -c '…'` and `eval` strings in turn.
+  - **Labels show the command's shape:** each part's program and first argument when they are
+    plain lowercase words or short flags, joined by the shell operators, and why it was flagged:
+    `Bash: cd … && curl … (curl)`, `Bash: gh pr | grep -n`. Still nothing that could carry
+    encoded data, and the secret guard still runs on it.
+  - **Also flagged:** what pnpm runs for an unknown command (`pnpm git config …`: pnpm runs it
+    like `exec`), nested pnpm, `pnpm create` (it downloads a package to run it, like `pnpm dlx`),
+    and git's `--config-env` and `--exec-path=<dir>` (which runs subcommands from that directory)
+    like `-c`. More global flags that take a value are skipped (`--filter-prod`,
+    `--workspace-concurrency`, `--attr-source`, `--super-prefix`).
+  - **Denied outright:** the implementer and fixer deny `git --config-env`, like `git -c`:
+    `Bash(git --config-env:*)` for the form with a space, and the wildcard
+    `Bash(git --config-env=*)` for the `=` form, since `:*` only matches a prefix followed by a
+    space. If a Claude Code version doesn't match that wildcard, the `=` form is still refused
+    because no allowlist entry matches it.
+  - `.github/factory/test-report-denials.sh` pins 65 cases. Seeing exactly what an agent tried
+    would need its full transcript, which is deleted with the job; keeping it, encrypted to the
+    owner, is a separate decision.
