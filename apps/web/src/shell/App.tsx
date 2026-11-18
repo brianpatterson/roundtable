@@ -1,4 +1,4 @@
-import { Button, ThemeSelect } from '../design-system';
+import { Alert, Button, ThemeSelect } from '../design-system';
 import { ApplicationsPage } from '../modules/applications';
 import { AuthGate } from '../modules/identity';
 import styles from './App.module.css';
@@ -8,7 +8,7 @@ import styles from './App.module.css';
 export function App() {
   return (
     <AuthGate>
-      {({ userName, signOut }) => (
+      {({ userName, signOut, signOutError }) => (
         <main className={styles.main}>
           <header className={styles.header}>
             <h1>Roundtable</h1>
@@ -20,6 +20,7 @@ export function App() {
               </Button>
             </div>
           </header>
+          {signOutError && <Alert tone="error">{signOutError}</Alert>}
           <ApplicationsPage />
         </main>
       )}
