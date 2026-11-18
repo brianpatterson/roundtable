@@ -44,6 +44,19 @@ Write specific questions in your comment, commit nothing, and stop: the workflow
    description.
 7. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
 
+### Running commands
+
+These apply to every run: building, follow-ups and fixing CI. Your commands are checked against an
+allowlist, and every part of a chain has to be on it, so a refused call costs a turn and shows up
+in the run's report.
+
+- **Tests:** `pnpm test`, one package's with `pnpm --filter @roundtable/web test` (or `api`),
+  optionally with Vitest's arguments (`-- -t "name"`), or `pnpm vitest` after `cd` into the package.
+  Never `npx` or `pnpm exec`: they're refused, and `npx` marks the run suspicious for a human
+  because it can download and run a package.
+- **Output:** don't pipe through `grep`, `head`, `tail` or `sed`. They're refused, and the whole
+  command with them. You see the full output anyway; read files with your Read and Grep tools.
+
 ## The pull request
 
 Write the description to `.factory/pr-body.md` (git-ignored) from
