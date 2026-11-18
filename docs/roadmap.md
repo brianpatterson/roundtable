@@ -50,7 +50,7 @@ Decided in [ADR-0022](adr/0022-effect-for-the-api.md), with the evidence in the
 [spike findings](research/2026-11-effect-spike.md). Each step is its own PR, keeps `pnpm check`
 green, and updates `CLAUDE.md` and `docs/architecture.md` as it changes them:
 
-1. **Drizzle 1.0 on the current Fastify app:** bump `drizzle-orm` and `drizzle-kit` to the release
+1. ✅ **Drizzle 1.0 on the current Fastify app:** bump `drizzle-orm` and `drizzle-kit` to the release
    candidate (exact pins), convert the migrations folder once with `drizzle-kit up` (byte-identical
    SQL), switch to `drizzle({ client })`, turn on `paramsInErrors`, and update #29's leak tests for
    1.0's error format. Measured in the spike as 4 lines of code. It goes first because it's
@@ -173,6 +173,11 @@ Building blocks, in order:
    comments, then a human approves (you stay in the loop at first).
 4. **Staging environment**: a second deploy target on the same VPS or a second small one. Every
    merge goes to staging first, and production follows automatically if staging is healthy.
+   **Deferred until there are users** (2026-11-18): until then it would mostly protect test
+   data. Production already rolls back a failed deploy, `Main health` reports a broken main
+   (ADR-0035), and rule 5 in `CLAUDE.md` keeps migrations compatible with the previous release.
+   When it's picked up, the 2026-11-18 sketch was a second $6 droplet with the same cloud-init,
+   Compose file and deploy script, behind HTTP basic auth, promoted to production automatically.
 5. **Continuous operation**: scheduled agent runs that triage Dependabot PRs, fix flaky tests,
    and turn production errors into tickets, and then into PRs with a failing test that reproduces
    them, without a human starting the investigation. That only works if each error carries enough
