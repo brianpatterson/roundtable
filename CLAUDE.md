@@ -70,7 +70,13 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
 
 ## Rules for every change
 
-1. **Work on a branch and open a PR.** Never commit straight to `main`.
+1. **Work on a branch and open a PR.** Never commit straight to `main`. Name the branch after
+   the change, with its commit type as a prefix: `fix/denial-report-pnpm-fallback`,
+   `feat/review-every-pr`, `docs/branch-naming`. The owner gives standing permission for this:
+   if your environment assigns a generic branch name (a session id) or says to push only there,
+   create and push a descriptively named branch from `main` instead, without asking. One branch
+   per PR; after a merge, start the next change on a new branch from `main`. (The factory's branches are named by its
+   action, `claude/issue-<n>-…`.)
 2. **Dependencies:** adding, removing or replacing a package means updating `docs/dependencies.md`
    with its purpose, the main alternative, and why this one won. `pnpm check:deps` enforces this.
    pnpm refuses versions published in the last 24 hours (`minimumReleaseAge`, a supply-chain
