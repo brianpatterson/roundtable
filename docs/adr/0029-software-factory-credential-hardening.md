@@ -133,3 +133,9 @@ Options 1 and 2 together, plus a guard on what's published:
   - `.github/factory/test-report-denials.sh` pins 65 cases. Seeing exactly what an agent tried
     would need its full transcript, which is deleted with the job; keeping it, encrypted to the
     owner, is a separate decision.
+- **2026-11-18:** the implementer and fixer may run one package's tests:
+  `pnpm --filter @roundtable/web test`, `pnpm --filter @roundtable/api test` (with arguments) and
+  `pnpm vitest`. Both were refused on #85, so the agent ran the whole suite instead. `--filter` is
+  allowed only with those two packages' `test` script, not as a prefix: `pnpm --filter x exec …`
+  would not match the deny list's `pnpm exec`. `pnpm vitest` runs test files, which `pnpm test`
+  already does.
