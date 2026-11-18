@@ -413,7 +413,7 @@ pre-upgrade branch fails to migrate.
 Every Monday, the Architecture review workflow runs Matt Pocock's `improve-codebase-architecture`
 skill (vendored in `.github/factory/skills/`) unattended over recently changed code, uploads its
 HTML report, and opens an `architecture` issue for each Strong candidate; the owner labels it
-`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)) |
+`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Security audit`: weekly, an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)) |
 | Production | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md)) |
 
 ### Software factory

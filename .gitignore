@@ -21,3 +21,6 @@ infra/tfplan
 # Mutation testing reports and scratch space (Stryker, ADR-0027)
 apps/web/reports/
 .stryker-tmp/
+
+# The security auditor's throwaway tests and findings (ADR-0036); never committed.
+apps/api/test/audit/

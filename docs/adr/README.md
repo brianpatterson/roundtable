@@ -45,3 +45,4 @@ you'd want to explain in an interview. Copy [template.md](template.md).
 | 0033 | [Review every pull request but Dependabot's, not only the factory's](0033-review-every-pull-request.md)                          | Accepted                                                            |
 | 0034 | [Let the implementer run checks on its own pull requests](0034-implementer-runs-checks-on-its-own-prs.md)                        | Accepted                                                            |
 | 0035 | [Merge pull requests without updating them first, and track main's health](0035-merge-without-updating-branches.md)              | Accepted                                                            |
+| 0036 | [Audit security weekly with a sandboxed agent that files private draft advisories](0036-weekly-security-audit.md)                | Accepted                                                            |
