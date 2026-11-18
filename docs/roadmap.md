@@ -173,6 +173,11 @@ Building blocks, in order:
    comments, then a human approves (you stay in the loop at first).
 4. **Staging environment**: a second deploy target on the same VPS or a second small one. Every
    merge goes to staging first, and production follows automatically if staging is healthy.
+   **Deferred until there are users** (2026-11-18): until then it would mostly protect test
+   data. Production already rolls back a failed deploy, `Main health` reports a broken main
+   (ADR-0035), and rule 5 in `CLAUDE.md` keeps migrations compatible with the previous release.
+   When it's picked up, the 2026-11-18 sketch was a second $6 droplet with the same cloud-init,
+   Compose file and deploy script, behind HTTP basic auth, promoted to production automatically.
 5. **Continuous operation**: scheduled agent runs that triage Dependabot PRs, fix flaky tests,
    and turn production errors into tickets, and then into PRs with a failing test that reproduces
    them, without a human starting the investigation. That only works if each error carries enough
