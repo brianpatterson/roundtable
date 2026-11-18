@@ -34,7 +34,9 @@ the same way: show, don't speculate.
 - Read `git log` and `git diff` to see what changed recently; recent changes are the likeliest place
   for a new hole.
 
-You can't reach the network, the production server, or any secret, and you mustn't try. Commands
+Never reach for the network, the production server or a secret, from your tools or from the tests
+you write: the tests run with the network, but nothing here needs it, and trying marks the run for a
+human. You hold no advisory or deploy credential; filing happens in a separate job. Commands
 are checked against an allowlist, and every part of a chain must be on it: run tests with the command
 above, never `npx` or `pnpm exec`, and don't pipe output through `grep`, `head` or `tail` (read files
 with your Read and Grep tools instead).
@@ -59,8 +61,8 @@ with your Read and Grep tools instead).
    `localStorage`, or sends credentials somewhere they shouldn't go.
 
 Skip what an ADR accepted on purpose, unless you can show the risk is bigger than the ADR assumed;
-then say which ADR and why. Skip anything in the list of advisories already filed (the prompt names
-the file), unless you have new evidence; then say what's new.
+then say which ADR and why. You can't see what earlier runs filed (that list is private): give
+each hole a stable title, and the filing job skips titles it has already filed.
 
 ## What counts as a finding
 

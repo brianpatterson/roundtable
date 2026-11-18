@@ -4,11 +4,16 @@
 # (database down, mailer throwing) by writing throwaway tests in apps/api/test/audit/ and running
 # them, the way the 2026-11-10 leak was found (#29).
 #
-# The repository is public, so nothing about a finding is published here. Each confirmed finding
-# becomes a draft security advisory, private to the owner, filed by a deterministic step with a
-# token only that step sees. Findings never pass through a step's `env:` or the agent's prompt,
-# which GitHub prints in the public log: the agent writes them to a file, and the filing step reads
-# it. The job summary says only that the run finished.
+# Two jobs, so code the agent wrote never shares a runner with the advisory token:
+# - `audit` runs the agent and its tests. Those tests run with the network and could tamper with
+#   anything later in the job, so this job holds nothing worth stealing beyond what every agent job
+#   has: it encrypts its findings to AUDIT_FINDINGS_PUBLIC_KEY and uploads only the ciphertext
+#   (artifacts on a public repository are public).
+# - `file` runs on a fresh runner from main, decrypts the findings with AUDIT_FINDINGS_KEY, and files
+#   each new one as a draft security advisory, private to the owner, with SECURITY_ADVISORY_TOKEN.
+#
+# Nothing about a finding is published: not in a step's `env:` or the agent's prompt (both appear in
+# the public log), not in the summary, and not in an artifact unless encrypted.
 name: Security audit
 
 on:
@@ -30,6 +35,8 @@ jobs:
     environment: factory
     permissions:
       contents: read
+    outputs:
+      suspicious: ${{ steps.denials.outputs.suspicious }}
     services:
       postgres:
         image: postgres:17
@@ -46,31 +53,28 @@ jobs:
       TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
       FINDINGS: apps/api/test/audit/findings.json
     steps:
-      - name: Check the advisory token
+      # Before spending an Opus run: everything the filing job will need is set up. Only whether
+      # each one is set reaches this job, never the secrets themselves.
+      - name: Check the setup
         env:
-          ADVISORY_TOKEN: ${{ secrets.SECURITY_ADVISORY_TOKEN }}
+          HAS_TOKEN: ${{ secrets.SECURITY_ADVISORY_TOKEN != '' }}
+          HAS_KEY: ${{ secrets.AUDIT_FINDINGS_KEY != '' }}
+          PUBLIC_KEY: ${{ vars.AUDIT_FINDINGS_PUBLIC_KEY }}
         run: |
-          [ -n "$ADVISORY_TOKEN" ] || {
-            echo "::error::SECURITY_ADVISORY_TOKEN isn't set in the factory environment. Create a fine-grained token for this repository with 'Repository security advisories: Read and write' only, and add it there (ADR-0036)."
+          missing=""
+          [ "$HAS_TOKEN" = true ] || missing="$missing SECURITY_ADVISORY_TOKEN (secret)"
+          [ "$HAS_KEY" = true ] || missing="$missing AUDIT_FINDINGS_KEY (secret)"
+          [ -n "$PUBLIC_KEY" ] || missing="$missing AUDIT_FINDINGS_PUBLIC_KEY (variable)"
+          [ -z "$missing" ] || {
+            echo "::error::The factory environment is missing:$missing. See ADR-0036 for how to create them."
             exit 1
           }
 
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Load the instructions, the secret guard and the denial report from main
-        run: cp .github/factory/auditor.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
-
-      # What has already been filed, so the agent doesn't report it again. A file, not the prompt:
-      # action inputs appear in the public log, and advisory titles describe the hole.
-      - name: List the advisories already filed
-        env:
-          GH_TOKEN: ${{ secrets.SECURITY_ADVISORY_TOKEN }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/security-advisories?per_page=100" --paginate \
-            --jq '.[] | "- [\(.state)] \(.summary)"' > "$RUNNER_TEMP/known-advisories.md"
-          echo "Listed the advisories already filed."
-
+      - name: Load the instructions, the denial report and its secret guard from main
+        run: cp .github/factory/auditor.md .github/factory/report-denials.sh .github/factory/guard-secrets.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       # No dependency cache (ADR-0030), like the other agent jobs.
@@ -92,7 +96,6 @@ jobs:
           github_token: ${{ github.token }}
           prompt: |
             Run this week's security audit of ${{ github.repository }}, following your instructions.
-            The advisories already filed are listed in ${{ runner.temp }}/known-advisories.md.
             Write your findings to ${{ env.FINDINGS }}.
           claude_args: >-
             --model claude-opus-5-5
@@ -116,52 +119,111 @@ jobs:
         if: always()
         run: '"$RUNNER_TEMP/report-denials.sh"'
 
-      # A suspicious run files nothing (ADR-0029).
+      # A suspicious run files nothing (ADR-0029): the filing job only runs if this one passes.
       - name: Stop a suspicious run
         if: always() && steps.denials.outputs.suspicious == 'true'
         run: |
-          echo "::error::The auditor tried tool calls that reach for credentials or the factory's rules. Nothing was filed; read the run."
+          echo "::error::The auditor tried tool calls that reach for credentials or the factory's rules. Nothing will be filed; read the run."
           exit 1
 
-      - name: File each new finding as a draft security advisory
+      # A fresh AES key per run, itself encrypted to the owner's public key (RSA-OAEP), so only the
+      # filing job, which holds the private key, can read the findings.
+      - name: Encrypt the findings
         if: steps.claude.outcome == 'success'
+        env:
+          PUBLIC_KEY: ${{ vars.AUDIT_FINDINGS_PUBLIC_KEY }}
+        run: |
+          [ -f "$FINDINGS" ] || { echo "::error::The auditor wrote no findings file."; exit 1; }
+          out="$RUNNER_TEMP/audit-findings"
+          mkdir -p "$out"
+          printf '%s\n' "$PUBLIC_KEY" > "$RUNNER_TEMP/audit.pub.pem"
+          AES_KEY=$(openssl rand -hex 32)
+          export AES_KEY
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in "$FINDINGS" -out "$out/findings.enc" -pass env:AES_KEY
+          printf '%s' "$AES_KEY" | openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/audit.pub.pem" \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out "$out/key.enc"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.claude.outcome == 'success'
+        with:
+          name: audit-findings-encrypted
+          path: ${{ runner.temp }}/audit-findings/
+          retention-days: 1
+
+  file:
+    needs: audit
+    if: needs.audit.result == 'success' && needs.audit.outputs.suspicious != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: factory
+    permissions:
+      contents: read
+    steps:
+      # From main, on a runner the agent never touched.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/factory/guard-secrets.sh
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: audit-findings-encrypted
+          path: ${{ runner.temp }}/audit-findings
+
+      - name: Decrypt the findings
+        env:
+          PRIVATE_KEY: ${{ secrets.AUDIT_FINDINGS_KEY }}
+        run: |
+          dir="$RUNNER_TEMP/audit-findings"
+          umask 077
+          printf '%s\n' "$PRIVATE_KEY" > "$RUNNER_TEMP/audit.key.pem"
+          AES_KEY=$(openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/audit.key.pem" \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in "$dir/key.enc")
+          export AES_KEY
+          openssl enc -d -aes-256-cbc -pbkdf2 -in "$dir/findings.enc" -out "$RUNNER_TEMP/findings.json" -pass env:AES_KEY
+          rm -f "$RUNNER_TEMP/audit.key.pem"
+          jq -e '.findings | type == "array"' "$RUNNER_TEMP/findings.json" >/dev/null ||
+            { echo "::error::The findings file isn't in the expected shape."; exit 1; }
+
+      - name: File each new finding as a draft security advisory
         env:
           GH_TOKEN: ${{ secrets.SECURITY_ADVISORY_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          [ -f "$FINDINGS" ] || { echo "::error::The auditor wrote no findings file."; exit 1; }
-          jq -e '.findings | type == "array"' "$FINDINGS" >/dev/null ||
-            { echo "::error::The findings file isn't in the expected shape."; exit 1; }
-
+          findings="$RUNNER_TEMP/findings.json"
           known=$(gh api "repos/$GITHUB_REPOSITORY/security-advisories?per_page=100" --paginate \
             --jq '.[].summary | ascii_downcase')
-
-          count=$(jq '.findings | length' "$FINDINGS")
+          failed=0
+          count=$(jq '.findings | length' "$findings")
           for i in $(seq 0 $((count - 1))); do
-            finding=$(jq -c ".findings[$i]" "$FINDINGS")
-            summary=$(jq -r '.title' <<<"$finding" | head -c 200)
+            finding=$(jq -c ".findings[$i]" "$findings")
+            summary=$(jq -r '.title // "" | tostring' <<<"$finding" | head -c 200)
+            # A finding without a title can't be filed or matched against earlier ones.
+            [ -n "$summary" ] || { echo "::warning::Finding $i has no title; skipped."; continue; }
             if grep -qxF "$(tr '[:upper:]' '[:lower:]' <<<"$summary")" <<<"$known"; then continue; fi
 
-            body=$(jq -n --argjson f "$finding" --arg run "$RUN_URL" '{
-              summary: ($f.title[0:200]),
-              severity: (if ($f.severity | IN("low","medium","high","critical")) then $f.severity else "medium" end),
+            body=$(jq -n --argjson f "$finding" --arg summary "$summary" --arg run "$RUN_URL" '{
+              summary: $summary,
+              severity: (if (($f.severity // "") | IN("low","medium","high","critical")) then $f.severity else "medium" end),
               description: (
-                "**Category:** \($f.category)\n\n" +
-                "**Where:** " + ($f.files | map("`\(.)`") | join(", ")) + "\n\n" +
-                "### What happens\n\n\($f.details)\n\n" +
-                "### Reproduction\n\n\($f.reproduction)\n\n" +
-                "### Suggested fix\n\n\($f.fix)\n\n" +
+                "**Category:** \($f.category // "unknown")\n\n" +
+                "**Where:** " + (($f.files // []) | map("`\(.)`") | join(", ")) + "\n\n" +
+                "### What happens\n\n\($f.details // "")\n\n" +
+                "### Reproduction\n\n\($f.reproduction // "")\n\n" +
+                "### Suggested fix\n\n\($f.fix // "")\n\n" +
                 "<sub>Filed by the security auditor ([run](\($run)), ADR-0036). Unverified by a human: triage it, then fix it in the advisory'"'"'s private fork or close it.</sub>"
               ),
               vulnerabilities: [{ package: { ecosystem: "other", name: "roundtable" } }]
             }')
 
             # Private, but it may be published one day: no credentials in it, ever.
-            "$RUNNER_TEMP/guard-secrets.sh" <<<"$body" || continue
-            gh api -X POST "repos/$GITHUB_REPOSITORY/security-advisories" --input - <<<"$body" >/dev/null
-
+            "$GITHUB_WORKSPACE/.github/factory/guard-secrets.sh" <<<"$body" ||
+              { failed=$((failed + 1)); continue; }
+            # One failed POST mustn't lose the findings after it. The error names the index only.
+            gh api -X POST "repos/$GITHUB_REPOSITORY/security-advisories" --input - <<<"$body" >/dev/null ||
+              { echo "::error::Filing finding $i failed."; failed=$((failed + 1)); }
           done
 
           # Public: no count, no titles. The owner reads Security → Advisories.
           echo "The audit finished. New findings, if any, are draft advisories under Security → Advisories." >> "$GITHUB_STEP_SUMMARY"
-          echo "Audit finished."
+          [ "$failed" -eq 0 ] || exit 1
