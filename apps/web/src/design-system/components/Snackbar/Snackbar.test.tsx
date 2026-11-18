@@ -97,6 +97,13 @@ describe('Snackbar', () => {
     );
   });
 
+  it('lets code outside React only show a message, not reach the toasts behind it', () => {
+    const snackbars = createSnackbars();
+
+    expect(Object.keys(snackbars)).toEqual(['show']);
+    expect(Object.isFrozen(snackbars)).toBe(true);
+  });
+
   // jsdom applies no stylesheets, so the styles are checked as text (ADR-0024: tokens, not values).
   it("uses Material's inverse surface, defined for light and dark themes", () => {
     const snackbar = /\.snackbar \{[^}]*\}/.exec(snackbarCss)?.[0] ?? '';

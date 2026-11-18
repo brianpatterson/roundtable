@@ -15,13 +15,24 @@ const errorToast = (message: string) => ({ description: message, priority: 'high
  */
 export interface Snackbars {
   readonly show: (message: string) => void;
-  readonly manager: ReturnType<typeof Toast.createToastManager>;
 }
+
+/**
+ * Base UI's toast manager behind each `Snackbars`. It stays in here, so a caller can only `show` a
+ * message (as an error, like `useSnackbar`), never add a toast with options of its own.
+ */
+const managers = new WeakMap<Snackbars, ReturnType<typeof Toast.createToastManager>>();
 
 export function createSnackbars(): Snackbars {
   const manager = Toast.createToastManager();
 
-  return { show: (message) => manager.add(errorToast(message)), manager };
+  const snackbars: Snackbars = Object.freeze({
+    show: (message: string) => manager.add(errorToast(message)),
+  });
+
+  managers.set(snackbars, manager);
+
+  return snackbars;
 }
 
 /**
@@ -36,7 +47,10 @@ export function SnackbarProvider({
   readonly children: ReactNode;
 }) {
   return (
-    <Toast.Provider timeout={SNACKBAR_TIMEOUT_MS} toastManager={snackbars?.manager}>
+    <Toast.Provider
+      timeout={SNACKBAR_TIMEOUT_MS}
+      toastManager={snackbars && managers.get(snackbars)}
+    >
       {children}
       <Toast.Portal>
         <Toast.Viewport className={styles.viewport}>

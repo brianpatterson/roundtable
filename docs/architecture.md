@@ -120,10 +120,10 @@ On the web, identity owns the whole session lifecycle, expiry included
 query or mutation that fails with `Unauthorized` to identity's `sessionEnded()` (and doesn't retry
 it); `AuthGate` then clears the query cache, re-checks the session and shows the sign-in page with
 "You were signed out. Sign in again.". No feature module handles a 401. The shell also decides
-which mutation errors reach the snackbar: those of mutations that opt in, except `Unauthorized`
-(it reaches the snackbar from outside React through `createSnackbars()`, Base UI's toast manager).
-Signing out shows the
-sign-in page only once the server confirms it; a failed sign-out stays signed in with an error.
+which mutation errors reach the snackbar: those of mutations that opt in, except `Unauthorized`.
+The shell reaches the snackbar from outside React through `createSnackbars()` (Base UI's toast
+manager). Signing out shows the sign-in page only once the server confirms it; a failed sign-out
+stays signed in with an error.
 
 **Email** gives the App one layer too, `EmailLive(env, log)`: the `Mailer` identity sends
 through. Inside, it reads its sending limits (the per-address and per-day caps,
