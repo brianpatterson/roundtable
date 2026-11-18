@@ -29,15 +29,19 @@ a step it shouldn't take on a comment.
    attempt or another round.
 2. **Turn it off for the implementer.** Simple, but an owner's `@claude` on a fork's or a
    stranger's pull request would run their code.
-3. **Turn it off only on pull requests `claude[bot]` opened.** Those branches live in this
-   repository and were written by the implementer itself, from tickets the owner labeled `ready`.
+3. **Turn it off only on the factory's own pull requests:** opened by `claude[bot]`, from a
+   `claude/` branch in this repository. Those branches were written by the implementer itself,
+   from tickets the owner labeled `ready`. The author alone isn't enough, because every
+   installation of the Claude App is `claude[bot]`.
 4. **Add `claude[bot]` as a collaborator.** An App can't be one, and it would widen its access
    everywhere, not just here.
 
 ## Decision
 
-Option 3. The implementer step sets `restrict_untrusted_prs` to `false` only when the event is a
-comment on a pull request whose author is `claude[bot]`, and `true` otherwise. Every other guard
+Option 3. A step before the implementer asks the API for the pull request (on a comment event
+only) and sets `restrict_untrusted_prs` to `false` only when its author is `claude[bot]`, its head
+repository is this one and its branch starts with `claude/`. Anything else, including a failed
+lookup, keeps it `true`. Every other guard
 stays: only the owner's comments start the job, the allowlist and deny list are unchanged, and
 commands run without the scrubbed credentials. The CI fixer and the reviewer are unchanged.
 
@@ -45,7 +49,8 @@ commands run without the scrubbed credentials. The CI fixer and the reviewer are
 
 - Follow-ups can run `pnpm check`, the tests and mutation testing before pushing, like the first
   run on a ticket.
-- The implementer now runs code on its own branches that someone else may have pushed to: the
-  owner, or the CI fixer. Both are already trusted to push there.
+- The implementer now runs code on its own branches that someone else may have pushed to: anyone
+  with write access to this repository (today only the owner) and the CI fixer. All of them are
+  already trusted to push here.
 - If the factory starts working on pull requests from people other than the owner, revisit this
   together with ADR-0029's option of separating the agent from the credentials.
