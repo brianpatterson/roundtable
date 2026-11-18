@@ -125,14 +125,15 @@ const renderShell = async () => {
   vi.resetModules();
   const { App } = await import('./App');
   const { createQueryClient } = await import('./Providers');
-  const { SnackbarProvider, ThemeProvider } = await import('../design-system');
+  const { SnackbarProvider, ThemeProvider, createSnackbars } = await import('../design-system');
   const { QueryClientProvider } = await import('@tanstack/react-query');
   // The app's own cache setup, in a client the test can look inside.
-  const queryClient = createQueryClient();
+  const snackbars = createSnackbars();
+  const queryClient = createQueryClient(snackbars);
 
   render(
     <ThemeProvider>
-      <SnackbarProvider>
+      <SnackbarProvider snackbars={snackbars}>
         <QueryClientProvider client={queryClient}>
           <App />
         </QueryClientProvider>
@@ -176,6 +177,19 @@ describe('App: session expiry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await expectSignInPageWithNotice();
+    expectSignedInCacheCleared(queryClient);
+  });
+
+  it('returns to the sign-in page, with a notice and no snackbar, when a status change answers 401', async () => {
+    callsBeforeExpiry = 1;
+    const queryClient = await renderShell();
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    await userEvent.click(screen.getByRole('combobox', { name: 'Status for Acme' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Offer' }));
+
+    await expectSignInPageWithNotice();
+    expect(screen.queryAllByRole('alertdialog', { hidden: true })).toEqual([]);
     expectSignedInCacheCleared(queryClient);
   });
 

@@ -1,8 +1,8 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SnackbarProvider } from '../../design-system';
+import { SnackbarProvider, createSnackbars } from '../../design-system';
 import { ApplicationsTable } from './ApplicationsTable';
 
 // The table calls the real typed client; only the server behind `fetch` is a stand-in, holding a
@@ -89,11 +89,22 @@ afterEach(() => {
 });
 
 const renderTable = async () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The shell mounts the snackbars once, around every module, and shows the errors of mutations
+  // that opt in with `meta: { errorSnackbar: true }`. Modules can't import the shell, so this
+  // stands in for that part of it (which errors it leaves out is the shell's, in its own tests).
+  const appSnackbars = createSnackbars();
 
-  // The shell mounts the snackbars once, around every module.
+  const queryClient = new QueryClient({
+    mutationCache: new MutationCache({
+      onError: (error, _variables, _context, mutation) => {
+        if (mutation.meta?.errorSnackbar) appSnackbars.show(error.message);
+      },
+    }),
+    defaultOptions: { queries: { retry: false } },
+  });
+
   const { container } = render(
-    <SnackbarProvider>
+    <SnackbarProvider snackbars={appSnackbars}>
       <QueryClientProvider client={queryClient}>
         <ApplicationsTable />
       </QueryClientProvider>
@@ -198,22 +209,6 @@ describe('ApplicationsTable: changing status', () => {
     await waitFor(() => expect(updates).toBe(2));
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
     expect(snackbars()).toHaveLength(2);
-  });
-
-  it('shows no snackbar when the session has ended: the shell returns to sign-in instead', async () => {
-    failUpdate = () => Response.json({ _tag: 'Unauthorized' }, { status: 401 });
-    await renderTable();
-
-    await changeStatus('Acme', 'Offer');
-    await waitFor(() => expect(updates).toBe(1));
-    // A later failure for another reason does show, and alone: the 401 left nothing behind.
-    failUpdate = serverError;
-    await changeStatus('Globex', 'Rejected');
-
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Something went wrong. Please try again.',
-    );
-    expect(snackbars()).toHaveLength(1);
   });
 });
 

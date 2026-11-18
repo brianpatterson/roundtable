@@ -102,8 +102,9 @@ Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, sha
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
 `data-theme` on `<html>`. Modules import only its `index.ts`, and only it imports Base UI.
 The shell's `Providers` mounts the `SnackbarProvider` once (on Base UI's toast), so a module
-reports a failed change with `useSnackbar()` without moving the page; applications does this
-for status changes. A snackbar is announced as an alert, stacks, and goes after 6 seconds or on
+reports a failed change without moving the page: a mutation opts in with
+`meta: { errorSnackbar: true }` (applications does this for status changes), and `useSnackbar()`
+stays for anything else. A snackbar is announced as an alert, stacks, and goes after 6 seconds or on
 Dismiss. Errors tied to a form or dialog stay inline as an `Alert`.
 
 **Identity** gives the App one layer, `IdentityLive`: its endpoint (`/api/auth-config`), the
@@ -118,8 +119,11 @@ On the web, identity owns the whole session lifecycle, expiry included
 ([ADR-0032](adr/0032-web-identity-owns-session-expiry.md)). The shell's `QueryClient` sends every
 query or mutation that fails with `Unauthorized` to identity's `sessionEnded()` (and doesn't retry
 it); `AuthGate` then clears the query cache, re-checks the session and shows the sign-in page with
-"You were signed out. Sign in again.". No feature module handles a 401. Signing out shows the
-sign-in page only once the server confirms it; a failed sign-out stays signed in with an error.
+"You were signed out. Sign in again.". No feature module handles a 401. The shell also decides
+which mutation errors reach the snackbar: those of mutations that opt in, except `Unauthorized`.
+The shell reaches the snackbar from outside React through `createSnackbars()` (Base UI's toast
+manager). Signing out shows the sign-in page only once the server confirms it; a failed sign-out
+stays signed in with an error.
 
 **Email** gives the App one layer too, `EmailLive(env, log)`: the `Mailer` identity sends
 through. Inside, it reads its sending limits (the per-address and per-day caps,
