@@ -59,6 +59,7 @@ jobs:
       contents: read
     outputs:
       suspicious: ${{ steps.denials.outputs.suspicious }}
+      encrypted: ${{ steps.encrypt.outputs.encrypted }}
     services:
       postgres:
         image: postgres:17
@@ -142,12 +143,21 @@ jobs:
 
       # A fresh AES key per run, itself encrypted to the owner's public key (RSA-OAEP), so only the
       # filing job, which holds the private key, can read the findings.
+      # Also after a failed run (out of turns or time): the agent keeps the findings file current
+      # as it confirms each one, so what it demonstrated before stopping is still filed.
       - name: Encrypt the findings
-        if: steps.claude.outcome == 'success'
+        id: encrypt
+        if: >-
+          always() && steps.denials.outputs.suspicious != 'true' &&
+          (steps.claude.outcome == 'success' || steps.claude.outcome == 'failure')
         env:
           PUBLIC_KEY: ${{ vars.AUDIT_FINDINGS_PUBLIC_KEY }}
+          OUTCOME: ${{ steps.claude.outcome }}
         run: |
-          [ -f "$FINDINGS" ] || { echo "::error::The auditor wrote no findings file."; exit 1; }
+          if [ ! -f "$FINDINGS" ]; then
+            [ "$OUTCOME" = success ] && { echo "::error::The auditor wrote no findings file."; exit 1; }
+            echo "The audit stopped before writing any findings."; exit 0
+          fi
           out="$RUNNER_TEMP/audit-findings"
           mkdir -p "$out"
           printf '%s\n' "$PUBLIC_KEY" > "$RUNNER_TEMP/audit.pub.pem"
@@ -156,9 +166,10 @@ jobs:
           openssl enc -aes-256-cbc -pbkdf2 -salt -in "$FINDINGS" -out "$out/findings.enc" -pass env:AES_KEY
           printf '%s' "$AES_KEY" | openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/audit.pub.pem" \
             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out "$out/key.enc"
+          echo "encrypted=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
-        if: steps.claude.outcome == 'success'
+        if: always() && steps.encrypt.outputs.encrypted == 'true'
         with:
           name: audit-findings-encrypted
           path: ${{ runner.temp }}/audit-findings/
@@ -166,7 +177,7 @@ jobs:
 
   file:
     needs: audit
-    if: needs.audit.result == 'success' && needs.audit.outputs.suspicious != 'true'
+    if: always() && needs.audit.outputs.encrypted == 'true' && needs.audit.outputs.suspicious != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: security-advisories
@@ -200,7 +211,7 @@ jobs:
           # nothing below can fail on a value and print it, and jq's own errors (which quote the
           # value) never reach the public log.
           jq -c '{findings: [.findings[]? | select(type == "object") | {
-              title: ((.title // "") | tostring | .[0:200]),
+              title: ((.title // "") | tostring | gsub("[\\r\\n\\t]+"; " ") | ltrimstr(" ") | rtrimstr(" ") | .[0:200]),
               severity: ((.severity // "") | tostring),
               category: ((.category // "unknown") | tostring),
               files: ((.files // []) | if type == "array" then map(tostring) else [tostring] end),
@@ -246,8 +257,13 @@ jobs:
             "$GITHUB_WORKSPACE/.github/factory/guard-secrets.sh" <<<"$body" ||
               { failed=$((failed + 1)); continue; }
             # One failed POST mustn't lose the findings after it. The error names the index only.
-            gh api -X POST "repos/$GITHUB_REPOSITORY/security-advisories" --input - <<<"$body" >/dev/null ||
-              { echo "::error::Filing finding $i failed."; failed=$((failed + 1)); }
+            # GitHub's error body (on stderr) can quote the finding, so it stays out of the log too.
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/security-advisories" --input - <<<"$body" >/dev/null 2>&1; then
+              # So a second finding with the same title in this run isn't filed again.
+              known=$(printf '%s\n%s' "$known" "$(tr '[:upper:]' '[:lower:]' <<<"$summary")")
+            else
+              echo "::error::Filing finding $i failed."; failed=$((failed + 1))
+            fi
           done
 
           # Public: no count, no titles. The owner reads Security → Advisories.

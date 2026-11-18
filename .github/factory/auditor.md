@@ -82,7 +82,10 @@ environment), describe where it came from, not its value.
 
 ## Your answer
 
-Write `apps/api/test/audit/findings.json` (the prompt gives the path), even when you found nothing:
+Write `apps/api/test/audit/findings.json` (the prompt gives the path) **first**, as
+`{"findings": []}`, and update it each time you confirm a finding, not only at the end: if you run
+out of turns or time, what's in the file is still filed. Leave it in this shape even when you found
+nothing:
 
 ````json
 {
