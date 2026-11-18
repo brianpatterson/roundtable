@@ -97,6 +97,12 @@ jobs:
           # Only the owner's comments, and the reviewer's (posted by github-actions[bot], ADR-0026),
           # reach the agent; anyone else's text in the thread is dropped.
           include_comments_by_actor: ${{ github.repository_owner }},github-actions[bot]
+          # On a pull request whose author isn't confirmed to have write access, the action refuses
+          # every command that runs the checkout's code (`pnpm check`, the tests). The factory's own
+          # pull requests are opened by claude[bot], so follow-ups (`@claude address the review`)
+          # pushed fixes nobody had run (#76). Lifted only there: this repo's branches, written by
+          # this job. Any other pull request keeps it, even when the owner mentions @claude (ADR-0034).
+          restrict_untrusted_prs: ${{ (github.event.issue.pull_request && github.event.issue.user.login == 'claude[bot]') && 'false' || 'true' }}
           # The job's 60-minute timeout is the real limit. 60 turns was too few: #53, a feature with a
           # new component and its tests, took 70 and was marked failed after it had opened its PR.
           claude_args: >-
