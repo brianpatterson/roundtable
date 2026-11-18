@@ -83,3 +83,9 @@ Option 1:
 - **2026-11-17:** the implementer had the same problem on follow-ups: after `@claude address the
 review` on #75 and #76, its pushes went out with the job's token and CI on them was held for
   approval. Its checkout keeps no credentials now either.
+- **2026-11-18:** Dependabot's npm pull requests are labeled `autofix` by `.github/dependabot.yml`,
+  so the fixer takes any whose CI fails, security fixes and version bumps alike (the Effect group
+  can need code changes). Telling a security fix from a bump would need the Dependabot alerts
+  API, which a workflow's own token can't read. The fixer pushing to a Dependabot branch means
+  Dependabot stops rebasing that pull request; it's merged or closed as it is. GitHub Actions and
+  Docker updates stay opt-in.

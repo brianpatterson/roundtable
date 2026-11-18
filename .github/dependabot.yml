@@ -12,6 +12,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # `autofix` hands a PR whose CI fails to the CI fixer (ADR-0028), security fixes and version
+    # bumps alike. Setting labels replaces Dependabot's defaults, so they're listed too.
+    labels: [dependencies, javascript, autofix]
     groups:
       # Pinned exactly and upgraded together (ADR-0022): effect/http-api is marked unstable, so
       # any bump, even a patch, may need code changes. Listed before the catch-all group, since
