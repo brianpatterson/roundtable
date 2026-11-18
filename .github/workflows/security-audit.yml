@@ -188,7 +188,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          sparse-checkout: .github/factory/guard-secrets.sh
+          sparse-checkout: |
+            .github/factory/guard-secrets.sh
+            .github/factory/file-advisories.sh
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v7
         with:
@@ -205,67 +207,20 @@ jobs:
           AES_KEY=$(openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/audit.key.pem" \
             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in "$dir/key.enc")
           export AES_KEY
-          openssl enc -d -aes-256-cbc -pbkdf2 -in "$dir/findings.enc" -out "$RUNNER_TEMP/findings.raw.json" -pass env:AES_KEY
+          openssl enc -d -aes-256-cbc -pbkdf2 -in "$dir/findings.enc" -out "$RUNNER_TEMP/findings.json" -pass env:AES_KEY
           rm -f "$RUNNER_TEMP/audit.key.pem"
-          # The agent's output, normalized once: every field a string (files a list of strings), so
-          # nothing below can fail on a value and print it, and jq's own errors (which quote the
-          # value) never reach the public log.
-          jq -c '{findings: [.findings[]? | select(type == "object") | {
-              title: ((.title // "") | tostring | gsub("[\\r\\n\\t]+"; " ") | ltrimstr(" ") | rtrimstr(" ") | .[0:200]),
-              severity: ((.severity // "") | tostring),
-              category: ((.category // "unknown") | tostring),
-              files: ((.files // []) | if type == "array" then map(tostring) else [tostring] end),
-              details: ((.details // "") | tostring),
-              reproduction: ((.reproduction // "") | tostring),
-              fix: ((.fix // "") | tostring)
-            }]}' "$RUNNER_TEMP/findings.raw.json" > "$RUNNER_TEMP/findings.json" 2>/dev/null ||
-            { echo "::error::The findings file isn't valid JSON."; exit 1; }
-          rm -f "$RUNNER_TEMP/findings.raw.json"
 
+      # The agent's output is untrusted; the script normalizes it, skips titles already filed, runs
+      # the secret guard and keeps everything about a finding out of the log.
+      # .github/factory/test-file-advisories.sh pins it in CI.
       - name: File each new finding as a draft security advisory
         env:
           GH_TOKEN: ${{ secrets.SECURITY_ADVISORY_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          findings="$RUNNER_TEMP/findings.json"
-          known=$(gh api "repos/$GITHUB_REPOSITORY/security-advisories?per_page=100" --paginate \
-            --jq '.[].summary | ascii_downcase')
-          failed=0
-          count=$(jq '.findings | length' "$findings")
-          for i in $(seq 0 $((count - 1))); do
-            finding=$(jq -c ".findings[$i]" "$findings")
-            summary=$(jq -r '.title' <<<"$finding")
-            # A finding without a title can't be filed or matched against earlier ones.
-            [ -n "$summary" ] || { echo "::warning::Finding $i has no title; skipped."; continue; }
-            if grep -qxF "$(tr '[:upper:]' '[:lower:]' <<<"$summary")" <<<"$known"; then continue; fi
-
-            body=$(jq -n --argjson f "$finding" --arg summary "$summary" --arg run "$RUN_URL" '{
-              summary: $summary,
-              severity: (if ($f.severity | IN("low","medium","high","critical")) then $f.severity else "medium" end),
-              description: (
-                "**Category:** \($f.category)\n\n" +
-                "**Where:** " + ($f.files | map("`\(.)`") | join(", ")) + "\n\n" +
-                "### What happens\n\n\($f.details)\n\n" +
-                "### Reproduction\n\n\($f.reproduction)\n\n" +
-                "### Suggested fix\n\n\($f.fix)\n\n" +
-                "<sub>Filed by the security auditor ([run](\($run)), ADR-0036). Unverified by a human: triage it, then fix it in the advisory'"'"'s private fork or close it.</sub>"
-              ),
-              vulnerabilities: [{ package: { ecosystem: "other", name: "roundtable" } }]
-            }' 2>/dev/null) || { echo "::error::Finding $i couldn't be turned into an advisory."; failed=$((failed + 1)); continue; }
-
-            # Private, but it may be published one day: no credentials in it, ever.
-            "$GITHUB_WORKSPACE/.github/factory/guard-secrets.sh" <<<"$body" ||
-              { failed=$((failed + 1)); continue; }
-            # One failed POST mustn't lose the findings after it. The error names the index only.
-            # GitHub's error body (on stderr) can quote the finding, so it stays out of the log too.
-            if gh api -X POST "repos/$GITHUB_REPOSITORY/security-advisories" --input - <<<"$body" >/dev/null 2>&1; then
-              # So a second finding with the same title in this run isn't filed again.
-              known=$(printf '%s\n%s' "$known" "$(tr '[:upper:]' '[:lower:]' <<<"$summary")")
-            else
-              echo "::error::Filing finding $i failed."; failed=$((failed + 1))
-            fi
-          done
-
+          status=0
+          .github/factory/file-advisories.sh "$RUNNER_TEMP/findings.json" || status=$?
+          rm -f "$RUNNER_TEMP/findings.json"
           # Public: no count, no titles. The owner reads Security → Advisories.
           echo "The audit finished. New findings, if any, are draft advisories under Security → Advisories." >> "$GITHUB_STEP_SUMMARY"
-          [ "$failed" -eq 0 ] || exit 1
+          exit "$status"

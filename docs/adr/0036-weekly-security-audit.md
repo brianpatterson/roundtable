@@ -95,3 +95,11 @@ and `.github/factory/auditor.md`.
   is a later decision.
 - Revisit if the findings are mostly noise (tighten the prompt or the bar), or to add a per-PR
   trigger for changes to auth, logging or `infra/`.
+
+## Updates
+
+- **2026-11-18:** the filing logic moved from the workflow into `.github/factory/file-advisories.sh`,
+  pinned by `.github/factory/test-file-advisories.sh` in CI (a stand-in `gh` records what would be
+  filed), like the denial report. It now lowercases severity (`High` was filed as `medium`),
+  collapses all whitespace in titles before matching, and matches titles that start with `-`
+  (grep read them as options, so the same hole could be filed every week).
