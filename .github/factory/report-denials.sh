@@ -62,24 +62,25 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
     if .[0] == "git" then
       # `-c` and `--config-env` set config for one command, like `git config` does.
       .[1:] as $r
-      | ($r | skipflags(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"])) as $sub
+      | ($r | skipflags(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source"])) as $sub
       | ($r[0:(($r | length) - ($sub | length))] | any(. == "-c" or startswith("--config-env")))
         or (($sub[0] // "") | test("^(config|remote|credential)$"))
     elif .[0] == "pnpm" then
-      # pnpm dlx downloads a package to run it. (An unknown pnpm command runs like exec: see target.)
-      (.[1:] | skipflags(pnpm_valued)) as $sub | ($sub[0] // "") == "dlx"
+      # pnpm dlx and pnpm create download a package to run it. (An unknown pnpm command runs like
+      # exec: see target.)
+      (.[1:] | skipflags(pnpm_valued)) as $sub | ($sub[0] // "") | test("^(dlx|create)$")
     else
       # npx and pnpx download a package that is not installed, and run it.
       (.[0] // "") | test("^(curl|wget|env|printenv|npx|pnpx)$")
     end;
   # What a part runs: for `pnpm [flags] exec …`, the command after exec. pnpm runs an unknown
-  # command the same way (`pnpm git config …`), so that is classified too, except `env` and `dlx`,
-  # which are pnpm commands of its own.
+  # command the same way (`pnpm git config …`), so that is classified too, except `env`, `dlx`
+  # and `create`, which are pnpm commands of its own.
   def target:
     if .[0] == "pnpm" then
       (.[1:] | skipflags(pnpm_valued)) as $sub
       | if ($sub[0] // "") == "exec" then $sub[1:] | unwrap
-        elif ($sub[0] // "") | test("^(env|dlx)?$") then .
+        elif ($sub[0] // "") | test("^(env|dlx|create)?$") then .
         else $sub | unwrap end
     else . end;
 
