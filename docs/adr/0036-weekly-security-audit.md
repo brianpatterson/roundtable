@@ -49,23 +49,33 @@ and `.github/factory/auditor.md`.
 - A finding is something it demonstrated: a test that fails or prints the leak, or, for code it can
   only read (`infra/`, the Caddyfile), the exact lines and the triggering request. It skips risks an
   ADR accepted, and gives each hole a stable title.
-- **Two jobs.** Code the agent wrote could tamper with anything later in its job (the scripts it
-  runs, `GITHUB_ENV`), so that job never holds the advisory token, which can read every unfixed
-  draft. The `audit` job writes the findings to a file and encrypts it with a fresh AES key, itself
-  encrypted (RSA-OAEP) to `AUDIT_FINDINGS_PUBLIC_KEY`, a `factory` environment variable; only the
-  ciphertext is uploaded, because artifacts on a public repository are public. The `file` job runs
-  on a fresh runner from `main`, decrypts with `AUDIT_FINDINGS_KEY`, skips titles already filed,
-  runs the secret guard, and creates one draft advisory per finding with `SECURITY_ADVISORY_TOKEN`.
-  It runs nothing from the agent's job, and not at all if that job was flagged suspicious. All of
-  it is `openssl`, already on the runner.
-- **What the owner sets up, in the `factory` environment:**
-  - `SECURITY_ADVISORY_TOKEN` (secret): fine-grained, this repository only, "Repository security
-    advisories: Read and write" and nothing else.
+- **Three jobs, two environments.** Code the agent wrote could tamper with anything later in its
+  job (the scripts it runs, `GITHUB_ENV`) and, outside the sandbox, read the runner's memory. A job
+  holds every secret its expressions reference, so the agent's job references neither the advisory
+  token (which can read every unfixed draft) nor the decryption key. Both live in their own
+  environment, `security-advisories`, used only by:
+  - `preflight`, which checks that both are set before the Opus run starts, and passes on nothing
+    else;
+  - `file`, which runs on a fresh runner from `main` after the audit, decrypts the findings with
+    `AUDIT_FINDINGS_KEY`, normalizes them (so a malformed one can't stop the rest or print itself),
+    skips titles already filed, runs the secret guard, and creates one draft advisory per finding
+    with `SECURITY_ADVISORY_TOKEN`. It runs nothing from the agent's job, and not at all if that job
+    was flagged suspicious.
+
+  The `audit` job (environment `factory`, for the Claude token) writes the findings to a file and
+  encrypts it with a fresh AES key, itself encrypted (RSA-OAEP) to the repository variable
+  `AUDIT_FINDINGS_PUBLIC_KEY`; only the ciphertext is uploaded, because artifacts on a public
+  repository are public. All of it is `openssl`, already on the runner.
+
+- **What the owner sets up:**
+  - An environment `security-advisories` (Settings → Environments), deployable from `main` only.
+  - In it, the secret `SECURITY_ADVISORY_TOKEN`: fine-grained, this repository only, "Repository
+    security advisories: Read and write" and nothing else.
   - A key pair, made locally:
     `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out audit.key && openssl pkey -in audit.key -pubout -out audit.pub`.
-    `audit.pub` goes in the variable `AUDIT_FINDINGS_PUBLIC_KEY`, `audit.key` in the secret
-    `AUDIT_FINDINGS_KEY`; then delete both files. The run checks all three before it starts the
-    agent.
+    `audit.key` goes in the `security-advisories` secret `AUDIT_FINDINGS_KEY`, `audit.pub` in the
+    repository variable `AUDIT_FINDINGS_PUBLIC_KEY` (Settings → Secrets and variables → Actions →
+    Variables); then delete both files.
 - Nothing about a finding is public: no count, no title, no text in the log, the summary or the
   prompt. The owner reads Security → Advisories after each run, triages each draft, and fixes it in
   the advisory's private fork or closes it.
@@ -79,7 +89,7 @@ and `.github/factory/auditor.md`.
 - **Accepted risk:** the agent's tests run with the network and the job's other secrets as every
   agent job has them (the Claude token, scrubbed from the commands but present on the runner). A
   manipulated agent or a compromised dependency could send its own findings out, but never the
-  advisory token or earlier drafts, which only the `file` job sees.
+  advisory token or earlier drafts, which only `preflight` and `file` see.
 - A finding's fix is written in the advisory's private fork, by the owner or a session given the
   draft, not by the factory, whose pull requests are public. Wiring the factory into private forks
   is a later decision.
