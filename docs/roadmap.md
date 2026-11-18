@@ -187,15 +187,16 @@ Building blocks, in order:
    Dependabot already notifies and opens security fix PRs on its own, and dependency review blocks
    PRs that add a vulnerable package, so its alerts don't need code scanning's pipeline
    ([ADR-0030](adr/0030-factory-code-scanning-findings.md)). Two pieces for the triage agent:
-   - **Security fix PRs get `autofix` automatically**, so the CI fixer
-     ([ADR-0028](adr/0028-software-factory-ci-fixer.md)) handles any breakage they cause. Today
-     Dependabot PRs are opt-in by label.
+   - ✅ **Dependabot's npm PRs get `autofix` automatically** (`.github/dependabot.yml`), so the CI
+     fixer ([ADR-0028](adr/0028-software-factory-ci-fixer.md)) handles any breakage they cause:
+     version bumps too, since telling them from security fixes would need the alerts API.
    - **Alerts with no fix get a triage note, deterministically, no agent**: whether production
      depends on the package (`pnpm why --prod`) or only tooling does, and whether a patched
      version exists. That separates "wait for Dependabot's PR" from "act now". Example: alert #4,
      a picomatch ReDoS with no patch yet, reaches the repo only through Vite and Vitest. Verify
-     first whether a workflow's own token can read Dependabot alerts; if not, it needs a GitHub
-     App or a token from the owner.
+     first whether a workflow's own token can read Dependabot alerts: it can't (no permission
+     covers them), so this needs a fine-grained token from the owner (Dependabot alerts and
+     contents, read-only). Deferred until then; Dependabot's own alert emails are the signal.
 
 6. **Security auditor**: a scheduled agent (weekly, and on any PR that touches auth, logging,
    error tracking, `infra/` or a new external service) whose only job is to find security holes.
