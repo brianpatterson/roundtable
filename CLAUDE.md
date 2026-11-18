@@ -81,6 +81,9 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
    action, `claude/issue-<n>-…`.)
    A PR needn't be up to date with `main` to merge (ADR-0035), but update it first ("Update
    branch") when it adds a migration or changes dependencies: a deploy rollback can't undo a migration.
+   Small fixes found along the way that are outside the PR's purpose (a wrong command in a doc, a
+   typo, a stale comment) go in their own commit in the same PR, not a PR of their own: a PR costs a
+   CI run and a review. List them in the description under **Incidental changes**.
 2. **Dependencies:** adding, removing or replacing a package means updating `docs/dependencies.md`
    with its purpose, the main alternative, and why this one won. `pnpm check:deps` enforces this.
    pnpm refuses versions published in the last 24 hours (`minimumReleaseAge`, a supply-chain
