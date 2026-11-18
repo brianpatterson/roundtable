@@ -6,13 +6,37 @@ import styles from './Snackbar.module.css';
 /** How long a snackbar stays before it goes on its own; hovering or focusing it pauses this. */
 export const SNACKBAR_TIMEOUT_MS = 6000;
 
+/** A snackbar for an error: announced at once (an alert). */
+const errorToast = (message: string) => ({ description: message, priority: 'high' as const });
+
+/**
+ * Snackbars that code outside React can show a message in, such as the shell's query cache. Give
+ * the same object to `SnackbarProvider`; `useSnackbar` inside it reaches the same snackbars.
+ */
+export interface Snackbars {
+  readonly show: (message: string) => void;
+  readonly manager: ReturnType<typeof Toast.createToastManager>;
+}
+
+export function createSnackbars(): Snackbars {
+  const manager = Toast.createToastManager();
+
+  return { show: (message) => manager.add(errorToast(message)), manager };
+}
+
 /**
  * Where snackbars appear. Mount it once, around the whole app (the shell does), so a message
- * outlives the view that showed it.
+ * outlives the view that showed it. Pass `snackbars` to show messages from outside React too.
  */
-export function SnackbarProvider({ children }: { readonly children: ReactNode }) {
+export function SnackbarProvider({
+  snackbars,
+  children,
+}: {
+  readonly snackbars?: Snackbars;
+  readonly children: ReactNode;
+}) {
   return (
-    <Toast.Provider timeout={SNACKBAR_TIMEOUT_MS}>
+    <Toast.Provider timeout={SNACKBAR_TIMEOUT_MS} toastManager={snackbars?.manager}>
       {children}
       <Toast.Portal>
         <Toast.Viewport className={styles.viewport}>
@@ -44,5 +68,5 @@ function Snackbars() {
 export function useSnackbar() {
   const { add } = Toast.useToastManager();
 
-  return (message: string) => add({ description: message, priority: 'high' });
+  return (message: string) => add(errorToast(message));
 }
