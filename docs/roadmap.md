@@ -50,7 +50,7 @@ Decided in [ADR-0022](adr/0022-effect-for-the-api.md), with the evidence in the
 [spike findings](research/2026-11-effect-spike.md). Each step is its own PR, keeps `pnpm check`
 green, and updates `CLAUDE.md` and `docs/architecture.md` as it changes them:
 
-1. **Drizzle 1.0 on the current Fastify app:** bump `drizzle-orm` and `drizzle-kit` to the release
+1. ✅ **Drizzle 1.0 on the current Fastify app:** bump `drizzle-orm` and `drizzle-kit` to the release
    candidate (exact pins), convert the migrations folder once with `drizzle-kit up` (byte-identical
    SQL), switch to `drizzle({ client })`, turn on `paramsInErrors`, and update #29's leak tests for
    1.0's error format. Measured in the spike as 4 lines of code. It goes first because it's
