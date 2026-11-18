@@ -55,6 +55,9 @@ jobs:
       # How the factory's denial report classifies refused commands (ADR-0029).
       - name: Denial report fixtures
         run: .github/factory/test-report-denials.sh
+      # How the security auditor's findings are filed as advisories (ADR-0036).
+      - name: Advisory filing fixtures
+        run: .github/factory/test-file-advisories.sh
       - name: Schema and migrations are in sync
         run: |
           pnpm db:generate
