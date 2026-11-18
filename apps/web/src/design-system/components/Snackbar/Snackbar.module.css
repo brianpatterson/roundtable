@@ -1,0 +1,45 @@
+/* Bottom centre of the screen, above the page; snackbars stack upwards from here. */
+.viewport {
+  position: fixed;
+  bottom: var(--ds-space-4);
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--ds-space-2);
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--ds-space-4));
+  transform: translateX(-50%);
+  outline: none;
+}
+
+/* Material 3's snackbar: the inverse surface, so it stands out in either theme. */
+.snackbar {
+  --ds-color-primary: var(--ds-color-inverse-primary);
+
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: var(--ds-space-1) var(--ds-space-2) var(--ds-space-1) var(--ds-space-4);
+  border-radius: var(--ds-shape-extra-small);
+  background: var(--ds-color-inverse-surface);
+  color: var(--ds-color-inverse-on-surface);
+  box-shadow: var(--ds-elevation-2);
+  transition:
+    opacity var(--ds-motion-short),
+    transform var(--ds-motion-short);
+}
+
+.snackbar[data-starting-style],
+.snackbar[data-ending-style] {
+  opacity: 0;
+  transform: translateY(var(--ds-space-2));
+}
+
+.message {
+  flex: 1;
+  margin: 0;
+  font: var(--ds-type-body-medium);
+}

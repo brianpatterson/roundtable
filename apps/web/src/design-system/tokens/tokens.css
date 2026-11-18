@@ -36,6 +36,10 @@
   --ds-color-on-error: light-dark(#ffffff, #601410);
   --ds-color-error-container: light-dark(#f9dedc, #8c1d18);
   --ds-color-on-error-container: light-dark(#410e0b, #f9dedc);
+  /* The inverse roles: a surface that contrasts with the page, for snackbars */
+  --ds-color-inverse-surface: light-dark(#322f35, #e6e0e9);
+  --ds-color-inverse-on-surface: light-dark(#f5eff7, #322f35);
+  --ds-color-inverse-primary: light-dark(#d0bcff, #6750a4);
   /* Dims the page behind a modal: Material's scrim role (black in both themes) at 32% */
   --ds-color-scrim: light-dark(rgb(0 0 0 / 32%), rgb(0 0 0 / 32%));
 

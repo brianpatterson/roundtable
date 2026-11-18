@@ -9,6 +9,8 @@ export { Dialog, type DialogProps } from './components/Dialog/Dialog';
 
 export { Select, type SelectOption, type SelectProps } from './components/Select/Select';
 
+export { SnackbarProvider, useSnackbar } from './components/Snackbar/Snackbar';
+
 export { TextField, type TextFieldProps } from './components/TextField/TextField';
 
 export {

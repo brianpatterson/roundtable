@@ -125,16 +125,18 @@ const renderShell = async () => {
   vi.resetModules();
   const { App } = await import('./App');
   const { createQueryClient } = await import('./Providers');
-  const { ThemeProvider } = await import('../design-system');
+  const { SnackbarProvider, ThemeProvider } = await import('../design-system');
   const { QueryClientProvider } = await import('@tanstack/react-query');
   // The app's own cache setup, in a client the test can look inside.
   const queryClient = createQueryClient();
 
   render(
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
+      <SnackbarProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </SnackbarProvider>
     </ThemeProvider>,
   );
 

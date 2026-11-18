@@ -3,11 +3,12 @@ import { useState } from 'react';
 import {
   APPLICATION_STATUSES,
   ApplicationNotFound,
+  Unauthorized,
   type Application,
   type ApplicationStatus,
 } from '@roundtable/contract';
 import { ApiError } from '@roundtable/contract/client';
-import { Alert, Button, Dialog, Select } from '../../design-system';
+import { Alert, Button, Dialog, Select, useSnackbar } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './ApplicationsTable.module.css';
 import { applicationsQueryKey } from './queries';
@@ -38,10 +39,20 @@ export function ApplicationsTable() {
   const applications = useQuery({ queryKey: applicationsQueryKey, queryFn: api.listApplications });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: applicationsQueryKey });
 
+  const showSnackbar = useSnackbar();
+
+  // A failure goes in a snackbar, so the table doesn't move. The list is asked again either way,
+  // so each row's select shows the status the server has. Each attempt is its own mutation, so
+  // two failures in a row show two messages.
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: ApplicationStatus }) =>
       api.updateApplication(id, { status }),
-    onSuccess: invalidate,
+    onError: (error) => {
+      // An ended session isn't this table's to report: the shell returns the user to sign-in.
+      if (!(error instanceof ApiError && error.cause instanceof Unauthorized))
+        showSnackbar(error.message);
+    },
+    onSettled: invalidate,
   });
 
   // The row being deleted stays set while the dialog closes, so its text doesn't vanish mid-fade.
@@ -70,7 +81,6 @@ export function ApplicationsTable() {
 
   return (
     <>
-      {updateStatus.error && <Alert tone="error">{updateStatus.error.message}</Alert>}
       <div className={styles.scroll}>
         <table className={styles.table}>
           <thead>
