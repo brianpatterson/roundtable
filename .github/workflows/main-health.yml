@@ -2,7 +2,9 @@
 # requests that pass on their own can break main together. CI on main catches it, and Deploy then
 # skips, but nothing told anyone: the CI fixer only works on pull requests. This opens one issue
 # while CI or Deploy is failing on main, comments on it for each further failure, and closes it
-# when that workflow passes again. No agent runs here.
+# when that workflow passes again. A startup failure counts (an action bump the repository's
+# allowlist doesn't cover fails that way); a cancelled run doesn't (CI cancels superseded runs).
+# No agent runs here.
 #
 # The repository is public; the issue links the run and names the commit, as the Actions tab
 # already does, and carries nothing else from the logs.
@@ -23,7 +25,7 @@ jobs:
     if: >-
       github.event.workflow_run.event != 'pull_request' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      contains(fromJSON('["success", "failure", "timed_out"]'), github.event.workflow_run.conclusion)
+      contains(fromJSON('["success", "failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
