@@ -2,8 +2,9 @@
 # stake in the change, reviews a pull request against its ticket and the repo's rules, then
 # updates one review comment. It never approves; the owner merges.
 #
-# It reviews every pull request from this repository, except Dependabot's, once CI passes on each
-# new commit (ADR-0033), and any pull request the owner labels `review` at once. Both triggers run
+# It reviews every pull request from this repository, except Dependabot's own (until someone else,
+# such as the CI fixer, pushes to one), once CI passes on each new commit (ADR-0033), and any pull
+# request the owner labels `review` at once. Both triggers run
 # this file from `main`, never from a branch, and the pull request's code is only read, never run.
 name: Review
 

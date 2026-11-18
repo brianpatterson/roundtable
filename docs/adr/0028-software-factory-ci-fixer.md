@@ -91,9 +91,17 @@ review` on #75 and #76, its pushes went out with the job's token and CI on them 
   Docker updates stay opt-in.
   - **The fix is reviewed.** The reviewer skips Dependabot's pull requests (ADR-0033) only while
     every commit is Dependabot's; once the fixer has pushed, it reviews the pull request like any
-    other, so the reviewer still reads every fix. That matters more here: a Dependabot pull
-    request's body carries upstream release notes, text a package's maintainer controls, which
-    the fixer can read.
+    other, so the reviewer still reads every fix.
+  - **New releases wait.** Without a delay, a release could reach the fixer minutes after it's
+    published: a compromised one only has to fail CI. `fix-ci` runs `pnpm install` as an ordinary
+    step, outside the agent's isolation, in a job that can request OIDC tokens, and the agent then
+    runs the package's code with the App's token on the remote. So the npm entry has a three-day
+    `cooldown`, which gives the ecosystem time to pull a bad release; security updates aren't
+    delayed. Install scripts stay limited to esbuild (`allowBuilds`).
+  - **Release notes are untrusted text.** A Dependabot pull request's body is written by the
+    package's maintainers, and both the fixer and the reviewer read it. The fixer can't change
+    `.github/` or `.claude/`, the reviewer reads every fix, and the owner merges; the owner should
+    still read the reviewer's verdict on these pull requests with that in mind.
   - **Attempts carry over a refresh.** The count resets only on a commit with no bot author. If
     Dependabot rebuilds a pull request after the fixer used its two attempts (a grouped bump to
     newer versions, `@dependabot recreate`), it goes straight to `needs-human`; the owner then

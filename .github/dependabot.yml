@@ -15,6 +15,10 @@ updates:
     # `autofix` hands a PR whose CI fails to the CI fixer (ADR-0028), security fixes and version
     # bumps alike. Setting labels replaces Dependabot's defaults, so they're listed too.
     labels: [dependencies, javascript, autofix]
+    # A release waits three days before Dependabot proposes it, so a compromised one has time to
+    # be pulled before `autofix` runs the fixer on it. Security updates don't wait (ADR-0028).
+    cooldown:
+      default-days: 3
     groups:
       # Pinned exactly and upgraded together (ADR-0022): effect/http-api is marked unstable, so
       # any bump, even a patch, may need code changes. Listed before the catch-all group, since
