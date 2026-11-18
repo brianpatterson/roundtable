@@ -60,10 +60,11 @@ denials=$(jq -r --arg workspace "$GITHUB_WORKSPACE/" '
     ["-F", "--filter", "--filter-prod", "-C", "--dir", "--loglevel", "--reporter", "--workspace-concurrency"];
   def suspicious_argv:
     if .[0] == "git" then
-      # `-c` and `--config-env` set config for one command, like `git config` does.
+      # `-c` and `--config-env` set config for one command, like `git config` does, and
+      # `--exec-path=dir` runs git subcommands from that directory.
       .[1:] as $r
       | ($r | skipflags(["-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source"])) as $sub
-      | ($r[0:(($r | length) - ($sub | length))] | any(. == "-c" or startswith("--config-env")))
+      | ($r[0:(($r | length) - ($sub | length))] | any(. == "-c" or startswith("--config-env") or startswith("--exec-path=")))
         or (($sub[0] // "") | test("^(config|remote|credential)$"))
     elif .[0] == "pnpm" then
       # pnpm dlx and pnpm create download a package to run it. (An unknown pnpm command runs like

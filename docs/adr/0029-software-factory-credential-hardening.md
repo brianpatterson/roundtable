@@ -114,8 +114,11 @@ Options 1 and 2 together, plus a guard on what's published:
 - **2026-11-17:** the denial report also classifies what pnpm runs for an unknown command
   (`pnpm git config …`, `pnpm bash -c 'curl …'`: pnpm runs it like `exec`), flags
   `pnpm create` like `pnpm dlx` (both download a package to run it), treats git's `--config-env`
-  like `-c`, and skips more global flags that take a value (`--filter-prod`,
-  `--workspace-concurrency`, `--attr-source`, `--super-prefix`). The implementer and fixer deny
-  `git --config-env` in both forms (`Bash(git --config-env:*)` and `Bash(git --config-env=:*)`),
-  like `git -c`: it was refused only because no allowlist entry matched it. Each case is pinned
-  in `.github/factory/test-report-denials.sh`.
+  and `--exec-path=<dir>` (which runs git subcommands from that directory) like `-c`, and skips
+  more global flags that take a value (`--filter-prod`, `--workspace-concurrency`,
+  `--attr-source`, `--super-prefix`). The implementer and fixer also deny `git --config-env`, like
+  `git -c`: `Bash(git --config-env:*)` for the form with a space, and the wildcard
+  `Bash(git --config-env=*)` for the `=` form, since `:*` only matches a prefix followed by a
+  space. If a Claude Code version doesn't match that wildcard, the `=` form is still refused
+  because no allowlist entry matches it. Each case is pinned in
+  `.github/factory/test-report-denials.sh`.
