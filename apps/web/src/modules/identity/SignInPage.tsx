@@ -10,7 +10,11 @@ type Mode = 'sign-in' | 'sign-up' | 'forgot';
 
 const providerLabels: Record<AuthProvider, string> = { github: 'GitHub', google: 'Google' };
 
-export function SignInPage() {
+/** Shown when the API stopped accepting the session, so the user knows why they're here. */
+const SESSION_ENDED_NOTICE = 'You were signed out. Sign in again.';
+
+/** `sessionEnded`: the user is here because their session expired, not because they signed out. */
+export function SignInPage({ sessionEnded }: { sessionEnded: boolean }) {
   const [mode, setMode] = useState<Mode>('sign-in');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,7 +26,7 @@ export function SignInPage() {
     redirectErrorMessage(new URLSearchParams(window.location.search).get('error')),
   );
 
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(sessionEnded ? SESSION_ENDED_NOTICE : null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {

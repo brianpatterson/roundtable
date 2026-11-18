@@ -81,19 +81,19 @@ flowchart TB
     platform[platform/<br/>config, database, observability]
   end
   subgraph web[apps/web/src]
-    shell[shell/<br/>providers, layout] --> wapps[modules/applications] & wid[modules/identity]
+    shell[shell/<br/>providers, layout,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications] & wid[modules/identity]
     wapps --> wshared[shared/<br/>API client]
     wid --> wshared
     shell & wapps & wid --> ds[design-system/<br/>tokens, theme, components on Base UI]
   end
 ```
 
-| Module       | API                                                                                                    | Web                                               | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ----------------- |
-| applications | CRUD handlers, `applications` table                                                                    | `ApplicationsPage` (form + table), its query keys | `applications.ts` |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, sign-in and password-reset pages      | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`  | none                                              | none              |
-| (system)     | `/api/health`, in `server.ts`                                                                          | none                                              | `system.ts`       |
+| Module       | API                                                                                                    | Web                                                            | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers, `applications` table                                                                    | `ApplicationsPage` (form + table), its query keys              | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`  | none                                                           | none              |
+| (system)     | `/api/health`, in `server.ts`                                                                          | none                                                           | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, TextField, Select, Alert, Dialog so far) and its theme. Base UI gives
@@ -109,6 +109,13 @@ for both the sign-in page and Better Auth. Better Auth answers its own failures,
 reports the unexpected ones (`BetterAuthFailed`) through `ErrorReporter`, like every other
 module. The password minimum is part of the identity contract, so the web forms check the same
 length the API enforces.
+
+On the web, identity owns the whole session lifecycle, expiry included
+([ADR-0032](adr/0032-web-identity-owns-session-expiry.md)). The shell's `QueryClient` sends every
+query or mutation that fails with `Unauthorized` to identity's `sessionEnded()` (and doesn't retry
+it); `AuthGate` then clears the query cache, re-checks the session and shows the sign-in page with
+"You were signed out. Sign in again.". No feature module handles a 401. Signing out shows the
+sign-in page only once the server confirms it; a failed sign-out stays signed in with an error.
 
 **Email** gives the App one layer too, `EmailLive(env, log)`: the `Mailer` identity sends
 through. Inside, it reads its sending limits (the per-address and per-day caps,
@@ -201,8 +208,8 @@ routes are mounted beside it. The web app calls the API through the client gener
 same definition (`@roundtable/contract/client`): request bodies are encoded and checked before
 they're sent, so invalid input fails in the browser with the server's own message; responses
 are decoded (dates become `Date`s), so a contract mismatch fails at the boundary instead of deep
-in the UI; and the contract's errors (`Unauthorized`, `ApplicationNotFound`) become messages for
-the user. `client.test.ts` runs that client against the real server. The client costs about
+in the UI; and the contract's errors become messages for the user (`ApplicationNotFound`), or,
+for `Unauthorized`, a return to the sign-in page (see Identity above). `client.test.ts` runs that client against the real server. The client costs about
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
@@ -398,7 +405,7 @@ pre-upgrade branch fails to migrate.
 Every Monday, the Architecture review workflow runs Matt Pocock's `improve-codebase-architecture`
 skill (vendored in `.github/factory/skills/`) unattended over recently changed code, uploads its
 HTML report, and opens an `architecture` issue for each Strong candidate; the owner labels it
-`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Review`: the reviewer agent, after green CI on factory PRs ([ADR-0026](adr/0026-software-factory-reviewer.md)) |
+`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)) |
 | Production | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md)) |
 
 ### Software factory
@@ -412,10 +419,11 @@ GitHub App, so the usual CI runs on it; a human reviews and merges. Its token li
 rejects branches that change `.github/`, `.claude/` or `CLAUDE.md`
 ([ADR-0025](adr/0025-software-factory-implementer.md)).
 
-Once CI passes on a factory pull request's new commit, or when the owner labels any pull
-request `review`, the Review workflow runs a second agent under `.github/factory/reviewer.md`. It
-reads the change (checked out apart from `main`, never run) against its ticket and the repo's
-rules, and a deterministic step posts its verdict as one comment, updated in place. It never
+Once CI passes on a new commit of any pull request from this repository except Dependabot's
+([ADR-0033](adr/0033-review-every-pull-request.md)), or when the owner labels one `review`, the
+Review workflow runs a second agent under `.github/factory/reviewer.md`. It reads the change
+(checked out apart from `main`, never run) against its ticket, or its description when it has
+none, and the repo's rules, and a deterministic step posts its verdict as one comment, updated in place. It never
 approves; the owner merges, and can ask the implementer to address the review
 ([ADR-0026](adr/0026-software-factory-reviewer.md)).
 

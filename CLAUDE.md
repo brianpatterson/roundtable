@@ -50,7 +50,8 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/architecture.yml` runs the vendored architecture skills in `.github/factory/skills/`
   weekly and opens `architecture` issues ([ADR-0031](docs/adr/0031-weekly-architecture-review.md)); don't edit those skills, update them from upstream.
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
-  comments on factory PRs once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md)).
+  comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
+  [ADR-0033](docs/adr/0033-review-every-pull-request.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
 - `docs/`: `architecture.md` (current state), `adr/` (decisions), `dependencies.md` (dependency register), `roadmap.md` (where this is going).
 
