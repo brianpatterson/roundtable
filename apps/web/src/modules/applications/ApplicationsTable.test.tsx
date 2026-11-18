@@ -156,14 +156,22 @@ describe('ApplicationsTable: changing status', () => {
   });
 
   it("keeps showing the server's status in the row after a failed change", async () => {
-    failUpdate = serverError;
+    // The PATCH fails, but meanwhile the status changed elsewhere (another tab, say).
+    failUpdate = () => {
+      const acme = rows.find((r) => r.id === ACME_ID);
+
+      if (acme) acme.status = 'interviewing';
+
+      return serverError();
+    };
+
     await renderTable();
 
     await changeStatus('Acme', 'Offer');
     await screen.findByRole('alert');
 
-    // The list is asked again, so the row shows what the server has even if it changed elsewhere.
-    await waitFor(() => expect(statusFor('Acme').textContent).toContain('Applied'));
+    // The list is asked again after the failure, so the row shows what the server now has.
+    await waitFor(() => expect(statusFor('Acme').textContent).toContain('Interviewing'));
     expect(statusFor('Acme').textContent).not.toContain('Offer');
   });
 
