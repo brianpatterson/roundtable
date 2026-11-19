@@ -129,9 +129,15 @@ jobs:
           reason=$(jq -r '[.[] | select(.type == "result")] | last | (.errors // [] | join(", ")) // "no result message"' "$file" | head -c 500)
           echo "::error::The audit failed: ${reason:-see the run}"
 
+      # Only once the agent has run: before that there's nothing to report, and the script may not
+      # have been copied yet (the first run failed here with "exit code 127" after an earlier step).
       - name: Report denied tool calls
         id: denials
-        if: always()
+        if: always() && steps.claude.outcome != 'skipped'
+        env:
+          # Program names only: the agent's arguments (its test files' names, what it grepped for)
+          # would hint at what it probed, in a public log (ADR-0036).
+          DENIAL_LABELS: programs
         run: '"$RUNNER_TEMP/report-denials.sh"'
 
       # A suspicious run files nothing (ADR-0029): the filing job only runs if this one passes.
