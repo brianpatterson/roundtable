@@ -181,3 +181,11 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   linking behavior itself is tested in `oauth.test.ts`), the adapter's `provider: 'pg'`, and
   `BetterAuthFailed`'s tag. The API's score is now 88% (90% of covered mutants), in a forced
   full run of 6 minutes 29 seconds.
+- **2026-11-19:** the Resend transport (`transport.ts`) went from 12 survivors to 2. New tests
+  cover a 409 concurrent request being retried, a 300 counting as a failure, the 500-character
+  cap on Resend's message, an error body that can't be read, the "unreachable" message, the
+  retry schedule it's given and the default backoff, the 10-second timeout per attempt (both on
+  Effect's simulated clock, so they take no real time), `fromPromise`'s failure for a non-`Error`
+  throw, and `resendLayer` itself. The 2 left are equivalent: `EmailSendFailed`'s tag, and
+  `Schema.Struct({ name })` emptied to `Schema.Struct({})`, which still decodes `name`. The API's
+  score is now 91% (92% of covered mutants), in a forced full run of 6 minutes 18 seconds.
