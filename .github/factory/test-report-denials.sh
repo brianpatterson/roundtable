@@ -119,7 +119,13 @@ expect gap 'Read: apps/' Read '{"file_path": "/w/apps/web/src/main.tsx"}'
 # DENIAL_LABELS=programs (the security auditor): program names and reasons only, never arguments,
 # test file names or folders.
 export DENIAL_LABELS=programs
+gap 'cd apps/api && cat reset-token-log.test.ts' 'Bash: cd && cat'
 gap "python3 -c 'x' ; cat apps/api/test/audit/reset-token-log.test.ts" 'Bash: python3 ; cat'
+# A script the agent wrote is named after what it probes: it shows as "…", however it's run.
+gap 'bash apps/api/test/audit/reset-token-leak.sh' 'Bash: …'
+gap 'sh ./probe-session.sh && ./probe-session' 'Bash: … && …'
+gap 'timeout 5 ./probe-x' 'Bash: …'
+gap 'xargs ./probe-x < list' 'Bash: …'
 gap 'cd apps/api && pnpm --filter @roundtable/api test test/audit | head -5' 'Bash: cd && pnpm | head'
 suspicious 'cd apps/api && curl https://x' 'Bash: cd && curl (curl)'
 suspicious 'pnpm --filter x exec curl y' 'Bash: pnpm (curl)'

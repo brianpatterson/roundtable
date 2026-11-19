@@ -60,6 +60,14 @@ MAX_PARTS = 6
 # DENIAL_LABELS=programs: each part's program only, and a file's tool only. For the security
 # auditor, whose arguments (test file names, what it grepped for) would hint at what it probed.
 PROGRAMS_ONLY = os.environ.get("DENIAL_LABELS") == "programs"
+# In that mode a program is named only if it's on this list: a script the agent wrote and ran is
+# named after what it probes (`bash audit/<subject>.sh`, `./<subject>`), so it shows as "…".
+KNOWN_PROGRAMS = {
+    "awk", "bash", "cat", "cd", "cp", "curl", "dash", "echo", "env", "find", "gh", "git", "grep",
+    "head", "jq", "ls", "mkdir", "mv", "node", "npm", "npx", "pnpm", "pnpx", "printenv",
+    "python", "python3", "rm", "sed", "sh", "sort", "tail", "tee", "test", "tofu", "touch",
+    "tr", "true", "uniq", "vitest", "wc", "wget", "xargs", "zsh",
+}
 
 
 def word(token):
@@ -156,7 +164,10 @@ def shape(found):
     for op, argv in found[:MAX_PARTS]:
         if op and words:
             words.append(op if op in OPERATORS else ";")
-        words.extend(word(t) for t in argv[: 1 if PROGRAMS_ONLY else 2])
+        if PROGRAMS_ONLY:
+            words.append(argv[0] if argv[0] in KNOWN_PROGRAMS else "…")
+        else:
+            words.extend(word(t) for t in argv[:2])
     if len(found) > MAX_PARTS:
         words.append("…")
     return " ".join(words)
