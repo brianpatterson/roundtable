@@ -153,3 +153,11 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   misses. Next: a scheduled CI job (Postgres service, four workers) that publishes the report;
   then incremental runs on pull requests that touch `apps/api/src`, seeded from its
   incremental file. Not added in this change.
+
+- **2026-11-19:** `redact.ts` has no survivors left. `redact.test.ts` pins the parameter kinds,
+  `<redacted: none>`, the fallbacks in `describeError`, data-exception quoting and the SQLSTATE
+  pattern's anchors. The API's score is now 80% (81% of covered mutants), in a full run of 6
+  minutes 24 seconds. The incremental run after adding the tests still reported the two
+  pattern-anchor mutants as surviving: they're static, and Stryker reused their old results
+  although a new test now kills them. Another reason incremental runs need a scheduled full
+  run behind them.
