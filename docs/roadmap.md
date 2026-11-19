@@ -221,21 +221,18 @@ Building blocks, in order:
    - **Inject faults** to exercise error paths, the way the leak was found: take away the
      database, make the mailer throw, then inspect every outgoing event and log line.
 
-7. **Mutation testing for the API (spike)**: Stryker already runs on the web app in CI
-   ([ADR-0027](adr/0027-mutation-testing-stryker.md)); the API needs its own spike first, because:
-   - **One shared test database.** API tests use `app_test`, and `reset()` truncates every table,
-     so the suite runs one file at a time (`fileParallelism: false`). Stryker's parallel workers
-     would truncate each other's data. Options: a database per worker (`app_test_1`, …) or
-     `concurrency: 1`.
-   - **Run time.** The suite takes about 12 seconds against Postgres, so a single worker over the
-     API's ~1,500 lines could take tens of minutes. Measure both setups; the time decides whether
-     the API joins CI on every PR (incremental) or a scheduled full run.
-   - **Effect noise.** Pipelines and generators produce mutants that change nothing observable.
-     Find the `mutator.excludedMutations` or ignorers that remove them before reading the score.
-
-   Done when it has measured run times, a score, the exclusions, and a decision recorded in
-   ADR-0027's updates. The TypeScript 7 workarounds carry over (`apps/api` is as deep as
-   `apps/web`).
+7. ✅ **Mutation testing for the API (spike)** ([ADR-0027](adr/0027-mutation-testing-stryker.md),
+   2026-11-18 update): `pnpm --filter @roundtable/api test:mutation`. Each Stryker worker gets
+   its own test database (`app_test_<worker>`), which cut a full run from 28 to under 9
+   minutes; skipping Drizzle tables and Effect service keys and span names leaves 511 mutants
+   and a score of 75% (78% of covered mutants). Every mutant in `redact.ts`'s token and query
+   parameter redaction is killed. Next:
+   - **A scheduled full run in CI** on `main` (Postgres service, four workers), publishing the
+     report. Then incremental runs on pull requests that touch `apps/api/src`, seeded from the
+     scheduled run's incremental file (incremental runs don't see changes to test helpers,
+     migrations or the contract, so they can't stand alone).
+   - **Tests for the survivors worth killing:** Sentry's privacy options in `error-tracking.ts`,
+     the parameter kinds and data-exception redaction in `redact.ts`.
 
 8. ✅ **Weekly architecture review** ([ADR-0031](adr/0031-weekly-architecture-review.md)): Matt
    Pocock's `improve-codebase-architecture` skill runs unattended every Monday and turns each Strong

@@ -81,3 +81,75 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   ([ADR-0026](0026-software-factory-reviewer.md)), and the implementer runs Stryker itself when it
   changes `apps/web/src`. A scheduled full run waits for the API, where runs are long enough for
   incremental runs to matter; a score threshold waits for a few weeks of real scores.
+- **2026-11-18:** the API spike (roadmap Phase 3, step 7). Stryker runs on `apps/api` with the
+  web app's setup and TypeScript 7 workarounds (`apps/api/stryker.config.mjs`,
+  `pnpm --filter @roundtable/api test:mutation`), locally only for now.
+
+  **The shared test database.** Each Stryker worker gets its own database: the test helpers read
+  Stryker's `STRYKER_MUTATOR_WORKER` and use `app_test_<worker>`, which a Vitest global setup
+  creates and migrates on first use (`apps/api/test/test-database.ts`). Outside Stryker nothing
+  changes. Both options give identical results, mutant for mutant, so the workers don't
+  interfere. Measured on a laptop (10 cores), 595 mutants, before the exclusions below:
+
+  | Run                                         | Time       |
+  | ------------------------------------------- | ---------- |
+  | Dry run (117 tests, with coverage)          | 11 s       |
+  | (a) `concurrency: 1`, the shared `app_test` | 28 min 6 s |
+  | (b) 4 workers, a database each              | 8 min 32 s |
+  | (b) after the exclusions (511 mutants)      | 6 min 36 s |
+  | Incremental, nothing changed                | 13 s       |
+  | Incremental, one line of `redact.ts`        | 15 s       |
+  | Incremental, one test renamed               | 60 s       |
+
+  Most of the time goes to **static mutants**: code that runs when a module loads (schemas,
+  regexes, layers), which Stryker can only test by rerunning the whole suite. They're 55% of
+  the mutants and 94% of the time. `ignoreStatic` would cut the run to about a minute, but it
+  would also drop the redaction regexes in `redact.ts`, so they stay. Four workers matches a
+  GitHub-hosted runner.
+
+  **Exclusions.** `mutator.excludedMutations` was too coarse: excluding string or object
+  literals would also drop real survivors (`redact.ts`'s placeholders, Sentry's privacy options).
+  Instead:
+  - **Drizzle tables** (`schema.ts`, `columns.ts`) aren't mutated (77 mutants). The test database
+    is built from the SQL migrations, so of their mutants only renamed tables and columns are
+    killed (35, by queries failing), and the rest (defaults, indexes, foreign keys, time zones)
+    change nothing at run time (42 survived or had no coverage). CI's schema drift check
+    already catches both kinds.
+  - **Effect names** are skipped by an ignorer (`apps/api/stryker-effect-ignorer.mjs`): service
+    keys (`Context.Service<…>()('roundtable/Mailer')`, found by class, not by key) and span
+    names (`Effect.fn('Mailer.send')`, seen only by a tracer, which the API doesn't have). 7
+    mutants.
+  - Generators and pipelines produced no noise of their own: all 16 emptied `function*`
+    bodies are killed, and the survivors on Effect lines are log messages and fallbacks that
+    no test reads, which are real gaps. Error tags (`Schema.TaggedError`) stay mutated because they appear
+    in error reports; their 3 survivors are noise, but harmless.
+
+  **Score**, after exclusions: 511 mutants, 379 killed, 1 timed out, 106 survived, 19 not
+  covered, 6 errors (a mutant that breaks module loading). **75%** of all mutants, **78%** of
+  the covered ones. The biggest groups of survivors are Sentry's options in `error-tracking.ts`
+  (31: no test notices if `cookies`, `urlQueryParams` or `databaseQueryData` collection is
+  switched on), Better Auth's options in `better-auth.ts` (20: rate limits, account linking),
+  and the Resend transport (12).
+
+  **`redact.ts`:** every one of the 33 mutants in the query-parameter and reset-token
+  redaction (`redactQueryParams`, `redactQueryParamsInJson`, `redactResetPasswordToken`,
+  `redactLogLine`) is killed. Its survivors are all in error description:
+  - `paramKind`: every case but `string` and `uuid` (null, undefined, number, boolean, date,
+    array, object) can return nothing unnoticed; no test describes those kinds, and
+    `describeParams([])` (`<redacted: none>`) has no test at all.
+  - `redactDataException`: `startsWith('22')` → `startsWith('')` survives, so no test checks
+    that a non-data-exception message keeps its quotes.
+  - `describeError`: `'<redacted>'` → `''` survives (a "Failed query" message on an error
+    without `params`), and so does `err.stack ?? …` → `&&` (an error without a stack).
+    `instanceof DrizzleQueryError || …` → `true` survives but is equivalent: other errors have
+    no `params`.
+  - `PostgresError`'s `code` pattern can lose either anchor (`^`, `$`) unnoticed.
+
+  **Decision: a scheduled full run, not every pull request yet.** A full run takes minutes,
+  not the web app's 20 seconds, so pull requests would need incremental runs, and those need a
+  baseline from `main` and only see changes to mutated source and test files: a change to
+  `test/helpers.ts`, a migration, the contract package or a dependency would reuse stale
+  results. A scheduled full run on `main` gives that baseline and catches what incremental
+  misses. Next: a scheduled CI job (Postgres service, four workers) that publishes the report;
+  then incremental runs on pull requests that touch `apps/api/src`, seeded from its
+  incremental file. Not added in this change.

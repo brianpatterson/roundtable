@@ -67,6 +67,7 @@ pnpm db:migrate     # apply migrations to the dev db
 pnpm check:boundaries # imports respect module boundaries (ADR-0023)
 pnpm check:effect   # Effect diagnostics (mistakes tsc can't see, e.g. an Effect that is never run)
 pnpm --filter @roundtable/web test:mutation # Stryker: which web code no test really checks (ADR-0027)
+pnpm --filter @roundtable/api test:mutation # the same for the API: minutes, a test database per worker
 pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + boundaries + tests: run before every commit
 ```
 
