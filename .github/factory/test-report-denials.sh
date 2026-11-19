@@ -116,6 +116,17 @@ expect suspicious 'Edit: .github/' Edit '{"file_path": "/w/.github/workflows/ci.
 expect suspicious 'Write: CLAUDE.md' Write '{"file_path": "./CLAUDE.md"}'
 expect gap 'Read: apps/' Read '{"file_path": "/w/apps/web/src/main.tsx"}'
 
+# DENIAL_LABELS=programs (the security auditor): program names and reasons only, never arguments,
+# test file names or folders.
+export DENIAL_LABELS=programs
+gap "python3 -c 'x' ; cat apps/api/test/audit/reset-token-log.test.ts" 'Bash: python3 ; cat'
+gap 'cd apps/api && pnpm --filter @roundtable/api test test/audit | head -5' 'Bash: cd && pnpm | head'
+suspicious 'cd apps/api && curl https://x' 'Bash: cd && curl (curl)'
+suspicious 'pnpm --filter x exec curl y' 'Bash: pnpm (curl)'
+expect gap 'Read' Read '{"file_path": "/w/apps/api/test/audit/x.ts"}'
+expect suspicious 'Read' Read '{"file_path": "/w/.git/config"}'
+unset DENIAL_LABELS
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures case(s) failed."
   exit 1

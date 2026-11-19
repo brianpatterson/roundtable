@@ -103,3 +103,7 @@ and `.github/factory/auditor.md`.
   filed), like the denial report. It now lowercases severity (`High` was filed as `medium`),
   collapses all whitespace in titles before matching, and matches titles that start with `-`
   (grep read them as options, so the same hole could be filed every week).
+- **2026-11-19:** the first run's denial report printed the first argument of each part of a
+  refused command, and the agent names its test files after what it's probing, so the public log
+  hinted at what it looked into (not what it found). The audit job now sets `DENIAL_LABELS=programs`:
+  program names, the fixed reason when a call is flagged, and a file's tool only.

@@ -6,7 +6,8 @@
 # a way to publish data. For a command it shows only its shape: each part's program and first
 # argument when they are plain lowercase words or short flags (nothing that could carry encoded
 # data), joined by the shell operators between them, plus why it was flagged. For a file, the
-# tool and the top-level folder.
+# tool and the top-level folder. With DENIAL_LABELS=programs (the security auditor), only each
+# part's program and the tool: an argument as plain as a test file's name can say what it probed.
 #
 # Suspicious: reaching for credentials or the factory's own rules (.git/, .github/, .claude/,
 # CLAUDE.md, git config/remote/credential and the global flags that set config, curl, wget, env,
@@ -56,6 +57,9 @@ NETWORK = {"curl", "wget", "env", "printenv", "npx", "pnpx"}
 PNPM_VALUED = {"-F", "--filter", "--filter-prod", "-C", "--dir", "--loglevel", "--reporter", "--workspace-concurrency"}
 GIT_VALUED = {"-C", "-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source"}
 MAX_PARTS = 6
+# DENIAL_LABELS=programs: each part's program only, and a file's tool only. For the security
+# auditor, whose arguments (test file names, what it grepped for) would hint at what it probed.
+PROGRAMS_ONLY = os.environ.get("DENIAL_LABELS") == "programs"
 
 
 def word(token):
@@ -152,7 +156,7 @@ def shape(found):
     for op, argv in found[:MAX_PARTS]:
         if op and words:
             words.append(op if op in OPERATORS else ";")
-        words.extend(word(t) for t in argv[:2])
+        words.extend(word(t) for t in argv[: 1 if PROGRAMS_ONLY else 2])
     if len(found) > MAX_PARTS:
         words.append("…")
     return " ".join(words)
@@ -180,7 +184,7 @@ def classify(denial, workspace):
     if path:
         relative = path.removeprefix(workspace + "/").removeprefix("./")
         kind = "suspicious" if re.match(r"(\.git|\.github|\.claude)(/|$)|CLAUDE\.md$", relative) else "gap"
-        return kind, shown_tool + ": " + folder(path, workspace)
+        return kind, shown_tool if PROGRAMS_ONLY else shown_tool + ": " + folder(path, workspace)
     return "gap", shown_tool
 
 
