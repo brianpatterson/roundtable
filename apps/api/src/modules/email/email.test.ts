@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest';
 import { Database } from '../../platform/database/effect.js';
 import { runMigrations } from '../../platform/database/migrate.js';
 import { createDb } from '../../platform/database/promise.js';
-import { createLogger } from '../../platform/observability/logging.js';
+import { createLogger, effectLoggerLayer } from '../../platform/observability/logging.js';
 import { EmailLive, EmailTransport, Mailer, type Email, type SendEmail } from './index.js';
 import { DailyEmailLimitReached } from './mailer.js';
 import { EmailKind, EmailSendFailed } from './transport.js';
@@ -44,8 +44,23 @@ function sendAll(emails: readonly Email[], overrides: Partial<Env>, send?: SendE
     yield* Effect.forEach(emails, (e) => mailer.send(e), { discard: true });
 
     return lines;
-  }).pipe(Effect.provide(email));
+  }).pipe(Effect.provide(Layer.merge(email, effectLoggerLayer(log))));
 }
+
+/** The fields of a log line these tests compare; `err` is the error's message. */
+const LogLine = Schema.Struct({
+  level: Schema.Int,
+  msg: Schema.String,
+  kind: Schema.optional(EmailKind),
+  limit: Schema.optional(Schema.Int),
+  err: Schema.optional(Schema.Struct({ message: Schema.String })),
+});
+
+const parseLine = (line: string) => {
+  const { err, ...fields } = Schema.decodeSync(Schema.fromJsonString(LogLine))(line);
+
+  return err ? { ...fields, err: err.message } : fields;
+};
 
 describe('EmailLive', () => {
   it.live('logs the email instead of sending it when Resend is not configured', () =>
@@ -103,6 +118,104 @@ describe('EmailLive', () => {
         sent.map((e) => e.to),
         ['a@example.com'],
       );
+    }),
+  );
+});
+
+describe('the Mailer', () => {
+  it.live('counts an address the same whatever its case, and stores it in lowercase', () =>
+    Effect.gen(function* () {
+      const sent: Email[] = [];
+
+      yield* sendAll(
+        [reset('Ann@Example.com'), reset('ann@example.com')],
+        { EMAIL_LIMIT_PER_ADDRESS: 1 },
+        async (e) => void sent.push(e),
+      );
+
+      assert.lengthOf(sent, 1);
+
+      const { rows } = yield* Effect.promise(() =>
+        admin.pool.query<{ recipient: string }>('select recipient from email_sends'),
+      );
+
+      assert.deepStrictEqual(
+        rows.map((row) => row.recipient),
+        ['ann@example.com'],
+      );
+    }),
+  );
+
+  it.live('holds the limit when sends to one address race each other', () =>
+    Effect.gen(function* () {
+      let sent = 0;
+
+      const mailer = EmailLive(
+        { ...env, EMAIL_LIMIT_PER_ADDRESS: 2 },
+        createLogger({ enabled: false }),
+        {
+          transport: EmailTransport.fromPromise(async () => void sent++),
+        },
+      ).pipe(Layer.provide(Database.layer(env.DATABASE_URL)));
+
+      // All at once: without the lock, each would count the same rows and all would pass.
+      yield* Effect.gen(function* () {
+        const { send } = yield* Mailer;
+
+        yield* Effect.forEach(
+          Array.from({ length: 8 }, () => reset('a@example.com')),
+          (e) => send(e),
+          { concurrency: 'unbounded', discard: true },
+        );
+      }).pipe(Effect.provide(mailer));
+
+      assert.strictEqual(sent, 2);
+    }),
+  );
+
+  it.live('logs a dropped email at the daily limit as an error, without the address', () =>
+    Effect.gen(function* () {
+      const lines = yield* sendAll(
+        [reset('a@example.com'), reset('b@example.com')],
+        { EMAIL_LIMIT_PER_DAY: 1 },
+        async () => {},
+      );
+
+      const dropped = lines.map(parseLine).filter((line) => line.level === 50);
+
+      assert.deepStrictEqual(dropped, [
+        {
+          level: 50,
+          msg: 'Email not sent: daily email limit reached',
+          kind: 'password-reset',
+          limit: 1,
+        },
+      ]);
+      assert.notInclude(lines.join(''), 'b@example.com');
+    }),
+  );
+
+  it.live('logs a failed send with the kind and the error, without the address', () =>
+    Effect.gen(function* () {
+      const lines: string[] = [];
+      const log = createLogger({ stream: { write: (line) => void lines.push(line) } });
+
+      const mailer = EmailLive(env, log, {
+        transport: EmailTransport.fromPromise(() => Promise.reject(new Error('Resend is down'))),
+      }).pipe(Layer.provide(Database.layer(env.DATABASE_URL)));
+
+      yield* Effect.exit(
+        Effect.gen(function* () {
+          const { send } = yield* Mailer;
+
+          yield* send(reset('a@example.com'));
+        }).pipe(Effect.provide(Layer.merge(mailer, effectLoggerLayer(log)))),
+      );
+
+      assert.deepStrictEqual(lines.map(parseLine), [
+        { level: 50, msg: 'Email send failed', kind: 'password-reset', err: 'Resend is down' },
+      ]);
+      assert.notInclude(lines.join(''), 'a@example.com');
     }),
   );
 });

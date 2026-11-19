@@ -203,3 +203,10 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   reaches Postgres, which accepts it, and the listen address (`host ?? '0.0.0.0'`) only shows in
   which network interfaces accept connections, which a portable test can't check. The API's
   score is now 93% (94% of covered mutants), in a forced full run of 6 minutes 23 seconds.
+- **2026-11-19:** `mailer.ts` went from 7 survivors to 1. New tests in `email.test.ts` check
+  that an address counts the same whatever its case and is stored in lowercase, that eight
+  concurrent sends to one address can't get past its limit (without the advisory lock all eight
+  see the same count; the test failed every time the lock was removed), and the log lines for an
+  email dropped at the daily limit and for a failed send: message, kind, limit or error, and
+  never the address. The one left is `DailyEmailLimitReached`'s tag. The API's score is now 95%
+  (95% of covered mutants), in a forced full run of 5 minutes 51 seconds.
