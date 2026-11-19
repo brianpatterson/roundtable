@@ -170,3 +170,14 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   instead of `[]` (no `value` or `message` to touch), `level: 'error'` (Sentry's default for
   exceptions), and the reporter's `mergeWithExisting`. The API's score is now 85% (86% of
   covered mutants); a forced full run took 5 minutes 42 seconds.
+- **2026-11-19:** `better-auth.ts`'s survivors went from 20 to 4. Better Auth turns rate limiting
+  on only in production (it reads `NODE_ENV` once, when it loads), so the rate-limit tests switch
+  it on for a standalone instance and check our limits by behavior: 5 password resets, 5
+  verification emails and 10 sign-ups an hour per client IP. The error filter is tested directly
+  (4xx ignored, 5xx and non-`Error` throws reported), the outage test now checks the reported
+  error's message, its cause and the log message, and a provider needs both its id and secret.
+  Telemetry, which Better Auth skips under tests whatever the option says, is pinned as off. The
+  4 left are equivalent: `accountLinking`'s two objects repeat Better Auth's defaults (the
+  linking behavior itself is tested in `oauth.test.ts`), the adapter's `provider: 'pg'`, and
+  `BetterAuthFailed`'s tag. The API's score is now 88% (90% of covered mutants), in a forced
+  full run of 6 minutes 29 seconds.

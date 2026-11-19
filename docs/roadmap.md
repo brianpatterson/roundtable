@@ -225,14 +225,14 @@ Building blocks, in order:
    2026-11-18 update): `pnpm --filter @roundtable/api test:mutation`. Each Stryker worker gets
    its own test database (`app_test_<worker>`), which cut a full run from 28 to under 9
    minutes; skipping Drizzle tables and Effect service keys and span names leaves 511 mutants
-   and a score of 75% (78% of covered mutants), 85% once `redact.ts` and Sentry's privacy
-   options in `error-tracking.ts` got tests. Next:
+   and a score of 75% (78% of covered mutants), 88% once `redact.ts`, Sentry's privacy options
+   in `error-tracking.ts` and Better Auth's options (rate limits, error filter) got tests. Next:
    - **A scheduled full run in CI** on `main` (Postgres service, four workers), publishing the
      report. Then incremental runs on pull requests that touch `apps/api/src`, seeded from the
      scheduled run's incremental file (incremental runs don't see changes to test helpers,
      migrations or the contract, so they can't stand alone).
-   - **Tests for the survivors worth killing:** Better Auth's options in `better-auth.ts`
-     (rate limits, account linking) and the Resend transport are the biggest groups left.
+   - **Tests for the survivors worth killing:** the Resend transport (`transport.ts`) is the
+     biggest group left.
 
 8. ✅ **Weekly architecture review** ([ADR-0031](adr/0031-weekly-architecture-review.md)): Matt
    Pocock's `improve-codebase-architecture` skill runs unattended every Monday and turns each Strong
