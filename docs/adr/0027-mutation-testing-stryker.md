@@ -161,3 +161,12 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   pattern-anchor mutants as surviving: they're static, and Stryker reused their old results
   although a new test now kills them. Another reason incremental runs need a scheduled full
   run behind them.
+- **2026-11-19:** Sentry's privacy options in `error-tracking.ts` are covered. Sentry's HTTP
+  integration never sees the tests' in-process requests, so a test can't show what it would
+  collect from one; instead a test pins the `dataCollection` options the client starts with,
+  and another checks by behavior that console output stays out of breadcrumbs. `scrubEvent`
+  got tests for exact header names, breadcrumbs, and events with missing parts. The file's 5
+  remaining survivors are equivalent or not about privacy: iterating a placeholder string
+  instead of `[]` (no `value` or `message` to touch), `level: 'error'` (Sentry's default for
+  exceptions), and the reporter's `mergeWithExisting`. The API's score is now 85% (86% of
+  covered mutants); a forced full run took 5 minutes 42 seconds.
