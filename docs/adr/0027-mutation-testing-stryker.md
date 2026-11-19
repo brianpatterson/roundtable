@@ -189,3 +189,10 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   throw, and `resendLayer` itself. The 2 left are equivalent: `EmailSendFailed`'s tag, and
   `Schema.Struct({ name })` emptied to `Schema.Struct({})`, which still decodes `name`. The API's
   score is now 91% (92% of covered mutants), in a forced full run of 6 minutes 18 seconds.
+- **2026-11-19:** `logging.ts` went from 9 survivors to 3. New tests send Effect's log entries
+  and Better Auth's log calls through a captured logger: message parts joined with spaces,
+  annotations as fields, `err` only for a failure or a defect, and Better Auth's `Error`
+  argument kept while its other arguments are dropped. The 3 left are equivalent: pino treats
+  `enabled: undefined` as on (`?? true` → `&& true`), and skipping the `silent` check changes
+  nothing because pino's `silent` method writes nothing. The API's score is now 92% (93% of
+  covered mutants), in a forced full run of 6 minutes 18 seconds.
