@@ -358,7 +358,10 @@ flowchart LR
   must wrap the whole server: provided anywhere narrower, Effect's request logs go to the
   console unredacted. The App (`server.ts`) applies it in both of its adapters, so no caller
   places it. `test/server.test.ts` runs the real server to check it. Errors are logged as type, message and stack only, and every line is
-  scrubbed of database query parameters before it's written (`platform/observability/`).
+  scrubbed of database query parameters and of the token in a password reset link's path
+  before it's written (`platform/observability/`). A failed deploy prints only the API's
+  warning and error lines (and any non-JSON crash output) to the public Deploy workflow log;
+  request logs stay on the server.
 - **Disposable server:** IPs and the data volume are separate OpenTofu resources, so the server
   can be replaced at any time ([infra/README.md](../infra/README.md)).
 - **Infrastructure state:** OpenTofu state is in R2, encrypted on the operator's machine before
@@ -383,7 +386,7 @@ sequenceDiagram
   alt healthy within 90s
     S-->>D: ✓ record SHA in .deployed
   else migrations fail or unhealthy
-    S->>S: print logs, redeploy previous SHA
+    S->>S: print warnings/errors, redeploy previous SHA
     S-->>D: ✗ deploy failed (production on previous version)
   end
   D->>D: smoke test https://<domain>/api/health from outside

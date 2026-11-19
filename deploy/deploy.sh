@@ -15,6 +15,23 @@ set +a
 
 compose() { docker compose -f compose.prod.yml --env-file .env "$@"; }
 
+# The deploy workflow's output is public (the repository is public), so a failed deploy prints
+# only what explains the failure: the API's warn/error lines (pino levels 40+) and anything that
+# isn't a pino line (a crash before the logger starts, migration output). Request logs and other
+# info lines stay on the server: `compose logs api` there shows everything.
+important() { grep -Ev '^\{"level":(10|20|30),' || true; }
+
+# The last <n> important lines of each service, scanning further back than <n> because most
+# lines are info.
+recent_logs() {
+  local n=$1
+  shift
+  for service in "$@"; do
+    echo "--- $service"
+    compose logs --no-log-prefix --tail 500 "$service" 2>&1 | important | tail -n "$n"
+  done
+}
+
 # Starts a pair of images: migrate runs first (compose dependency), then api, then web.
 start() {
   API_IMAGE=$1 WEB_IMAGE=$2 compose up -d --remove-orphans
@@ -28,7 +45,7 @@ healthy() {
     migrate_exit=$(compose ps -a migrate --format '{{.ExitCode}}' 2>/dev/null || true)
     if [ -n "$migrate_exit" ] && [ "$migrate_exit" != 0 ] && [ "$(compose ps -a migrate --format '{{.State}}')" = exited ]; then
       echo "✗ migrations failed (exit $migrate_exit):"
-      compose logs --tail 30 migrate
+      recent_logs 30 migrate
       return 1
     fi
     if curl "${curl_opts[@]}" "https://$DOMAIN/api/health" 2>/dev/null | grep -q '"db":"up"'; then
@@ -37,7 +54,7 @@ healthy() {
     sleep 2
   done
   echo "✗ https://$DOMAIN/api/health not healthy after 90s"
-  compose logs --tail 30 api
+  recent_logs 30 api
   return 1
 }
 
@@ -56,8 +73,8 @@ if start "$api_image" "$web_image" && healthy; then
   exit 0
 fi
 
-echo "✗ Deploy of $api_image failed. Recent logs:"
-compose logs --tail 20 migrate api 2>&1 || true
+echo "✗ Deploy of $api_image failed. Recent warnings and errors:"
+recent_logs 20 migrate api || true
 
 if [ -n "$previous" ]; then
   echo "→ Rolling back to: $previous"
