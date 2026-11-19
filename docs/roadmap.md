@@ -226,13 +226,12 @@ Building blocks, in order:
    its own test database (`app_test_<worker>`), which cut a full run from 28 to under 9
    minutes; skipping Drizzle tables and Effect service keys and span names leaves 511 mutants
    and a score of 75% (78% of covered mutants), then 96% once the survivors worth killing got
-   tests; every survivor left is reviewed in ADR-0027's updates. Next:
+   tests; every survivor left is reviewed in ADR-0027's updates. In CI:
    - ✅ **A scheduled full run in CI**: nightly on `main` (`.github/workflows/mutation.yml`),
      with the score and survivors in the job summary and the report in an artifact.
-   - **Incremental runs on pull requests** that touch `apps/api/src`, seeded from the nightly
-     run's incremental file (they don't see changes to test helpers, migrations or the
-     contract, so they can't stand alone), with survivors in changed code passed to the
-     reviewer like the web app's.
+   - ✅ **Incremental runs on pull requests**: CI's `api-mutation` job reuses the nightly
+     results and mutates only what changed, or runs in full when a change is one incremental
+     results can't see; the reviewer reads its survivors like the web app's.
 
 8. ✅ **Weekly architecture review** ([ADR-0031](adr/0031-weekly-architecture-review.md)): Matt
    Pocock's `improve-codebase-architecture` skill runs unattended every Monday and turns each Strong

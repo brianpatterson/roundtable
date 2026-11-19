@@ -232,3 +232,15 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   Stryker's incremental file), kept 14 days. It also runs on pull requests that change the
   workflow, so edits to it are tested before they land. Incremental runs on pull requests, seeded
   from that artifact, are the next step.
+- **2026-11-19:** incremental runs on pull requests. CI's `api-mutation` job runs on every pull
+  request that touches `apps/api/`, `packages/contract/` or the lockfile, and is skipped
+  otherwise. It reuses the latest nightly results on `main` (only a scheduled or manual run there,
+  so no pull request can plant a baseline) and mutates only what changed. Stryker's incremental
+  mode sees only the files it mutates and test files, so a change to anything else the results
+  depend on (test helpers, migrations, Drizzle tables, the contract, config, dependencies) gets
+  a full run instead, and so does a pull request opened before any nightly run. It's advisory
+  like the web job, writes the survivors in changed files to the job summary, and uploads them as
+  `api-mutation-report`, which the reviewer reads next to the web app's
+  ([ADR-0026](0026-software-factory-reviewer.md)). An incremental result can still be stale for
+  a module-level mutant a new test now kills (seen in this spike); the nightly full run corrects
+  it.
