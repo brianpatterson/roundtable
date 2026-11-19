@@ -52,6 +52,7 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
   [ADR-0033](docs/adr/0033-review-every-pull-request.md)).
+  `.github/workflows/mutation.yml`: Stryker on the API, nightly, advisory ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md)).
   `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the weekly security
   auditor, which runs throwaway tests and files private draft advisories ([ADR-0036](docs/adr/0036-weekly-security-audit.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.

@@ -1,0 +1,91 @@
+# Mutation testing for the API (ADR-0027), on a schedule: Stryker changes the API's code in small
+# ways and reports every change no test notices. A full run takes minutes against Postgres, too
+# long for every pull request, so it runs nightly on main. Advisory: it never fails on the score,
+# only if Stryker itself can't run. The score and the survivors go to the job summary; the report
+# and Stryker's incremental file go to the `api-mutation-report` artifact, which pull requests can
+# later reuse to mutate only what changed.
+#
+# It also runs on pull requests that change this file, so a change to it is tested before it lands.
+name: API mutation testing
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # nightly
+  workflow_dispatch:
+  pull_request:
+    paths: [.github/workflows/mutation.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    # About 7 minutes on a laptop with four workers; a runner is slower.
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s
+          --health-retries 15
+    env:
+      # Each Stryker worker creates and migrates its own copy, app_test_<worker>.
+      TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # No incremental file on a fresh runner, so this is always a full run.
+      - name: Mutate the API
+        run: pnpm --filter @roundtable/api test:mutation
+      - name: Report the score and the survivors
+        env:
+          REPORT: apps/api/reports/mutation/mutation.json
+        run: |
+          {
+            echo '## Mutation testing (API)'
+            echo
+            jq -r '
+              [.files[].mutants[]] as $all
+              | ([$all[] | select(.status == "Killed" or .status == "Timeout")] | length) as $killed
+              | ([$all[] | select(.status == "Survived")] | length) as $survived
+              | ([$all[] | select(.status == "NoCoverage")] | length) as $uncovered
+              | "\($all | length) mutants: \($killed) killed, \($survived) survived, \($uncovered) not covered by any test. "
+                + "Score \(if ($killed + $survived + $uncovered) > 0 then (100 * $killed / ($killed + $survived + $uncovered) | floor) else 0 end)%, "
+                + "\(if ($killed + $survived) > 0 then (100 * $killed / ($killed + $survived) | floor) else 0 end)% of covered code."' "$REPORT"
+            echo
+            echo 'Each survivor left on 2026-11-19 is reviewed in ADR-0027 (equivalent or untestable); a new one is worth a look.'
+            echo
+            echo '### Survivors'
+            echo
+            jq -r '[.files | to_entries[] | .key as $f | .value.mutants[] | select(.status == "Survived" or .status == "NoCoverage")
+              | "- `apps/api/\($f):\(.location.start.line)` \(.status): \(.mutatorName), `` \(.replacement | gsub("\n"; " ") | .[0:80]) ``"]
+              | if length == 0 then "None." else .[] end' "$REPORT"
+          } > survivors.md
+
+          cat survivors.md >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p api-mutation-report
+          mv survivors.md api-mutation-report/
+          cp "$REPORT" apps/api/reports/stryker-incremental.json api-mutation-report/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: api-mutation-report
+          path: api-mutation-report/
+          retention-days: 14

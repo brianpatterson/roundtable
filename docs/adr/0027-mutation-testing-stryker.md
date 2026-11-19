@@ -225,3 +225,10 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
     `enabled: undefined` and `silent` method; the empty health query, which Postgres accepts.
   - Not testable here without a mock or the machine's network setup: `handlers.ts`'s guard for
     an insert that returns no row, and the server's listen address.
+- **2026-11-19:** the scheduled full run is in CI. `.github/workflows/mutation.yml` mutates the
+  whole API nightly on `main` (and on demand), against a Postgres service, with four workers. Like
+  the web job it's advisory: it fails only if Stryker can't run. It writes the score and every
+  survivor to the job summary and uploads `api-mutation-report` (the JSON report, the survivors and
+  Stryker's incremental file), kept 14 days. It also runs on pull requests that change the
+  workflow, so edits to it are tested before they land. Incremental runs on pull requests, seeded
+  from that artifact, are the next step.
