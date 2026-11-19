@@ -3,6 +3,7 @@
 // Auth's emails, what the requester is told) is in mailer.test.ts.
 import { assert, describe, it } from '@effect/vitest';
 import { Effect, Exit, Layer, Redacted, Schema } from 'effect';
+import { FetchHttpClient } from 'effect/http';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 import { Database } from '../../platform/database/effect.js';
 import { runMigrations } from '../../platform/database/migrate.js';
@@ -62,6 +63,15 @@ const parseLine = (line: string) => {
   return err ? { ...fields, err: err.message } : fields;
 };
 
+/** A fetch that records each request and answers as Resend does to a sent email. */
+const recordingFetch =
+  (requests: Request[]): typeof globalThis.fetch =>
+  async (input, init) => {
+    requests.push(new Request(input, init));
+
+    return Response.json({ id: 'email-id' });
+  };
+
 describe('EmailLive', () => {
   it.live('logs the email instead of sending it when Resend is not configured', () =>
     Effect.gen(function* () {
@@ -74,6 +84,40 @@ describe('EmailLive', () => {
 
       assert.lengthOf(logged, 1);
       assert.include(logged[0], 'https://example.com/reset');
+    }),
+  );
+
+  it.live('sends through Resend when both its key and its sender are set', () =>
+    Effect.gen(function* () {
+      const requests: Request[] = [];
+
+      const lines = yield* sendAll([reset('a@example.com')], {
+        RESEND_API_KEY: Redacted.make('re_test'),
+        EMAIL_FROM: 'App <no-reply@example.com>',
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, recordingFetch(requests)));
+
+      assert.lengthOf(requests, 1);
+      assert.strictEqual(requests[0]?.url, 'https://api.resend.com/emails');
+      assert.strictEqual(requests[0]?.headers.get('authorization'), 'Bearer re_test');
+      assert.include(
+        yield* Effect.promise(() => requests[0]!.text()),
+        'App <no-reply@example.com>',
+      );
+      assert.isFalse(lines.some((line) => line.includes('Email to')));
+    }),
+  );
+
+  it.live('logs the email when Resend has a key but no sender', () =>
+    Effect.gen(function* () {
+      const requests: Request[] = [];
+
+      const lines = yield* sendAll([reset('a@example.com')], {
+        RESEND_API_KEY: Redacted.make('re_test'),
+        EMAIL_FROM: undefined,
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, recordingFetch(requests)));
+
+      assert.lengthOf(requests, 0);
+      assert.isTrue(lines.some((line) => line.includes('Email to a@example.com')));
     }),
   );
 

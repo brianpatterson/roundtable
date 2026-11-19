@@ -4,7 +4,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Redacted } from 'effect';
 import pg from 'pg';
-import { APPLICATION_NAME } from '../src/platform/database/promise.js';
 import { env, setupTestApp, signUp } from './helpers.js';
 
 describe('the App lifecycle', () => {
@@ -18,7 +17,8 @@ describe('the App lifecycle', () => {
     const { rows } = await observer.query<{ count: number }>(
       `select count(*)::int as count from pg_stat_activity
        where datname = current_database() and application_name = $1`,
-      [APPLICATION_NAME],
+      // The label to look for in pg_stat_activity, spelled out: it's what an operator types.
+      ['roundtable-api'],
     );
 
     return rows[0]!.count;

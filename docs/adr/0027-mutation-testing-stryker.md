@@ -210,3 +210,18 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   email dropped at the daily limit and for a failed send: message, kind, limit or error, and
   never the address. The one left is `DailyEmailLimitReached`'s tag. The API's score is now 95%
   (95% of covered mutants), in a forced full run of 5 minutes 51 seconds.
+- **2026-11-19:** the last unreviewed survivors have tests. A new `migrate.test.ts` runs the
+  migrations on an empty database (every other test runs on one that's already migrated, so
+  `runMigrations` could do nothing unnoticed). `email.test.ts` checks that Resend is used when
+  both its key and sender are set, and the log when only the key is. `env.test.ts` checks that
+  production needs both, and the "must be a URL" message. The lifecycle test now looks for the
+  connection label `roundtable-api` as an operator would type it, instead of importing the
+  constant. The API's score is now **96%** (96% of covered mutants), in a forced full run of 7
+  minutes 18 seconds. The 18 survivors left (and 2 mutants no test runs) are all reviewed:
+  - Equivalent: three error tags; Better Auth's `accountLinking` objects (its defaults) and the
+    adapter's `provider: 'pg'`; Resend's `Schema.Struct({ name })` emptied (still decodes
+    `name`); `scrubEvent`'s loops over a placeholder string; `level: 'error'` (Sentry's default)
+    and the reporter's `mergeWithExisting` (no other reporter to merge with); pino's
+    `enabled: undefined` and `silent` method; the empty health query, which Postgres accepts.
+  - Not testable here without a mock or the machine's network setup: `handlers.ts`'s guard for
+    an insert that returns no row, and the server's listen address.
