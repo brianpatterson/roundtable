@@ -196,3 +196,10 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   `enabled: undefined` as on (`?? true` → `&& true`), and skipping the `silent` check changes
   nothing because pino's `silent` method writes nothing. The API's score is now 92% (93% of
   covered mutants), in a forced full run of 6 minutes 18 seconds.
+- **2026-11-19:** `server.ts` went from 7 survivors to 2. A new whole-app test checks the health
+  check's answer with the database up and down (still a 200, `ok: true`, `db: 'down'`), and the
+  production-server test now stops the server itself and checks it logs "Shutting down". The 2
+  left, plus one not covered, are equivalent or untestable here: an empty health query still
+  reaches Postgres, which accepts it, and the listen address (`host ?? '0.0.0.0'`) only shows in
+  which network interfaces accept connections, which a portable test can't check. The API's
+  score is now 93% (94% of covered mutants), in a forced full run of 6 minutes 23 seconds.
