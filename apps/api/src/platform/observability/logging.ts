@@ -1,6 +1,6 @@
 import { Cause, Logger as EffectLogger, References } from 'effect';
 import pino from 'pino';
-import { causeChain, describeError, postgresFields, redactQueryParamsInJson } from './redact.js';
+import { causeChain, describeError, postgresFields, redactLogLine } from './redact.js';
 
 type SerializedError = {
   type: string;
@@ -37,8 +37,9 @@ export const loggerOptions = {
   serializers: { err: serializeError },
   hooks: {
     // Catches query parameters anywhere in the line, including messages copied from an error's
-    // message and errors logged under keys other than `err`.
-    streamWrite: redactQueryParamsInJson,
+    // message and errors logged under keys other than `err`, and the password reset token in a
+    // request's path (`http.url`).
+    streamWrite: redactLogLine,
   },
 } satisfies pino.LoggerOptions;
 

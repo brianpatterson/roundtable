@@ -7,7 +7,7 @@ import { redactQueryParamsInJson } from './redact.js';
 import { Database } from '../database/effect.js';
 import { applications } from '../../modules/applications/index.js';
 import { users } from '../../modules/identity/index.js';
-import { env, setupTestApp, signUp } from '#test/helpers';
+import { env, linkPath, setupTestApp, signUp, takeEmail } from '#test/helpers';
 
 // Drizzle's query error message ends with the query's parameters, and Better Auth looks sessions
 // up by the raw token. These tests take the database away mid-session and read every line the
@@ -66,6 +66,43 @@ describe('server logs during a database outage', () => {
     expect(logs).toContain(`params: <redacted: string(${token.length})>`);
     // Better Auth's own log line now goes through our logger, not the console.
     expect(logs).toContain('[Better Auth]');
+  });
+});
+
+// Effect's request log line names the path. Better Auth's reset link carries its token in the
+// path (/api/auth/reset-password/<token>), and the token is still good after the click.
+describe('request log for a password reset link', () => {
+  const lines: string[] = [];
+  const t = setupTestApp({ logStream: { write: (line) => void lines.push(line) } });
+
+  beforeAll(async () => {
+    await t.migrate();
+    await t.reset();
+  });
+  afterAll(() => t.close());
+
+  it('names the route without the token', async () => {
+    const { email } = await signUp(t);
+
+    await t.inject({
+      method: 'POST',
+      url: '/api/auth/request-password-reset',
+      headers: { origin: env.BETTER_AUTH_URL },
+      payload: { email, redirectTo: `${env.BETTER_AUTH_URL}/reset-password` },
+    });
+
+    const link = linkPath(takeEmail(t, email, 'Reset your'));
+    const token = new URL(link, env.BETTER_AUTH_URL).pathname.split('/').pop() ?? '';
+    expect(token).not.toBe('');
+
+    lines.length = 0;
+    const click = await t.inject({ method: 'GET', url: link });
+    expect(click.statusCode).toBe(302);
+
+    const urls = lines.map((line) => JSON.parse(line)['http.url']);
+
+    expect(lines.join('')).not.toContain(token);
+    expect(urls).toContain('/api/auth/reset-password/<redacted>');
   });
 });
 

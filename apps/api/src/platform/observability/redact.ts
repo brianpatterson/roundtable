@@ -27,6 +27,24 @@ export function redactQueryParamsInJson(json: string): string {
   return json.replace(QUERY_PARAMS_IN_JSON, '$1<redacted>');
 }
 
+/**
+ * Better Auth's password reset link carries its token in the path
+ * (`/api/auth/reset-password/<token>?callbackURL=…`), and the token still resets the password
+ * after the link is clicked. Effect's request log names the path (`http.url`), so the segment
+ * after `/reset-password/` is replaced in every log line. Tokens in query strings never reach
+ * the log: Effect drops the query string.
+ */
+const RESET_PASSWORD_TOKEN = /(\/reset-password\/)(?!<redacted>)[^/?#"\\\s]+/g;
+
+export function redactResetPasswordToken(text: string): string {
+  return text.replace(RESET_PASSWORD_TOKEN, '$1<redacted>');
+}
+
+/** Every redaction a finished log line goes through (pino's `streamWrite` hook). */
+export function redactLogLine(json: string): string {
+  return redactResetPasswordToken(redactQueryParamsInJson(json));
+}
+
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()));
 
 /**
