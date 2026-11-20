@@ -25,6 +25,12 @@ export default {
   // Each worker gets its own test database (test/test-database.ts), so they can run side by side.
   // Four, like a GitHub-hosted runner.
   concurrency: 4,
+  // A mutant's time limit is timeoutFactor × its tests' time in the initial run, plus timeoutMS
+  // and startup. That run uses one worker; mutants then share the CPUs four ways (and, in CI,
+  // with Postgres), so the default factor (1.5) timed out 64 mutants that rerun the whole suite
+  // on a slow runner, counting them as killed and hiding 12 survivors. A real infinite loop
+  // (one so far) now waits about a minute instead.
+  timeoutFactor: 4,
   // Reuses the last run's results for code and tests that haven't changed.
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',

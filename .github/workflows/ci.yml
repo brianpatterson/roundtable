@@ -244,9 +244,10 @@ jobs:
             jq -r '
               [.files[].mutants[]] as $all
               | ([$all[] | select(.status == "Killed" or .status == "Timeout")] | length) as $killed
+              | ([$all[] | select(.status == "Timeout")] | length) as $timeouts
               | ([$all[] | select(.status == "Survived")] | length) as $survived
               | ([$all[] | select(.status == "NoCoverage")] | length) as $uncovered
-              | "\($all | length) mutants: \($killed) killed, \($survived) survived, \($uncovered) not covered by any test. "
+              | "\($all | length) mutants: \($killed) killed (\($timeouts) by timing out), \($survived) survived, \($uncovered) not covered by any test. "
                 + "Score \(if ($killed + $survived + $uncovered) > 0 then (100 * $killed / ($killed + $survived + $uncovered) | floor) else 0 end)%, "
                 + "\(if ($killed + $survived) > 0 then (100 * $killed / ($killed + $survived) | floor) else 0 end)% of covered code."' "$REPORT"
             echo
@@ -260,6 +261,14 @@ jobs:
             echo
             echo 'Survivors elsewhere are reviewed in ADR-0027 (equivalent or untestable) and listed in the nightly run.'
           } > survivors.md
+
+          # A timed-out mutant counts as killed, so a slow runner can hide survivors behind
+          # timeouts (ADR-0027). A clean run has one or two.
+          timeouts=$(jq '[.files[].mutants[] | select(.status == "Timeout")] | length' "$REPORT")
+          if [ "$timeouts" -gt 10 ]; then
+            echo "::warning::$timeouts mutants timed out, which counts them as killed: survivors may be hidden. Rerun before trusting the score."
+            printf '\n> [!WARNING]\n> %s mutants timed out, which counts them as killed: survivors may be hidden. Rerun before trusting the score.\n' "$timeouts" >> survivors.md
+          fi
 
           cat survivors.md >> "$GITHUB_STEP_SUMMARY"
           mkdir -p api-mutation-report && mv survivors.md api-mutation-report/ && cp "$REPORT" api-mutation-report/
