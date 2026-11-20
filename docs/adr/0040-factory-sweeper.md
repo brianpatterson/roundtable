@@ -35,20 +35,21 @@ with a dry run option) over open pull requests labeled `factory` or `autofix` wi
 `needs-human`, drafts included: the factory opens a draft when its checks still fail or it pushed
 a branch without a pull request, and those are the likeliest to stall. No agent runs; it holds only the job's own token.
 
-| State                                                               | Action                                    |
-| ------------------------------------------------------------------- | ----------------------------------------- |
-| Conflicts with main                                                 | `needs-human`                             |
-| No CI run on the head commit after 30 minutes                       | `needs-human`                             |
-| CI queued or running for over 90 minutes                            | `needs-human`                             |
-| CI `cancelled`, `timed_out` or anything else odd                    | rerun once; `needs-human` if it recurs    |
-| CI failed over 2 hours ago, no fix pushed                           | `needs-human` (the fixer died or gave up) |
-| CI green over an hour ago, head commit not reviewed                 | `needs-human`                             |
-| Reviewer asked for changes over 2 hours ago on a `factory` PR       | `needs-human` (no rework was pushed)      |
-| Reviewer says ready, or changes on an `autofix`-only PR (no rework) | nothing: the owner's turn                 |
+| State                                                               | Action                                                                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Conflicts with main                                                 | `needs-human`                                                                               |
+| No CI run on the head commit after 30 minutes                       | `needs-human`                                                                               |
+| CI queued or running for over 90 minutes                            | `needs-human`                                                                               |
+| CI `cancelled`, `timed_out` or anything else odd                    | rerun once; `needs-human` if it recurs                                                      |
+| CI failed over 2 hours ago, no fix pushed                           | `needs-human` (the fixer died or gave up)                                                   |
+| CI green over an hour ago, head commit not reviewed                 | `needs-human`, except Dependabot's own bumps, which the reviewer skips by design (ADR-0033) |
+| Reviewer asked for changes over 2 hours ago on a `factory` PR       | `needs-human` (no rework was pushed)                                                        |
+| Reviewer says ready, or changes on an `autofix`-only PR (no rework) | nothing: the owner's turn                                                                   |
 
 Each `needs-human` comes with a comment giving the reason. The thresholds sit above how long each
 step normally takes, so it doesn't race the workflow it's waiting for. The rules are one jq program,
-pinned case by case by `.github/factory/test-sweep-prs.sh` in CI. Each pull request is checked
+pinned case by case by `.github/factory/test-sweep-prs.sh` in CI, which also checks that the
+ready heading it matches is still the one `review.yml` writes. Each pull request is checked
 in its own process, so one whose lookups or actions fail (GitHub refuses to rerun a run older
 than 30 days) is reported as a warning and doesn't stop the rest.
 

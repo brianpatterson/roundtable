@@ -16,7 +16,9 @@ set -euo pipefail
 GH=${GH:-gh}
 
 # The decision, from a state the main loop gathers (ages in minutes):
-#   {factory, mergeable, head_age, ci: null | {status, conclusion, attempt, age}, review: null | {verdict, age}}
+#   {factory, reviewed, mergeable, head_age, ci: null | {status, conclusion, attempt, age}, review: null | {verdict, age}}
+# `reviewed` is false for Dependabot's own bumps (labeled `autofix`), which the reviewer skips by
+# design (ADR-0033): green and unreviewed is the owner's turn there, not a stall.
 # `factory` is false for a pull request only labeled `autofix`: it gets no rework (ADR-0037), so a
 # `changes` verdict there is the owner's turn, like `ready`.
 # Prints {action: wait | ok | rerun | human, reason}.
@@ -33,7 +35,8 @@ decide='
     else out("wait"; "CI is \(.ci.status)") end
   elif .ci.conclusion == "success" then
     if .review == null then
-      if .ci.age > 60 then out("human"; "CI passed \(.ci.age) minutes ago and the reviewer hasn'"'"'t reviewed this commit")
+      if .reviewed == false then out("ok"; "Dependabot'"'"'s own bump, which the reviewer skips: the owner'"'"'s turn")
+      elif .ci.age > 60 then out("human"; "CI passed \(.ci.age) minutes ago and the reviewer hasn'"'"'t reviewed this commit")
       else out("wait"; "waiting for the reviewer") end
     elif .review.verdict == "ready" then out("ok"; "reviewed and ready: the owner'"'"'s turn")
     elif .factory != true then out("ok"; "changes asked on a pull request the factory doesn'"'"'t rework: the owner'"'"'s turn")
@@ -67,6 +70,14 @@ if [ "${1:-}" = --one ]; then
   sha=$(jq -r .sha <<<"$pr")
   committed=$("$GH" api "repos/$repo/commits/$sha" --jq .commit.committer.date)
 
+  # The reviewer skips a pull request whose commits are all Dependabot's, with this same test
+  # (review.yml); once anyone else pushes to one, it's reviewed like any other.
+  reviewed=true
+  if [ "$(jq -r .dependabot <<<"$pr")" = true ]; then
+    reviewed=$("$GH" pr view "$number" -R "$repo" --json commits \
+      --jq 'any(.commits[]; any(.authors[]; (.login // "") | test("dependabot") | not))')
+  fi
+
   ci=$("$GH" run list -R "$repo" --workflow ci.yml --commit "$sha" --event pull_request --limit 1 \
     --json databaseId,status,conclusion,attempt,startedAt,updatedAt --jq '.[0] // empty')
   ci_state=null
@@ -89,8 +100,9 @@ if [ "${1:-}" = --one ]; then
   fi
 
   state=$(jq -nc --argjson pr "$pr" --argjson ci "$ci_state" --argjson review "$review_state" \
+    --argjson reviewed "$reviewed" \
     --argjson head_age "$(minutes_since "$committed")" \
-    '{factory: $pr.factory, mergeable: $pr.mergeable, head_age: $head_age, ci: $ci, review: $review}')
+    '{factory: $pr.factory, reviewed: $reviewed, mergeable: $pr.mergeable, head_age: $head_age, ci: $ci, review: $review}')
   decision=$(jq -c "$decide" <<<"$state")
   action=$(jq -r .action <<<"$decision")
   reason=$(jq -r .reason <<<"$decision")
@@ -112,10 +124,11 @@ if [ "${1:-}" = --one ]; then
 fi
 
 prs=$("$GH" pr list -R "$repo" --state open --limit 100 \
-  --json number,labels,mergeable,headRefOid \
+  --json number,labels,mergeable,headRefOid,author \
   --jq '[.[]
          | select([.labels[].name] | (index("factory") or index("autofix")) and (index("needs-human") | not))
-         | {number, mergeable, sha: .headRefOid, factory: ([.labels[].name] | index("factory") != null)}]')
+         | {number, mergeable, sha: .headRefOid, factory: ([.labels[].name] | index("factory") != null),
+            dependabot: (.author.login | test("dependabot"))}]')
 
 failed=0
 while read -r pr; do

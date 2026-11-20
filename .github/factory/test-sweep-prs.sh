@@ -38,6 +38,8 @@ check "failed two hours ago with no fix pushed: human" "$(state MERGEABLE 200 "$
 
 check "green, no review yet: wait" "$(state MERGEABLE 40 "$(ci completed success 1 20)")" wait
 check "green an hour ago, never reviewed: human" "$(state MERGEABLE 90 "$(ci completed success 1 61)")" human
+check "Dependabot's own bump, green and unreviewed by design: the owner's turn" "$(state MERGEABLE 90 "$(ci completed success 1 61)" null false | jq -c '.reviewed = false')" ok
+check "Dependabot's bump that failed still waits for the CI fixer" "$(state MERGEABLE 40 "$(ci completed failure 1 30)" null false | jq -c '.reviewed = false')" wait
 check "reviewed and ready: the owner's turn" "$(state MERGEABLE 900 "$(ci completed success 1 800)" '{"verdict":"ready","age":700}')" ok
 check "changes asked recently: wait for the rework" "$(state MERGEABLE 90 "$(ci completed success 1 70)" '{"verdict":"changes","age":30}')" wait
 check "changes asked two hours ago, nothing pushed: human" "$(state MERGEABLE 300 "$(ci completed success 1 250)" '{"verdict":"changes","age":121}')" human
@@ -50,6 +52,16 @@ case "$reason" in *cancelled*) ;; *)
   failures=$((failures + 1))
   ;;
 esac
+
+# The sweeper reads the verdict from the heading review.yml writes; if that wording changes, every
+# ready pull request would read as `changes`. Pin the two together.
+review_yml="$here/../workflows/review.yml"
+if ! grep -qF "ready) verdict='✅ Ready for you' ;;" "$review_yml" ||
+  ! grep -qF "printf '%s\n### Factory review: %s" "$review_yml" ||
+  ! grep -qF '<!-- factory-review -->\\n### Factory review: ✅ Ready for you' "$here/sweep-prs.sh"; then
+  echo "FAIL: the ready heading in review.yml and the one sweep-prs.sh matches have drifted apart"
+  failures=$((failures + 1))
+fi
 
 # One pull request whose lookups fail doesn't stop the sweep for the rest. A stand-in gh lists
 # two; GitHub refuses #1's commit.
