@@ -314,34 +314,54 @@ jobs:
       BRANCH: ${{ needs.select-fix.outputs.branch }}
       ATTEMPT: ${{ needs.select-fix.outputs.attempt }}
     steps:
+      # Waiting for this branch's group can take a while, and the job that held it (a fix or a
+      # rework) may have pushed. Then this failure is stale: the new commit gets its own runs.
+      - name: Is the commit still the head?
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+          if [ "$head" != "$SHA" ]; then
+            echo "#$PR has moved past $SHA; its own runs decide."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
       # main first, for the instructions; then the pull request's branch to work on. Neither keeps
       # this job's token: a push made with it starts CI only after a manual approval
       # ("action_required"), and the action's cleanup misses where checkout v7 stores it. The
       # only credential left is the Claude App's, which the action sets on the remote.
       - uses: actions/checkout@v7
+        if: steps.current.outputs.stale != 'true'
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Load the implementer's instructions and the secret guard from main
+        if: steps.current.outputs.stale != 'true'
         run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
+        if: steps.current.outputs.stale != 'true'
       - uses: actions/checkout@v7
+        if: steps.current.outputs.stale != 'true'
         with:
           ref: ${{ env.BRANCH }}
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: steps.current.outputs.stale != 'true'
       # No dependency cache here (ADR-0030): this job's caches are saved under main, and what it
       # installs comes from a branch, so a cache it saved could reach CI and deploy on main.
       - uses: actions/setup-node@v7
+        if: steps.current.outputs.stale != 'true'
         with:
           node-version-file: .node-version
           package-manager-cache: false
       # The lockfile may be what's broken; the agent reinstalls if so.
       - run: pnpm install --frozen-lockfile
+        if: steps.current.outputs.stale != 'true'
         continue-on-error: true
 
       - name: Fix CI
+        if: steps.current.outputs.stale != 'true'
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
         env:
@@ -366,7 +386,7 @@ jobs:
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","reran","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
       - name: Explain a failed run
-        if: always() && steps.claude.outcome == 'failure'
+        if: always() && steps.claude.outcome == 'failure' && steps.current.outputs.stale != 'true'
         run: |
           file="$RUNNER_TEMP/claude-execution-output.json"
           [ -f "$file" ] || { echo "::error::The fixer failed before writing its output."; exit 0; }
@@ -377,10 +397,10 @@ jobs:
       # credentials or the factory's own rules (ADR-0029).
       - name: Report denied tool calls
         id: denials
-        if: always()
+        if: always() && steps.current.outputs.stale != 'true'
         run: '"$RUNNER_TEMP/report-denials.sh"'
       - name: Flag a suspicious run
-        if: always() && steps.denials.outputs.suspicious == 'true'
+        if: always() && steps.denials.outputs.suspicious == 'true' && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ env.PR }}
@@ -392,7 +412,7 @@ jobs:
       # Deterministic: what the fixer pushed, and one marked comment per attempt (select-fix counts
       # them). Runs even when the agent failed, so a failed attempt still counts.
       - name: Check and report the attempt
-        if: always()
+        if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}

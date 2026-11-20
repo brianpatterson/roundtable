@@ -27,6 +27,8 @@ Forces:
   group for every check that finished, most of them no-ops, so one could replace a pending fix.
 - **Untrusted comments.** Anyone can comment on a pull request in a public repository; the
   review the agent acts on must be the reviewer's.
+- **Untrusted runs.** `workflow_run` matches workflows by name, so a fork's pull request can run
+  a workflow of its own called Review, with whatever artifact it likes.
 - **Wrong findings.** A reviewer finding can be wrong; an agent told to obey it would make the
   code worse to get a `ready`.
 
@@ -50,7 +52,8 @@ Option 1, in `.github/workflows/rework.yml`:
   never one labeled `needs-human`. Not `autofix`: that label means "fix CI", and the owner's
   pull requests are theirs to change.
 - **Trigger:** Review records `{pr, sha, verdict}` as a `review-verdict` artifact once it has
-  posted its comment. A cheap `select` job (no secrets) reads it and runs only on `changes` for
+  posted its comment. Rework only reads it from a run of `main`'s `review.yml` started by its own
+  triggers (`workflow_run` or `pull_request_target`, both run from `main`) in this repository. A cheap `select` job (no secrets) reads it and runs only on `changes` for
   the pull request's current head.
 - **Two attempts,** counted from marked comments since the last commit with no bot among its
   authors, as the CI fixer does; then `needs-human` and a comment. The two caps are separate, so
@@ -65,9 +68,11 @@ Option 1, in `.github/workflows/rework.yml`:
   `.github/`, `.claude/` or `CLAUDE.md` fails the run, as in the CI fixer.
 - **Concurrency:** the rework job's group is `factory-<branch>`, and the CI fixer's group moves
   from the Factory workflow's level to its `fix-ci` job, under the same name, so the two never
-  push to one branch at once and runs that do nothing no longer hold the group. The agent
-  pushes once, at the end, so CI on its push fails after it has finished, not while it's still
-  holding the group.
+  push to one branch at once and runs that do nothing no longer hold the group. The selectors
+  now run outside the group, so each job, once it holds the group, first checks the commit it
+  was started for is still the head, and does nothing if another job pushed meanwhile. The
+  agent pushes once, at the end, so CI on its push fails after it has finished, not while it's
+  still holding the group.
 - **Token, isolation, secrets:** as the CI fixer: the Claude App's token so pushes start CI,
   the `factory` environment, subprocess isolation and the secret guard
   ([ADR-0029](0029-software-factory-credential-hardening.md)).

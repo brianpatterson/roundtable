@@ -3,9 +3,10 @@
 # pushes. CI and the reviewer then run again on the new commit. Two attempts, then it stops and
 # asks for a human, as the CI fixer does (ADR-0028).
 #
-# Only the Review workflow finishing triggers it, so it always runs this file and the
-# implementer's instructions from `main`, and the `factory` environment, which holds the Claude
-# token, only admits `main`. A branch can't change what the agent is told or reach the token.
+# Only main's Review workflow finishing starts it (select checks which run), so it always runs
+# this file and the implementer's instructions from `main`, and the `factory` environment, which
+# holds the Claude token, only admits `main`. A branch can't change what the agent is told or
+# reach the token.
 name: Rework
 
 on:
@@ -19,7 +20,14 @@ permissions:
 jobs:
   # Which pull request to rework, if any, and which attempt this is. Holds no secrets.
   select:
-    if: github.event.workflow_run.conclusion == 'success'
+    # `workflows: [Review]` matches by name, so a fork's pull request could run its own workflow
+    # called Review, with a forged verdict record. Only main's review.yml, run by its own triggers
+    # (which always run from main), counts.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.path == '.github/workflows/review.yml' &&
+      contains(fromJSON('["workflow_run","pull_request_target"]'), github.event.workflow_run.event) &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -113,33 +121,53 @@ jobs:
       BRANCH: ${{ needs.select.outputs.branch }}
       ATTEMPT: ${{ needs.select.outputs.attempt }}
     steps:
+      # Waiting for this branch's group can take a while, and the job that held it (a fix or a
+      # rework) may have pushed. Then this review is stale: the new commit gets its own runs.
+      - name: Is the commit still the head?
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+          if [ "$head" != "$SHA" ]; then
+            echo "#$PR has moved past $SHA; its own runs decide."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
       # As in the CI fixer (ADR-0028): main first, for the instructions; then the pull request's
       # branch to work on. Neither keeps this job's token, so the only credential left is the
       # Claude App's, which the action sets on the remote, and its pushes start CI.
       - uses: actions/checkout@v7
+        if: steps.current.outputs.stale != 'true'
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Load the implementer's instructions and the secret guard from main
+        if: steps.current.outputs.stale != 'true'
         run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
+        if: steps.current.outputs.stale != 'true'
       - uses: actions/checkout@v7
+        if: steps.current.outputs.stale != 'true'
         with:
           ref: ${{ env.BRANCH }}
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: steps.current.outputs.stale != 'true'
       # No dependency cache here (ADR-0030): this job's caches are saved under main, and what it
       # installs comes from a branch, so a cache it saved could reach CI and deploy on main.
       - uses: actions/setup-node@v7
+        if: steps.current.outputs.stale != 'true'
         with:
           node-version-file: .node-version
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+        if: steps.current.outputs.stale != 'true'
 
       # Only the factory's own comments reach the agent as the review: anyone can comment on a
       # pull request in a public repository. `.factory/` is git-ignored.
       - name: Gather the review
+        if: steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -150,6 +178,7 @@ jobs:
           grep -q '<!-- factory-review -->' .factory/review.md || { echo "::error::#$PR has no factory review."; exit 1; }
 
       - name: Rework
+        if: steps.current.outputs.stale != 'true'
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
         env:
@@ -174,7 +203,7 @@ jobs:
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
       - name: Explain a failed run
-        if: always() && steps.claude.outcome == 'failure'
+        if: always() && steps.claude.outcome == 'failure' && steps.current.outputs.stale != 'true'
         run: |
           file="$RUNNER_TEMP/claude-execution-output.json"
           [ -f "$file" ] || { echo "::error::The rework agent failed before writing its output."; exit 0; }
@@ -185,10 +214,10 @@ jobs:
       # credentials or the factory's own rules (ADR-0029).
       - name: Report denied tool calls
         id: denials
-        if: always()
+        if: always() && steps.current.outputs.stale != 'true'
         run: '"$RUNNER_TEMP/report-denials.sh"'
       - name: Flag a suspicious run
-        if: always() && steps.denials.outputs.suspicious == 'true'
+        if: always() && steps.denials.outputs.suspicious == 'true' && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ env.PR }}
@@ -200,7 +229,7 @@ jobs:
       # Deterministic: what the agent pushed, whatever it reported, and one marked comment per
       # attempt (select counts them). Runs even when the agent failed, so a failed attempt counts.
       - name: Check and report the attempt
-        if: always()
+        if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}
