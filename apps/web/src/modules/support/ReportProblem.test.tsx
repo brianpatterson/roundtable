@@ -126,7 +126,7 @@ describe('ReportProblem', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send report' }));
 
     expect((await screen.findByRole('alert')).textContent).toBe(
-      "You've sent several reports in the last hour. Please wait a while and try again.",
+      "We've received a lot of reports in the last hour. Please try again later.",
     );
     expect(screen.getByLabelText<HTMLTextAreaElement>('What went wrong?').value).toBe('Broken');
     expect(screen.getByRole('button', { name: 'Send report' })).toBeDefined();

@@ -23,7 +23,7 @@ export function toApiError(cause: unknown): ApiError {
 
   if (isReportRateLimited(cause)) {
     return new ApiError(
-      "You've sent several reports in the last hour. Please wait a while and try again.",
+      "We've received a lot of reports in the last hour. Please try again later.",
       { cause },
     );
   }

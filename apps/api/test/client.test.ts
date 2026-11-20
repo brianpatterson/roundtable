@@ -65,7 +65,7 @@ describe('the web client', () => {
     }
 
     await expect(signedOut.createReport(payload)).rejects.toThrow(
-      "You've sent several reports in the last hour. Please wait a while and try again.",
+      "We've received a lot of reports in the last hour. Please try again later.",
     );
   });
 

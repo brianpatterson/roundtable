@@ -74,7 +74,7 @@ export const ReportReceipt = Schema.Struct({ id: Schema.String });
 
 export type ReportReceipt = typeof ReportReceipt.Type;
 
-/** Too many reports from one address in an hour: nothing was stored or sent. */
+/** Too many reports in an hour, from one address or from everyone: nothing was stored or sent. */
 export class ReportRateLimited extends Schema.TaggedError<
   ReportRateLimited,
   { readonly brand: unique symbol }
