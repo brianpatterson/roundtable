@@ -22,7 +22,9 @@ Forces:
   review can't trigger the rework by commenting or labeling. A `workflow_run` on Review can, and
   CI → Review → Rework is three levels, GitHub's limit.
 - **Concurrency.** A run started by `workflow_run` on Review reports `main` as its branch, so
-  the Factory workflow's concurrency group (`factory-<branch>`) can't key it.
+  the Factory workflow's concurrency group (`factory-<branch>`) can't key it. And GitHub keeps
+  only one pending run per group, cancelling the older: the Factory workflow took its branch's
+  group for every check that finished, most of them no-ops, so one could replace a pending fix.
 - **Untrusted comments.** Anyone can comment on a pull request in a public repository; the
   review the agent acts on must be the reviewer's.
 - **Wrong findings.** A reviewer finding can be wrong; an agent told to obey it would make the
@@ -56,12 +58,16 @@ Option 1, in `.github/workflows/rework.yml`:
 - **What it acts on:** a step writes only the reviewer's and earlier rework comments (posted by
   `github-actions[bot]` with their markers) to `.factory/review.md`. The agent fixes the
   findings and uncovered acceptance criteria, nothing else, and disputes a finding it judges
-  wrong instead of obeying it. The reviewer reads the rework comments on its next pass and
-  drops a finding whose dispute holds.
+  wrong instead of obeying it. On its next pass the reviewer gets the rework comments, filtered
+  the same way, in `rework/replies.md`, drops a finding whose dispute holds, and treats any other
+  comment claiming to be a rework reply as anyone's text.
 - **Deterministic checks:** "fixed" with no new commit becomes `needs-human`; a commit touching
   `.github/`, `.claude/` or `CLAUDE.md` fails the run, as in the CI fixer.
-- **Concurrency:** the job's group is `factory-<branch>`, the same string as the CI fixer's, so
-  the two never push to one branch at once.
+- **Concurrency:** the rework job's group is `factory-<branch>`, and the CI fixer's group moves
+  from the Factory workflow's level to its `fix-ci` job, under the same name, so the two never
+  push to one branch at once and runs that do nothing no longer hold the group. The agent
+  pushes once, at the end, so CI on its push fails after it has finished, not while it's still
+  holding the group.
 - **Token, isolation, secrets:** as the CI fixer: the Claude App's token so pushes start CI,
   the `factory` environment, subprocess isolation and the secret guard
   ([ADR-0029](0029-software-factory-credential-hardening.md)).
@@ -74,7 +80,13 @@ Option 1, in `.github/workflows/rework.yml`:
   at most two rounds before a human.
 - The reviewer's verdict now has a cost: a `changes` it didn't need starts a run. Its
   instructions say so.
-- `@claude address the review` still works for the owner's own guidance.
+- `@claude address the review` still works for the owner's own guidance, but its runs are
+  grouped by pull request number (an `issue_comment` doesn't carry the branch), so it can run
+  alongside a rework on the same branch. The owner waits for a rework run to finish first; a
+  clash shows up as a rejected push, not lost work.
+- Two runs can still meet in one branch's group (a rework waiting while a fix runs, and a third
+  arriving); the older pending one is cancelled without its marker comment. Rare with today's
+  timings, since a fix needs red CI and a rework green CI on the same head.
 - Revisit if rework rounds mostly end in disputes (the reviewer's rules need sharpening, which
   the retro task in the same skill would propose), or to extend it to the owner's pull requests
   behind a label.

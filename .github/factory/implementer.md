@@ -131,7 +131,8 @@ it ([ADR-0037](../../docs/adr/0037-software-factory-rework.md)).
    summary, with `file:line`. The reviewer reads your summary on its next pass.
 4. **Push.** Run `pnpm check` (and mutation testing if you changed `apps/web/src`, as in
    "Building"), commit with a conventional subject (`fix:`, `test:` …) and push to the same
-   branch. Return `fixed`. Don't merge `main` into the branch.
+   branch once, when everything is done, then return `fixed`: each push starts CI, and a
+   failure while you're still running would wait behind you. Don't merge `main` into the branch.
 5. **When you can't.** If you'd change nothing (every finding is wrong), or the fixes need
    `.github/`, `.claude/`, `CLAUDE.md` or a decision only the owner can make, push nothing and
    return `needs-human`, with the exact change you'd make.

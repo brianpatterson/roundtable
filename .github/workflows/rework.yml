@@ -83,8 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: factory
-    # The same group as the Factory workflow's runs on this branch (the CI fixer), so the two never
-    # push to it at once. A Review run's own branch is always `main`, so it can't key the group.
+    # The same group as the CI fixer's job on this branch, so the two never push to it at once.
+    # A Review run's own branch is always `main`, so it can't key a workflow-level group.
     concurrency:
       group: factory-${{ needs.select.outputs.branch }}
       cancel-in-progress: false

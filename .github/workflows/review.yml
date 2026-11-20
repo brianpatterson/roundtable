@@ -123,6 +123,17 @@ jobs:
           gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n api-mutation-report -D mutation-api ||
             echo "No API mutation report in run $RUN."
 
+      # The implementer's replies to earlier reviews of a factory pull request (ADR-0037). Only the
+      # factory's own: anyone can comment on a pull request in a public repository.
+      - name: Load the rework replies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p rework
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- factory-rework -->"))) | .body + "\n\n---\n"' \
+            > rework/replies.md
+
       - name: Review
         id: claude
         uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
