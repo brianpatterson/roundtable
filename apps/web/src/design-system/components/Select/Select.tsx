@@ -49,7 +49,13 @@ export function Select<Value extends string>({
         </BaseSelect.Trigger>
       </div>
       <BaseSelect.Portal>
-        <BaseSelect.Positioner className={styles.positioner} sideOffset={4}>
+        {/* Below the field, like Material's menu. Base UI's default lays the selected item over
+            the field, which scrolls earlier options out of view near the top of the window. */}
+        <BaseSelect.Positioner
+          className={styles.positioner}
+          alignItemWithTrigger={false}
+          sideOffset={4}
+        >
           <BaseSelect.Popup className={styles.popup}>
             <BaseSelect.List>
               {options.map((option) => (
