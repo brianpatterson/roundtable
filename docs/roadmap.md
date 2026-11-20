@@ -173,6 +173,9 @@ Building blocks, in order:
    comments, then a human approves (you stay in the loop at first).
    When it asks for changes on a factory PR, the implementer reworks it: two attempts, then
    `needs-human` ([ADR-0037](adr/0037-software-factory-rework.md)).
+   ✅ **Sweeper** ([ADR-0040](adr/0040-factory-sweeper.md)): every 30 minutes, any factory PR
+   stuck where no workflow reacts (CI cancelled or timed out, a conflict, no review) is rerun once
+   or labeled `needs-human` with the reason. Next, if conflicts are common: fix them automatically.
 4. **Staging environment**: a second deploy target on the same VPS or a second small one. Every
    merge goes to staging first, and production follows automatically if staging is healthy.
    **Deferred until there are users** (2026-11-18): until then it would mostly protect test

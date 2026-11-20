@@ -1,0 +1,44 @@
+# The factory's sweeper (ADR-0040): every 30 minutes, each open factory pull request (labeled
+# `factory` or `autofix`, not a draft, not already `needs-human`) is checked for being stuck in a
+# state no workflow reacts to: CI cancelled or timed out, CI never started or never finished, a
+# conflict with main, a green commit the reviewer never reviewed, a failure the CI fixer never
+# fixed, changes asked for and never reworked. A cancelled CI is rerun once; everything else gets
+# `needs-human` and a comment saying why. The rules live in .github/factory/sweep-prs.sh, pinned
+# by test-sweep-prs.sh in CI. No agent runs here.
+name: Factory sweeper
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print what it would do and change nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: factory-sweeper
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write # rerun a cancelled CI
+      pull-requests: write # label and comment
+      issues: write # labels and comments go through the issues API
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/factory
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: .github/factory/sweep-prs.sh
