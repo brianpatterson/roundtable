@@ -15,7 +15,7 @@ import type { Log } from '../../platform/observability/logging.js';
 /**
  * Which email is being sent: the one list of kinds, which the errors below and the Mailer's
  * use. Limits are counted per kind, so verification retries never block a password reset.
- * `user-report` goes to the owner with a problem report (the support module, ADR-0037).
+ * `user-report` goes to the owner with a problem report (the support module, ADR-0038).
  */
 export const EmailKind = Schema.Literals(['password-reset', 'verification', 'user-report']);
 

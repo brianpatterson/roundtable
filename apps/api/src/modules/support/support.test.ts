@@ -1,4 +1,4 @@
-// "Report a problem" (ADR-0037) through the real endpoint and the app_test database. GitHub is a
+// "Report a problem" (ADR-0038) through the real endpoint and the app_test database. GitHub is a
 // stand-in (`openIssue`); the owner's email is captured like every other email in tests.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ErrorEvent } from '@sentry/node';

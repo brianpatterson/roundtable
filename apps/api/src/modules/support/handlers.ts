@@ -30,7 +30,7 @@ function clientAddress(request: HttpServerRequest.HttpServerRequest): string {
   return forwarded || Option.getOrElse(request.remoteAddress, () => 'unknown');
 }
 
-/** A browser family from a user agent: a fixed word, never the user agent itself (ADR-0037). */
+/** A browser family from a user agent: a fixed word, never the user agent itself (ADR-0038). */
 export function browserFamily(userAgent: string | undefined): string {
   if (!userAgent) return 'Unknown';
 
@@ -48,7 +48,7 @@ export function browserFamily(userAgent: string | undefined): string {
 
 type StoredReport = typeof userReports.$inferSelect;
 
-/** The issue for a report: safe context only, never anything the user typed (ADR-0037). */
+/** The issue for a report: safe context only, never anything the user typed (ADR-0038). */
 export function reportIssue(report: StoredReport) {
   return {
     title: `User report ${report.id}: ${report.pagePath}`,
@@ -103,7 +103,7 @@ const reportFailure =
     );
 
 /**
- * "Report a problem" (ADR-0037). Public, behind OptionalSession: a signed-in caller's report
+ * "Report a problem" (ADR-0038). Public, behind OptionalSession: a signed-in caller's report
  * carries their user id. Stores the report, then opens a GitHub issue with safe context and
  * emails the owner the full report. Those two are best effort: their failures are reported, and
  * the user still gets the confirmation.

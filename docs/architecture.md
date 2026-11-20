@@ -140,7 +140,7 @@ per-address limit is `REPORT_LIMIT_PER_DAY` instead. The App provides the `Datab
 and tests swap the transport through `AppOptions.emailTransport`.
 
 **Support** gives the App `SupportLive(env, log)`: "Report a problem"
-([ADR-0037](adr/0037-user-problem-reports.md)). `POST /api/reports` is public, behind identity's
+([ADR-0038](adr/0038-user-problem-reports.md)). `POST /api/reports` is public, behind identity's
 `OptionalSession` middleware, which provides a `Viewer` (the user, or none) and never fails, so a
 signed-in report is linked to the account from the session. It stores the report in
 `user_reports`, then, best effort, opens a GitHub issue with safe context only (report id, page
@@ -231,7 +231,7 @@ accepted`, plus the terminal states `rejected` and `withdrawn`. Transitions aren
   ([ADR-0006](adr/0006-status-enum-and-dates.md)).
 - Index `applications_user_id_updated_at_idx (user_id, updated_at DESC)` serves the only list
   query: one user's applications, newest first.
-- `user_reports` holds problem reports ([ADR-0037](adr/0037-user-problem-reports.md)). Its
+- `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
   email. Indexes on `(client_key, created_at)` and `issue_requested_at` serve the hourly and daily
@@ -337,7 +337,7 @@ sequenceDiagram
   (Better Auth, in memory), then at most 3 emails of each kind per address and 80 in total per
   24 hours (Postgres, survives deploys). Over a limit the email is silently dropped
   ([ADR-0018](adr/0018-email-sending-limits.md)).
-- **Problem reports** ([ADR-0037](adr/0037-user-problem-reports.md)): the endpoint is public, so
+- **Problem reports** ([ADR-0038](adr/0038-user-problem-reports.md)): the endpoint is public, so
   one client address may send 5 reports an hour (counted in Postgres, by the HMAC of the last
   `X-Forwarded-For` entry, which Caddy sets), and at most `REPORT_LIMIT_PER_DAY` (20) GitHub
   issues and report emails go out per 24 hours. The repository is public and the factory's agents

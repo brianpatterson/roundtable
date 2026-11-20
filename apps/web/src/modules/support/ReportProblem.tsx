@@ -11,7 +11,7 @@ export interface ReportProblemProps {
 }
 
 /**
- * "Report a problem" (ADR-0037): a link-style button that opens a short form. Works signed out
+ * "Report a problem" (ADR-0038): a link-style button that opens a short form. Works signed out
  * (the sign-in page) and signed in; the API links a signed-in report to the account itself,
  * from the session cookie. Sends the page path without its query string, which can hold tokens.
  */

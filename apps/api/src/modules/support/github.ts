@@ -2,7 +2,7 @@ import { Context, Duration, Effect, ErrorReporter, Layer, Redacted, Schema } fro
 import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 import type { Log } from '../../platform/observability/logging.js';
 
-/** An issue to open. Built by the support handler from safe context only (ADR-0037). */
+/** An issue to open. Built by the support handler from safe context only (ADR-0038). */
 export interface NewIssue {
   readonly title: string;
   readonly body: string;

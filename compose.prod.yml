@@ -45,7 +45,7 @@ services:
       # Optional overrides of the sending limits (defaults 3 and 80; ADR-0018).
       EMAIL_LIMIT_PER_ADDRESS: ${EMAIL_LIMIT_PER_ADDRESS:-}
       EMAIL_LIMIT_PER_DAY: ${EMAIL_LIMIT_PER_DAY:-}
-      # "Report a problem" (ADR-0037). Optional: without the token no GitHub issue is opened,
+      # "Report a problem" (ADR-0038). Optional: without the token no GitHub issue is opened,
       # and without REPORTS_EMAIL reports aren't emailed. Reports are stored either way.
       GITHUB_ISSUES_TOKEN: ${GITHUB_ISSUES_TOKEN:-}
       GITHUB_ISSUES_REPOSITORY: ${GITHUB_ISSUES_REPOSITORY:-brianpatterson/roundtable}

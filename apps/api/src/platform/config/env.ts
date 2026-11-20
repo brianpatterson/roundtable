@@ -40,7 +40,7 @@ const EnvSchema = Schema.Struct({
   EMAIL_LIMIT_PER_DAY: PositiveInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(80))),
   /**
    * Fine-grained GitHub token, this repository only, Issues read/write and nothing else
-   * (ADR-0037). Opens an issue for each problem report. Blank: reports are stored and emailed,
+   * (ADR-0038). Opens an issue for each problem report. Blank: reports are stored and emailed,
    * and no issue is opened.
    */
   GITHUB_ISSUES_TOKEN: Schema.optional(Secret),

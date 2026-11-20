@@ -328,7 +328,7 @@ on their GitHub account, to get into your account.
 "Report a problem" stores every report in Postgres, opens a GitHub issue in this repository with
 safe context only (report id, page path, release, time, browser family; never what the user
 typed), and emails the owner the full report
-([ADR-0037](../docs/adr/0037-user-problem-reports.md)). Both settings are optional: without the
+([ADR-0038](../docs/adr/0038-user-problem-reports.md)). Both settings are optional: without the
 token no issue is opened, without the email no report is emailed. **Cost:** $0.
 
 ### One-time setup

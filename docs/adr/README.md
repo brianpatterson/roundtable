@@ -46,4 +46,4 @@ you'd want to explain in an interview. Copy [template.md](template.md).
 | 0034 | [Let the implementer run checks on its own pull requests](0034-implementer-runs-checks-on-its-own-prs.md)                        | Accepted                                                            |
 | 0035 | [Merge pull requests without updating them first, and track main's health](0035-merge-without-updating-branches.md)              | Accepted                                                            |
 | 0036 | [Audit security weekly with a sandboxed agent that files private draft advisories](0036-weekly-security-audit.md)                | Accepted                                                            |
-| 0037 | [Let anyone report a problem; keep their words private and open issues with safe context only](0037-user-problem-reports.md)     | Accepted                                                            |
+| 0038 | [Let anyone report a problem; keep their words private and open issues with safe context only](0038-user-problem-reports.md)     | Accepted                                                            |

@@ -1,7 +1,7 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
- * Problem reports from "Report a problem" (ADR-0037). The description and reply email are the
+ * Problem reports from "Report a problem" (ADR-0038). The description and reply email are the
  * user's own words and address: private, emailed to the owner, never put in a GitHub issue.
  *
  * `user_id` has no foreign key: modules query only their own tables (ADR-0023), and a report

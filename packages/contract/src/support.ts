@@ -1,5 +1,5 @@
 // The support module's contract: "Report a problem", which anyone can send, signed in or not
-// (ADR-0037). A signed-in caller's report is linked to their account through OptionalSession.
+// (ADR-0038). A signed-in caller's report is linked to their account through OptionalSession.
 import { ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api';
 import { OptionalSession } from './identity.js';
@@ -40,7 +40,7 @@ const isPagePath = (path: string) => path.length <= 200 && /^\/[A-Za-z0-9/_.-]*$
 
 /**
  * The page the user was on, as a path. Only letters, digits and `/-_.`, at most 200 characters:
- * it goes in a GitHub issue title, so it must not be able to carry a sentence (ADR-0037). The
+ * it goes in a GitHub issue title, so it must not be able to carry a sentence (ADR-0038). The
  * query and hash are dropped in both directions, so the client never sends them. (The check
  * ignores them too: the client checks `location.pathname + search` before encoding drops it.)
  */

@@ -1,4 +1,4 @@
-# 0037. Let anyone report a problem; keep their words private and open issues with safe context only
+# 0038. Let anyone report a problem; keep their words private and open issues with safe context only
 
 - **Status:** Accepted
 - **Date:** 2026-11-20
