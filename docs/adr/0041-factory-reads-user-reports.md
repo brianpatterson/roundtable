@@ -63,7 +63,7 @@ Option 4.
   ask when it can't reproduce it.
 - **A deterministic check catches quotes after the run.** `guard-report-text.sh` refuses text
   holding any 40 characters of the description (case and whitespace ignored), compared with a copy
-  kept outside the directory the agent can edit. A comment of the agent's that quotes it is
+  kept outside the directory the agent's edit tools can reach. A comment of the agent's that quotes it is
   deleted, which removes its edit history too. A pull request's title and description can't be
   deleted, and edits keep the old text in public history, so they are replaced and the pull
   request gets `needs-human` with a note telling the owner to delete the old revisions. A branch
@@ -91,7 +91,10 @@ Option 4.
   the agent's own words for this reason; the check makes a slip visible, it can't undo it.
 - **The guard is a backstop, not a proof.** It catches copying, not paraphrase, and nothing under
   40 characters, so a name alone gets through. A quote in a commit is public until the owner
-  rewrites the branch.
+  rewrites the branch. It guards against slips, not a hijacked agent: code the agent runs, such
+  as its tests, runs as the runner's user and could rewrite the guard's copy of the description,
+  or the guard scripts in `$RUNNER_TEMP`, as it already could `guard-secrets.sh`. Against that,
+  the defenses are the owner's `ready` label, the reviewer and the owner's merge.
 - **New attack surface:** one public endpoint behind a 256-bit bearer token. No rate limit: the
   token can't be guessed, and each request is one indexed lookup.
 - Diagnostics can hold personal data an error message happens to include. They are cut short,

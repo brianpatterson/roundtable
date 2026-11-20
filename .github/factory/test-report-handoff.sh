@@ -87,6 +87,100 @@ application" || fail "a quote is caught across case and line breaks"
 printf 'it broke\n' >"$work/description"
 guard <<<"it broke" || fail "a description too short to check passes"
 
+# The take-down, against a stand-in gh that answers from canned JSON in $CASE, applies --jq as gh
+# would, and logs every call that changes something.
+cat >"$work/gh" <<'GH'
+#!/usr/bin/env bash
+filter=.
+prev=
+for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
+case "$1 $2 $3" in
+  "api -X DELETE"* | "pr edit"* | "pr comment"* | "issue edit"* | "issue comment"*)
+    printf '%s\n' "$*" >>"$CASE/calls"
+    exit 0 ;;
+esac
+case "$1 $2" in
+  "api repos/o/r/issues/7/comments") file=comments.json ;;
+  "api repos/o/r/issues/comments/"*) file=comment-${2##*/}.json ;;
+  "pr list") file=prs.json ;;
+  "pr view") file=pr.json ;;
+  "issue view") file=issue.json ;;
+  "api repos/o/r/compare/"*) file=compare.json ;;
+  *) echo "unexpected: $*" >&2; exit 1 ;;
+esac
+[ -f "$CASE/$file" ] || { echo "GitHub says no" >&2; exit 1; }
+jq -r "$filter" "$CASE/$file"
+GH
+chmod +x "$work/gh"
+printf 'The list is empty after I add an application, my landlord Jane Doe\n' >"$work/description"
+
+QUOTE="The user wrote: the list is empty after I add an application"
+
+newcase() { # newcase <name>: canned answers for a run where nothing quotes the report
+  CASE="$work/case-$1"
+  mkdir -p "$CASE"
+  : >"$CASE/calls"
+  jq -n '[{id: 11, user: {login: "claude[bot]"}}, {id: 13, user: {login: "brianpatterson"}}]' >"$CASE/comments.json"
+  jq -n '{body: "Fixed: new rows were filtered out."}' >"$CASE/comment-11.json"
+  jq -n '[{number: 21}]' >"$CASE/prs.json"
+  jq -n '{title: "fix: show new applications", body: "Closes #7"}' >"$CASE/pr.json"
+  jq -n '{title: "User report 0b6e7c1a-1111-4222-8333-444455556666: /"}' >"$CASE/issue.json"
+  jq -n '{files: [{patch: "@@ -1 +1 @@\n-old\n+const fresh = rows;"}, {filename: "image.png"}],
+          commits: [{commit: {message: "fix: show new applications"}}]}' >"$CASE/compare.json"
+}
+takedown() { # takedown [branch]: runs the take-down for issue 7, returns its exit status
+  GH="$work/gh" CASE=$CASE GITHUB_REPOSITORY=o/r NUMBER=7 BRANCH=${1-claude/issue-7} \
+    DESCRIPTION="$work/description" "$here/takedown-report-quotes.sh" >/dev/null 2>&1
+}
+called() { grep -qF -- "$1" "$CASE/calls"; }
+
+newcase clean
+takedown || fail "nothing quoted: the take-down passes"
+[ ! -s "$CASE/calls" ] || fail "nothing quoted: nothing is changed, got [$(cat "$CASE/calls")]"
+
+newcase comment
+jq -n '[{id: 11, user: {login: "claude[bot]"}}, {id: 12, user: {login: "claude[bot]"}}]' >"$CASE/comments.json"
+jq -n --arg b "$QUOTE" '{body: $b}' >"$CASE/comment-12.json"
+! takedown || fail "a quoting comment fails the run"
+called "api -X DELETE repos/o/r/issues/comments/12" || fail "a quoting comment is deleted"
+! called "comments/11" || fail "a clean comment is left alone"
+called "pr edit 21 -R o/r --add-label needs-human" || fail "the pull request goes to a human"
+called "A comment of the agent's quoted it" || fail "the note says a comment was deleted"
+
+newcase title
+jq -n --arg t "$QUOTE" '{title: $t, body: "Closes #7"}' >"$CASE/pr.json"
+! takedown || fail "a quoting title fails the run"
+called "--title Fix User report 0b6e7c1a-1111-4222-8333-444455556666: /" ||
+  fail "a quoting title is replaced with the issue's"
+called "delete the earlier revisions" || fail "the note asks the owner to delete the old revisions"
+
+newcase branch
+jq -n --arg q "$QUOTE" '{files: [{patch: ("@@ -1 +1 @@\n+// " + $q)}], commits: [{commit: {message: "fix: rows"}}]}' >"$CASE/compare.json"
+! takedown || fail "a quoting branch fails the run"
+called "The branch \`claude/issue-7\` quotes it" || fail "the note names the branch"
+
+newcase commit
+jq -n --arg q "$QUOTE" '{files: [], commits: [{commit: {message: ("fix: rows\n\n" + $q)}}]}' >"$CASE/compare.json"
+! takedown || fail "a quoting commit message fails the run"
+
+newcase removed-line
+jq -n --arg q "$QUOTE" '{files: [{patch: ("@@ -1 +1 @@\n-// " + $q + "\n+// fixed")}], commits: []}' >"$CASE/compare.json"
+takedown || fail "a line the branch removes isn't a quote"
+
+newcase no-pr
+jq -n '[]' >"$CASE/prs.json"
+jq -n --arg q "$QUOTE" '{files: [{patch: ("+" + $q)}], commits: []}' >"$CASE/compare.json"
+! takedown || fail "a quoting branch without a pull request fails the run"
+called "issue edit 7 -R o/r --add-label needs-human" || fail "without a pull request, the issue goes to a human"
+called "issue comment 7" || fail "without a pull request, the note goes on the issue"
+
+newcase no-compare
+rm "$CASE/compare.json"
+takedown || fail "a branch GitHub can't compare isn't a quote"
+
+newcase no-branch
+takedown "" || fail "no branch: only the comments are checked"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."
   exit 1
