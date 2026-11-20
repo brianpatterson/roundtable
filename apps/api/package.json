@@ -12,10 +12,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=../../.env src/migrate.ts",
     "test": "vitest run",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test:mutation": "stryker run"
   },
   "devDependencies": {
     "@effect/vitest": "4.1.4",
+    "@stryker-mutator/api": "10.1.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "1.0.0-rc.5",
     "esbuild": "^0.28.2",

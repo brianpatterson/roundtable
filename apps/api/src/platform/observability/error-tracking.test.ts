@@ -26,6 +26,112 @@ describe('scrubEvent', () => {
       headers: { 'user-agent': 'test' },
     });
   });
+
+  it('drops only those exact headers', () => {
+    const event = scrubEvent({
+      type: undefined,
+      request: { headers: { 'cookie-policy': 'v1', 'x-authorization': 'none' } },
+    });
+
+    expect(event.request?.headers).toEqual({
+      'cookie-policy': 'v1',
+      'x-authorization': 'none',
+    });
+  });
+
+  it('handles events without a URL, headers, exception values or Postgres fields', () => {
+    const event = scrubEvent(
+      { type: undefined, request: {}, exception: { values: [{ type: 'Error' }] } },
+      { originalException: new Error('not a database error') },
+    );
+
+    expect(event).toEqual({
+      type: undefined,
+      request: {},
+      exception: { values: [{ type: 'Error' }] },
+    });
+  });
+
+  it('drops query values from breadcrumbs', () => {
+    const event = scrubEvent({
+      type: undefined,
+      breadcrumbs: [
+        { message: 'Failed query: select 1 where token = $1\nparams: secret-token' },
+        { category: 'http' },
+      ],
+    });
+
+    expect(event.breadcrumbs).toEqual([
+      { message: 'Failed query: select 1 where token = $1\nparams: <redacted>' },
+      { category: 'http' },
+    ]);
+  });
+});
+
+describe('Sentry options', () => {
+  const events: ErrorEvent[] = [];
+
+  afterEach(async () => {
+    events.length = 0;
+    await Sentry.close();
+  });
+
+  // Sentry on its own, capturing events as they'd be sent, before scrubEvent.
+  const start = (overrides: Partial<typeof env> = {}) =>
+    initErrorTracking(
+      { ...env, SENTRY_DSN: Redacted.make('https://public@o0.ingest.sentry.io/0'), ...overrides },
+      {
+        beforeSend: (event) => {
+          events.push(event);
+
+          return null;
+        },
+      },
+    );
+
+  // The tests reach the App in-process, so Sentry's HTTP integration never sees their requests
+  // and can't show what it would collect from one. These pin the options that decide it.
+  it('collects no user, cookies, bodies, query strings, query values or local variables', () => {
+    start();
+
+    expect(Sentry.getClient()?.getOptions().dataCollection).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { allow: ['user-agent', 'content-type', 'origin'] },
+        response: false,
+      },
+      httpBodies: [],
+      urlQueryParams: false,
+      databaseQueryData: false,
+      stackFrameVariables: false,
+    });
+  });
+
+  it('keeps console output out of events', async () => {
+    start();
+    // Libraries (Better Auth) console.error whole error objects; this one stands in for them.
+    const write = process.stdout.write;
+    process.stdout.write = () => true;
+
+    try {
+      console.log('session=console-secret');
+    } finally {
+      process.stdout.write = write;
+    }
+
+    Sentry.captureException(new Error('after the console'));
+    await Sentry.flush(2000);
+
+    expect(events).toHaveLength(1);
+    // (Breadcrumbs only: the event's stack context quotes this file, secret included.)
+    expect(JSON.stringify(events[0]?.breadcrumbs ?? [])).not.toContain('console-secret');
+  });
+
+  it("names the environment, or 'development' without NODE_ENV", () => {
+    start({ NODE_ENV: undefined });
+    expect(Sentry.getClient()?.getOptions().environment).toBe('development');
+  });
 });
 
 describe('redactQueryParams', () => {

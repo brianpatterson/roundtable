@@ -52,6 +52,8 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
   [ADR-0033](docs/adr/0033-review-every-pull-request.md)).
+  `.github/workflows/mutation.yml`: Stryker on the API, nightly, advisory; CI's `api-mutation` job
+  reuses its results on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md)).
   `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the weekly security
   auditor, which runs throwaway tests and files private draft advisories ([ADR-0036](docs/adr/0036-weekly-security-audit.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
@@ -67,6 +69,7 @@ pnpm db:migrate     # apply migrations to the dev db
 pnpm check:boundaries # imports respect module boundaries (ADR-0023)
 pnpm check:effect   # Effect diagnostics (mistakes tsc can't see, e.g. an Effect that is never run)
 pnpm --filter @roundtable/web test:mutation # Stryker: which web code no test really checks (ADR-0027)
+pnpm --filter @roundtable/api test:mutation # the same for the API: minutes, a test database per worker
 pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + boundaries + tests: run before every commit
 ```
 

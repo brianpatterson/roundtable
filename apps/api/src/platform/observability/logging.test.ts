@@ -1,8 +1,8 @@
 import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { eq } from 'drizzle-orm';
-import { Cause, Effect, Exit } from 'effect';
+import { Cause, Effect, Exit, Schema } from 'effect';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { serializeError } from './logging.js';
+import { betterAuthLogger, createLogger, effectLoggerLayer, serializeError } from './logging.js';
 import { redactQueryParamsInJson } from './redact.js';
 import { Database } from '../database/effect.js';
 import { applications } from '../../modules/applications/index.js';
@@ -241,5 +241,86 @@ describe('redactQueryParamsInJson', () => {
       },
       other: 'untouched',
     });
+  });
+});
+
+/** The fields of a log line these tests read. */
+const LogLine = Schema.Struct({
+  level: Schema.Int,
+  msg: Schema.String,
+  kind: Schema.optional(Schema.String),
+  err: Schema.optional(Schema.Struct({ type: Schema.String, message: Schema.String })),
+});
+
+const parseLogLine = Schema.decodeUnknownSync(Schema.fromJsonString(LogLine));
+
+/** A logger whose lines land in `raw`, and parsed in `lines`. */
+function capturedLogger() {
+  const raw: string[] = [];
+  const lines: (typeof LogLine.Type)[] = [];
+
+  const log = createLogger({
+    stream: {
+      write: (line) => {
+        raw.push(line);
+        lines.push(parseLogLine(line));
+      },
+    },
+  });
+
+  return { log, raw, lines };
+}
+
+describe("Effect's logger, sent to pino", () => {
+  const logged = (effect: Effect.Effect<void>) => {
+    const { log, lines } = capturedLogger();
+
+    Effect.runSync(effect.pipe(Effect.provide(effectLoggerLayer(log))));
+
+    return lines;
+  };
+
+  it('joins the message parts and keeps annotations as fields, with no error', () => {
+    const [line] = logged(
+      Effect.log('Email sent', 'to', 'someone').pipe(Effect.annotateLogs({ kind: 'verification' })),
+    );
+
+    expect(line).toMatchObject({ level: 30, msg: 'Email sent to someone', kind: 'verification' });
+    expect(line).not.toHaveProperty('err');
+  });
+
+  it('logs the error from a failure or a defect as err', () => {
+    const lines = logged(
+      Effect.gen(function* () {
+        yield* Effect.logError('Send failed', Cause.fail(new Error('Resend is down')));
+        yield* Effect.logError('Crashed', Cause.die(new TypeError('undefined is not a function')));
+      }),
+    );
+
+    expect(lines).toMatchObject([
+      { level: 50, msg: 'Send failed', err: { type: 'Error', message: 'Resend is down' } },
+      {
+        level: 50,
+        msg: 'Crashed',
+        err: { type: 'TypeError', message: 'undefined is not a function' },
+      },
+    ]);
+  });
+});
+
+describe("Better Auth's logger, sent to pino", () => {
+  it('keeps an Error argument as err, and drops the free-form rest', () => {
+    const { log, raw, lines } = capturedLogger();
+    const authLog = betterAuthLogger(log);
+
+    authLog.log('error', 'Failed to create user', { email: 'a@example.com' }, new Error('boom'));
+    authLog.log('warn', 'Something odd', 'a@example.com');
+
+    expect(lines).toMatchObject([
+      { level: 50, msg: '[Better Auth] Failed to create user', err: { message: 'boom' } },
+      { level: 40, msg: '[Better Auth] Something odd' },
+    ]);
+    expect(lines[1]).not.toHaveProperty('err');
+    expect(raw.join('')).not.toContain('a@example.com');
   });
 });

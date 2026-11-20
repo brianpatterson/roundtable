@@ -28,6 +28,14 @@ describe('loadEnv', () => {
     expect(key && Redacted.value(key)).toBe('re_x');
   });
 
+  it('requires both the Resend key and the sender in production', () => {
+    for (const half of [{ RESEND_API_KEY: 're_x' }, { EMAIL_FROM: 'a@b.c' }]) {
+      expect(() => loadEnv({ ...baseEnv, NODE_ENV: 'production', ...half })).toThrow(
+        /RESEND_API_KEY and EMAIL_FROM are required in production/,
+      );
+    }
+  });
+
   it('allows the log mailer outside production', () => {
     expect(loadEnv(baseEnv).RESEND_API_KEY).toBeUndefined();
   });
@@ -49,7 +57,9 @@ describe('loadEnv', () => {
     expect(() => loadEnv({ ...baseEnv, BETTER_AUTH_SECRET: 'short' })).toThrow(
       /BETTER_AUTH_SECRET/,
     );
-    expect(() => loadEnv({ ...baseEnv, BETTER_AUTH_URL: 'not a url' })).toThrow(/BETTER_AUTH_URL/);
+    expect(() => loadEnv({ ...baseEnv, BETTER_AUTH_URL: 'not a url' })).toThrow(
+      /must be a URL[\s\S]*BETTER_AUTH_URL/,
+    );
     expect(() => loadEnv({ ...baseEnv, EMAIL_LIMIT_PER_DAY: '0' })).toThrow(/EMAIL_LIMIT_PER_DAY/);
   });
 });

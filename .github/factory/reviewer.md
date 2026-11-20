@@ -22,6 +22,8 @@ the owner always merges.
 - `./mutation/survivors.md`, when it exists, is CI's mutation testing of the web app on this
   commit ([ADR-0027](../../docs/adr/0027-mutation-testing-stryker.md)): small changes to the code
   that no test noticed. It lists those in files this pull request changed first.
+  `./mutation-api/survivors.md` is the same for the API, when the pull request touched it: only
+  the survivors in files it changed, since every older one is reviewed in ADR-0027.
 
 ## The checklist
 

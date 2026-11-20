@@ -122,4 +122,12 @@ describe('the production server (serveApp)', () => {
     expect(JSON.stringify(sent)).not.toContain(token);
     expect(JSON.stringify(sent.request ?? {})).not.toContain('session_token');
   });
+
+  // Last: it stops the server.
+  it('logs that it is shutting down when stopped', async () => {
+    if (server) await Effect.runPromise(Fiber.interrupt(server));
+    server = undefined;
+
+    expect(lines.map((line) => JSON.parse(line).msg)).toContain('Shutting down');
+  });
 });

@@ -81,3 +81,166 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   ([ADR-0026](0026-software-factory-reviewer.md)), and the implementer runs Stryker itself when it
   changes `apps/web/src`. A scheduled full run waits for the API, where runs are long enough for
   incremental runs to matter; a score threshold waits for a few weeks of real scores.
+- **2026-11-18:** the API spike (roadmap Phase 3, step 7). Stryker runs on `apps/api` with the
+  web app's setup and TypeScript 7 workarounds (`apps/api/stryker.config.mjs`,
+  `pnpm --filter @roundtable/api test:mutation`), locally only for now.
+
+  **The shared test database.** Each Stryker worker gets its own database: the test helpers read
+  Stryker's `STRYKER_MUTATOR_WORKER` and use `app_test_<worker>`, which a Vitest global setup
+  creates and migrates on first use (`apps/api/test/test-database.ts`). Outside Stryker nothing
+  changes. Both options give identical results, mutant for mutant, so the workers don't
+  interfere. Measured on a laptop (10 cores), 595 mutants, before the exclusions below:
+
+  | Run                                         | Time       |
+  | ------------------------------------------- | ---------- |
+  | Dry run (117 tests, with coverage)          | 11 s       |
+  | (a) `concurrency: 1`, the shared `app_test` | 28 min 6 s |
+  | (b) 4 workers, a database each              | 8 min 32 s |
+  | (b) after the exclusions (511 mutants)      | 6 min 36 s |
+  | Incremental, nothing changed                | 13 s       |
+  | Incremental, one line of `redact.ts`        | 15 s       |
+  | Incremental, one test renamed               | 60 s       |
+
+  Most of the time goes to **static mutants**: code that runs when a module loads (schemas,
+  regexes, layers), which Stryker can only test by rerunning the whole suite. They're 55% of
+  the mutants and 94% of the time. `ignoreStatic` would cut the run to about a minute, but it
+  would also drop the redaction regexes in `redact.ts`, so they stay. Four workers matches a
+  GitHub-hosted runner.
+
+  **Exclusions.** `mutator.excludedMutations` was too coarse: excluding string or object
+  literals would also drop real survivors (`redact.ts`'s placeholders, Sentry's privacy options).
+  Instead:
+  - **Drizzle tables** (`schema.ts`, `columns.ts`) aren't mutated (77 mutants). The test database
+    is built from the SQL migrations, so of their mutants only renamed tables and columns are
+    killed (35, by queries failing), and the rest (defaults, indexes, foreign keys, time zones)
+    change nothing at run time (42 survived or had no coverage). CI's schema drift check
+    already catches both kinds.
+  - **Effect names** are skipped by an ignorer (`apps/api/stryker-effect-ignorer.mjs`): service
+    keys (`Context.Service<…>()('roundtable/Mailer')`, found by class, not by key) and span
+    names (`Effect.fn('Mailer.send')`, seen only by a tracer, which the API doesn't have). 7
+    mutants.
+  - Generators and pipelines produced no noise of their own: all 16 emptied `function*`
+    bodies are killed, and the survivors on Effect lines are log messages and fallbacks that
+    no test reads, which are real gaps. Error tags (`Schema.TaggedError`) stay mutated because they appear
+    in error reports; their 3 survivors are noise, but harmless.
+
+  **Score**, after exclusions: 511 mutants, 379 killed, 1 timed out, 106 survived, 19 not
+  covered, 6 errors (a mutant that breaks module loading). **75%** of all mutants, **78%** of
+  the covered ones. The biggest groups of survivors are Sentry's options in `error-tracking.ts`
+  (31: no test notices if `cookies`, `urlQueryParams` or `databaseQueryData` collection is
+  switched on), Better Auth's options in `better-auth.ts` (20: rate limits, account linking),
+  and the Resend transport (12).
+
+  **`redact.ts`:** every one of the 33 mutants in the query-parameter and reset-token
+  redaction (`redactQueryParams`, `redactQueryParamsInJson`, `redactResetPasswordToken`,
+  `redactLogLine`) is killed. Its survivors are all in error description:
+  - `paramKind`: every case but `string` and `uuid` (null, undefined, number, boolean, date,
+    array, object) can return nothing unnoticed; no test describes those kinds, and
+    `describeParams([])` (`<redacted: none>`) has no test at all.
+  - `redactDataException`: `startsWith('22')` → `startsWith('')` survives, so no test checks
+    that a non-data-exception message keeps its quotes.
+  - `describeError`: `'<redacted>'` → `''` survives (a "Failed query" message on an error
+    without `params`), and so does `err.stack ?? …` → `&&` (an error without a stack).
+    `instanceof DrizzleQueryError || …` → `true` survives but is equivalent: other errors have
+    no `params`.
+  - `PostgresError`'s `code` pattern can lose either anchor (`^`, `$`) unnoticed.
+
+  **Decision: a scheduled full run, not every pull request yet.** A full run takes minutes,
+  not the web app's 20 seconds, so pull requests would need incremental runs, and those need a
+  baseline from `main` and only see changes to mutated source and test files: a change to
+  `test/helpers.ts`, a migration, the contract package or a dependency would reuse stale
+  results. A scheduled full run on `main` gives that baseline and catches what incremental
+  misses. Next: a scheduled CI job (Postgres service, four workers) that publishes the report;
+  then incremental runs on pull requests that touch `apps/api/src`, seeded from its
+  incremental file. Not added in this change.
+
+- **2026-11-19:** `redact.ts` has no survivors left. `redact.test.ts` pins the parameter kinds,
+  `<redacted: none>`, the fallbacks in `describeError`, data-exception quoting and the SQLSTATE
+  pattern's anchors. The API's score is now 80% (81% of covered mutants), in a full run of 6
+  minutes 24 seconds. The incremental run after adding the tests still reported the two
+  pattern-anchor mutants as surviving: they're static, and Stryker reused their old results
+  although a new test now kills them. Another reason incremental runs need a scheduled full
+  run behind them.
+- **2026-11-19:** Sentry's privacy options in `error-tracking.ts` are covered. Sentry's HTTP
+  integration never sees the tests' in-process requests, so a test can't show what it would
+  collect from one; instead a test pins the `dataCollection` options the client starts with,
+  and another checks by behavior that console output stays out of breadcrumbs. `scrubEvent`
+  got tests for exact header names, breadcrumbs, and events with missing parts. The file's 5
+  remaining survivors are equivalent or not about privacy: iterating a placeholder string
+  instead of `[]` (no `value` or `message` to touch), `level: 'error'` (Sentry's default for
+  exceptions), and the reporter's `mergeWithExisting`. The API's score is now 85% (86% of
+  covered mutants); a forced full run took 5 minutes 42 seconds.
+- **2026-11-19:** `better-auth.ts`'s survivors went from 20 to 4. Better Auth turns rate limiting
+  on only in production (it reads `NODE_ENV` once, when it loads), so the rate-limit tests switch
+  it on for a standalone instance and check our limits by behavior: 5 password resets, 5
+  verification emails and 10 sign-ups an hour per client IP. The error filter is tested directly
+  (4xx ignored, 5xx and non-`Error` throws reported), the outage test now checks the reported
+  error's message, its cause and the log message, and a provider needs both its id and secret.
+  Telemetry, which Better Auth skips under tests whatever the option says, is pinned as off. The
+  4 left are equivalent: `accountLinking`'s two objects repeat Better Auth's defaults (the
+  linking behavior itself is tested in `oauth.test.ts`), the adapter's `provider: 'pg'`, and
+  `BetterAuthFailed`'s tag. The API's score is now 88% (90% of covered mutants), in a forced
+  full run of 6 minutes 29 seconds.
+- **2026-11-19:** the Resend transport (`transport.ts`) went from 12 survivors to 2. New tests
+  cover a 409 concurrent request being retried, a 300 counting as a failure, the 500-character
+  cap on Resend's message, an error body that can't be read, the "unreachable" message, the
+  retry schedule it's given and the default backoff, the 10-second timeout per attempt (both on
+  Effect's simulated clock, so they take no real time), `fromPromise`'s failure for a non-`Error`
+  throw, and `resendLayer` itself. The 2 left are equivalent: `EmailSendFailed`'s tag, and
+  `Schema.Struct({ name })` emptied to `Schema.Struct({})`, which still decodes `name`. The API's
+  score is now 91% (92% of covered mutants), in a forced full run of 6 minutes 18 seconds.
+- **2026-11-19:** `logging.ts` went from 9 survivors to 3. New tests send Effect's log entries
+  and Better Auth's log calls through a captured logger: message parts joined with spaces,
+  annotations as fields, `err` only for a failure or a defect, and Better Auth's `Error`
+  argument kept while its other arguments are dropped. The 3 left are equivalent: pino treats
+  `enabled: undefined` as on (`?? true` → `&& true`), and skipping the `silent` check changes
+  nothing because pino's `silent` method writes nothing. The API's score is now 92% (93% of
+  covered mutants), in a forced full run of 6 minutes 18 seconds.
+- **2026-11-19:** `server.ts` went from 7 survivors to 2. A new whole-app test checks the health
+  check's answer with the database up and down (still a 200, `ok: true`, `db: 'down'`), and the
+  production-server test now stops the server itself and checks it logs "Shutting down". The 2
+  left, plus one not covered, are equivalent or untestable here: an empty health query still
+  reaches Postgres, which accepts it, and the listen address (`host ?? '0.0.0.0'`) only shows in
+  which network interfaces accept connections, which a portable test can't check. The API's
+  score is now 93% (94% of covered mutants), in a forced full run of 6 minutes 23 seconds.
+- **2026-11-19:** `mailer.ts` went from 7 survivors to 1. New tests in `email.test.ts` check
+  that an address counts the same whatever its case and is stored in lowercase, that eight
+  concurrent sends to one address can't get past its limit (without the advisory lock all eight
+  see the same count; the test failed every time the lock was removed), and the log lines for an
+  email dropped at the daily limit and for a failed send: message, kind, limit or error, and
+  never the address. The one left is `DailyEmailLimitReached`'s tag. The API's score is now 95%
+  (95% of covered mutants), in a forced full run of 5 minutes 51 seconds.
+- **2026-11-19:** the last unreviewed survivors have tests. A new `migrate.test.ts` runs the
+  migrations on an empty database (every other test runs on one that's already migrated, so
+  `runMigrations` could do nothing unnoticed). `email.test.ts` checks that Resend is used when
+  both its key and sender are set, and the log when only the key is. `env.test.ts` checks that
+  production needs both, and the "must be a URL" message. The lifecycle test now looks for the
+  connection label `roundtable-api` as an operator would type it, instead of importing the
+  constant. The API's score is now **96%** (96% of covered mutants), in a forced full run of 7
+  minutes 18 seconds. The 18 survivors left (and 2 mutants no test runs) are all reviewed:
+  - Equivalent: three error tags; Better Auth's `accountLinking` objects (its defaults) and the
+    adapter's `provider: 'pg'`; Resend's `Schema.Struct({ name })` emptied (still decodes
+    `name`); `scrubEvent`'s loops over a placeholder string; `level: 'error'` (Sentry's default)
+    and the reporter's `mergeWithExisting` (no other reporter to merge with); pino's
+    `enabled: undefined` and `silent` method; the empty health query, which Postgres accepts.
+  - Not testable here without a mock or the machine's network setup: `handlers.ts`'s guard for
+    an insert that returns no row, and the server's listen address.
+- **2026-11-19:** the scheduled full run is in CI. `.github/workflows/mutation.yml` mutates the
+  whole API nightly on `main` (and on demand), against a Postgres service, with four workers. Like
+  the web job it's advisory: it fails only if Stryker can't run. It writes the score and every
+  survivor to the job summary and uploads `api-mutation-report` (the JSON report, the survivors and
+  Stryker's incremental file), kept 14 days. It also runs on pull requests that change the
+  workflow, so edits to it are tested before they land. Incremental runs on pull requests, seeded
+  from that artifact, are the next step.
+- **2026-11-19:** incremental runs on pull requests. CI's `api-mutation` job runs on every pull
+  request that touches `apps/api/`, `packages/contract/` or the lockfile, and is skipped
+  otherwise. It reuses the latest nightly results on `main` (only a scheduled or manual run there,
+  so no pull request can plant a baseline) and mutates only what changed. Stryker's incremental
+  mode sees only the files it mutates and test files, so a change to anything else the results
+  depend on (test helpers, migrations, Drizzle tables, the contract, config, dependencies) gets
+  a full run instead, and so does a pull request opened before any nightly run. It's advisory
+  like the web job, writes the survivors in changed files to the job summary, and uploads them as
+  `api-mutation-report`, which the reviewer reads next to the web app's
+  ([ADR-0026](0026-software-factory-reviewer.md)). An incremental result can still be stale for
+  a module-level mutant a new test now kills (seen in this spike); the nightly full run corrects
+  it.

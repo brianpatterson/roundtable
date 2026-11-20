@@ -10,9 +10,10 @@ import { EmailTransport, type Email, type SendEmail } from '../src/modules/email
 import { loadEnv, type Env } from '../src/platform/config/env.js';
 import { scrubEvent } from '../src/platform/observability/error-tracking.js';
 import { createLogger } from '../src/platform/observability/logging.js';
+import { testDatabaseUrl } from './test-database.js';
 
 export const env = loadEnv({
-  DATABASE_URL: process.env.TEST_DATABASE_URL ?? 'postgres://app:app@localhost:5432/app_test',
+  DATABASE_URL: testDatabaseUrl,
   BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long',
   BETTER_AUTH_URL: 'http://localhost:5173',
 });
