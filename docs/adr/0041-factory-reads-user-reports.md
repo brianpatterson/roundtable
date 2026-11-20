@@ -62,9 +62,12 @@ Option 4.
   a bug fix, reproduced first with a failing test; the bug described in its own words; stop and
   ask when it can't reproduce it.
 - **A deterministic check catches quotes after the run.** `guard-report-text.sh` refuses text
-  holding any 40 characters of the description (case and whitespace ignored). The agent's comments
-  and pull request descriptions that quote it are taken down; a branch whose added lines or commit
-  messages do gets `needs-human`, because a push can't be taken back.
+  holding any 40 characters of the description (case and whitespace ignored), compared with a copy
+  kept outside the directory the agent can edit. The agent's comments are taken down, and a pull
+  request's title and description that quote it are replaced; a branch whose added lines or commit
+  messages do gets `needs-human`, because a push can't be taken back. Diagnostics aren't checked:
+  error messages such as `TypeError: x is undefined` are what a fix rightly names, so the
+  implementer is told instead to name errors by type and place, not by their full message.
 
 ## Consequences
 
@@ -88,5 +91,9 @@ Option 4.
 - Diagnostics can hold personal data an error message happens to include. They are cut short,
   never include request or response bodies or query strings, and stay as private as the
   description. Revisit with ADR-0038's open question of retention.
+- The endpoint is part of `RoundtableApi`, like every other, so the typed client in the browser
+  bundle has a `factoryReports.get` method (useless without the token) and `client/errors.ts` a
+  message for `ReportNotFound` that no page shows. A separate contract for factory-only endpoints
+  would avoid that, at the cost of a second `HttpApi` and its tests; revisit if more appear.
 - The site's URL is written into `factory.yml` (`https://roundtableapp.us`), because the `DOMAIN`
   variable belongs to the `production` environment. A new domain needs changing it there.

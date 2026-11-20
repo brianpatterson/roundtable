@@ -91,6 +91,7 @@ jobs:
           TOKEN: ${{ secrets.FACTORY_REPORTS_TOKEN }}
           REPORTS_URL: https://roundtableapp.us/api/factory/reports
           OUT: ${{ runner.temp }}/user-report
+          GUARD: ${{ runner.temp }}/report-guard/description.txt
           PROMPT: ${{ runner.temp }}/implementer.md
         run: '"$RUNNER_TEMP/fetch-report.sh"'
       - uses: ./.github/actions/isolate-agent
@@ -252,7 +253,7 @@ jobs:
           NUMBER: ${{ github.event.issue.number }}
           BRANCH: ${{ steps.claude.outputs.branch_name }}
         run: |
-          description="$RUNNER_TEMP/user-report/description.txt"
+          description="$RUNNER_TEMP/report-guard/description.txt"
           guard() { "$RUNNER_TEMP/guard-report-text.sh" "$description"; }
           quoted=0
           for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/comments" --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id'); do
@@ -263,8 +264,11 @@ jobs:
           done
           if [ -n "$BRANCH" ]; then
             for pr in $(gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'); do
-              if ! gh pr view "$pr" --json body --jq .body | guard; then
-                gh pr edit "$pr" --body "Closes #$NUMBER. The description was removed because it quoted the user's private report (ADR-0041)."
+              # The agent writes the title as well as the description; both are public. The issue's
+              # title, written by the report App, holds only safe context.
+              if ! gh pr view "$pr" --json title,body --jq '.title + "\n" + .body' | guard; then
+                gh pr edit "$pr" --title "Fix $(gh issue view "$NUMBER" --json title --jq .title)" \
+                  --body "Closes #$NUMBER. The title and description were replaced because one of them quoted the user's private report (ADR-0041)."
                 quoted=1
               fi
               # The lines the branch adds, and its commit messages.

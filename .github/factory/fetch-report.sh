@@ -6,7 +6,9 @@
 #   TITLE        the issue's title, "User report <id>: <page>" (written by the report App)
 #   TOKEN        FACTORY_REPORTS_TOKEN
 #   REPORTS_URL  e.g. https://roundtableapp.us/api/factory/reports
-#   OUT          directory for report.json and description.txt (the agent may read it)
+#   OUT          directory for report.json (the agent may read it)
+#   GUARD        where to write the description for guard-report-text.sh: outside OUT, so the
+#                agent, which may edit files, can't change what its output is checked against
 #   PROMPT       the implementer's instructions file, which gets the note appended
 #   CURL         overrides curl (tests)
 #
@@ -23,7 +25,7 @@ note() {
 }
 
 missing() {
-  rm -f "$OUT/report.json" "$OUT/description.txt"
+  rm -f "$OUT/report.json" "$GUARD"
   echo "::warning::The user's report wasn't fetched: $1"
   note "This issue is a user report, but its text couldn't be fetched ($1). Don't guess what went wrong: ask the owner in your comment, without quoting anything private, and stop."
   exit 0
@@ -46,7 +48,8 @@ esac
 
 jq -e '.description | type == "string"' "$OUT/report.json" >/dev/null 2>&1 ||
   missing "the API's answer wasn't a report"
-jq -r .description "$OUT/report.json" >"$OUT/description.txt"
+mkdir -p "$(dirname "$GUARD")"
+jq -r .description "$OUT/report.json" >"$GUARD"
 
 note "This issue is user report \`$id\`. What the user wrote, and what their browser saw before they sent it, is in \`$OUT/report.json\`: read it with your Read tool before anything else, and follow \"User reports\" above."
 echo "Fetched report $id."

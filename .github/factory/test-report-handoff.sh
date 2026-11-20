@@ -42,19 +42,20 @@ CURL
 chmod +x "$work/curl"
 
 fetch() { # fetch <title> <token>: runs fetch-report.sh into a fresh directory, prints the note
-  rm -rf "$work/out" "$work/prompt.md" "$work/output"
+  rm -rf "$work/out" "$work/guard" "$work/prompt.md" "$work/output"
   : >"$work/prompt.md"
   : >"$work/output"
   TITLE=$1 TOKEN=$2 REPORTS_URL=https://app.test/api/factory/reports OUT="$work/out" \
-    PROMPT="$work/prompt.md" CURL="$work/curl" GITHUB_OUTPUT="$work/output" \
+    GUARD="$work/guard/description.txt" PROMPT="$work/prompt.md" CURL="$work/curl" GITHUB_OUTPUT="$work/output" \
     "$here/fetch-report.sh" >/dev/null 2>&1 ||
     fail "fetch-report.sh exited non-zero for [$1]"
   cat "$work/prompt.md"
 }
 
 note=$(fetch "User report $ID: /" right-token)
-[ "$(cat "$work/out/description.txt")" = "The list is empty after I add one" ] ||
+[ "$(cat "$work/guard/description.txt")" = "The list is empty after I add one" ] ||
   fail "the description is written for the guard"
+[ ! -e "$work/out/description.txt" ] || fail "the guard's copy isn't in the directory the agent can edit"
 [ "$(jq -r .id "$work/out/report.json")" = "$ID" ] || fail "the report is written as JSON"
 grep -qx 'fetched=true' "$work/output" || fail "a fetched report tells the workflow to guard against quotes"
 case "$note" in *"$work/out/report.json"*) ;; *) fail "the note tells the agent where the report is: [$note]" ;; esac
@@ -63,7 +64,7 @@ case "$note" in *"empty after"*) fail "the note never holds the user's words" ;;
 expect_missing() { # expect_missing <name> <title> <token> <reason the note must give>
   note=$(fetch "$2" "$3")
   case "$note" in *"$4"*) ;; *) fail "$1: no [$4] in [$note]" ;; esac
-  [ ! -f "$work/out/description.txt" ] && [ ! -f "$work/out/report.json" ] ||
+  [ ! -f "$work/guard/description.txt" ] && [ ! -f "$work/out/report.json" ] ||
     fail "$1: no report is left behind"
   [ ! -s "$work/output" ] || fail "$1: no output says it was fetched"
 }
