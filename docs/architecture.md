@@ -49,6 +49,7 @@ flowchart LR
   api -->|SQL via Drizzle| db
   api -.OAuth.-> idp[GitHub / Google]
   api -.report issues<br/>REST, safe context only.-> gh[GitHub Issues]
+  factory[Factory workflow<br/>GitHub Actions] -.one report by id<br/>bearer token.-> api
   contract[[packages/contract<br/>Effect HttpApi contract + typed client]] -.imported by.-> web
   contract -.imported by.-> api
 ```
@@ -92,13 +93,13 @@ flowchart TB
   end
 ```
 
-| Module       | API                                                                                                                          | Web                                                            | Contract          |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
-| applications | CRUD handlers, `applications` table                                                                                          | `ApplicationsPage` (form + table), its query keys              | `applications.ts` |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                        | none                                                           | none              |
-| support      | One `SupportLive` layer: `POST /api/reports`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports`                  | `ReportProblem` (link-style button + dialog)                   | `support.ts`      |
-| (system)     | `/api/health`, in `server.ts`                                                                                                | none                                                           | `system.ts`       |
+| Module       | API                                                                                                                                         | Web                                                            | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers, `applications` table                                                                                                         | `ApplicationsPage` (form + table), its query keys              | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                           | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                   | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                           | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, TextField, TextArea, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
@@ -151,7 +152,16 @@ user still gets the confirmation. Without the GitHub App (`GITHUB_ISSUES_APP_ID`
 line; without `REPORTS_EMAIL` the email is. Tests swap the GitHub client through
 `AppOptions.githubIssues`. On the web, the shell shows `ReportProblem` in its footer when signed
 in (reply email pre-filled with the account's) and under the sign-in and password-reset pages
-(through `AuthGate`'s `signedOut` slot) when not.
+(through `AuthGate`'s `signedOut` slot) when not. A report also carries `diagnostics` that
+`shared/diagnostics.ts` keeps in memory: the latest 20 API requests (method, path, status; the
+typed client's and Better Auth's), the latest 5 uncaught errors, the window size and the theme
+([ADR-0041](adr/0041-factory-reads-user-reports.md)). They're private like the description and
+go in the owner's email.
+
+`GET /api/factory/reports/:id` is for the factory's implementer only
+([ADR-0041](adr/0041-factory-reads-user-reports.md)): with `Authorization: Bearer
+<FACTORY_REPORTS_TOKEN>` it returns one report under 30 days old, its description and
+diagnostics but never who sent it; anything else is a 401.
 
 **The App** (`server.ts`) is the one module that knows every other. Callers pass `{ env, log }`
 and pick one of two adapters: `serveApp` (a Node server, for production) or `appWebHandler`
@@ -214,6 +224,7 @@ erDiagram
     text page_path "NOT NULL, no query string"
     text release "NOT NULL"
     text user_agent "nullable"
+    jsonb diagnostics "nullable, private: requests and errors the browser saw"
     text client_key "HMAC of the client address"
     timestamptz issue_requested_at "claimed one of the day's issues"
     text issue_url "nullable"
@@ -259,17 +270,18 @@ for `Unauthorized`, a return to the sign-in page (see Identity above). `client.t
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
-| Method   | Path                    | Auth                      | Success | Errors                                                                |
-| -------- | ----------------------- | ------------------------- | ------- | --------------------------------------------------------------------- |
-| GET      | `/api/health`           | public                    | 200     | (reports `db: "down"` instead of failing)                             |
-| GET      | `/api/auth-config`      | public                    | 200     | (lists enabled social providers)                                      |
-| GET/POST | `/api/auth/*`           | public                    | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session |
-| GET      | `/api/applications`     | session                   | 200     | 401                                                                   |
-| GET      | `/api/applications/:id` | session                   | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                   |
-| POST     | `/api/applications`     | session                   | 201     | 400, 401                                                              |
-| PATCH    | `/api/applications/:id` | session                   | 200     | 400 (body or id), 401, 404                                            |
-| DELETE   | `/api/applications/:id` | session                   | 204     | 400 (malformed id), 401, 404                                          |
-| POST     | `/api/reports`          | public (session optional) | 201     | 400, 429 (5 per client address per hour)                              |
+| Method   | Path                       | Auth                      | Success | Errors                                                                |
+| -------- | -------------------------- | ------------------------- | ------- | --------------------------------------------------------------------- |
+| GET      | `/api/health`              | public                    | 200     | (reports `db: "down"` instead of failing)                             |
+| GET      | `/api/auth-config`         | public                    | 200     | (lists enabled social providers)                                      |
+| GET/POST | `/api/auth/*`              | public                    | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session |
+| GET      | `/api/applications`        | session                   | 200     | 401                                                                   |
+| GET      | `/api/applications/:id`    | session                   | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                   |
+| POST     | `/api/applications`        | session                   | 201     | 400, 401                                                              |
+| PATCH    | `/api/applications/:id`    | session                   | 200     | 400 (body or id), 401, 404                                            |
+| DELETE   | `/api/applications/:id`    | session                   | 204     | 400 (malformed id), 401, 404                                          |
+| POST     | `/api/reports`             | public (session optional) | 201     | 400, 429 (5 per client address per hour)                              |
+| GET      | `/api/factory/reports/:id` | factory token             | 200     | 400 (malformed id), 401, 404 (unknown or over 30 days old)            |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.
@@ -347,7 +359,10 @@ sequenceDiagram
   the release, the time and a browser family. The API applies only the labels `bug` and
   `user-report`, never `ready`. Issues are opened by a GitHub App installed on this repository with
   Issues read/write only, so they're authored by its bot: a leaked key can't act as the owner,
-  whose labels and comments start the factory.
+  whose labels and comments start the factory. The factory's implementer reads a report's text
+  through `GET /api/factory/reports/:id`, fetched by a workflow step with `FACTORY_REPORTS_TOKEN`
+  that the agent never sees; afterwards a check takes down anything it published that quotes the
+  report ([ADR-0041](adr/0041-factory-reads-user-reports.md)).
 
 ## 7. Environments and delivery
 
@@ -481,7 +496,10 @@ It builds the ticket on a branch until `pnpm check` passes and opens a pull requ
 GitHub App, so the usual CI runs on it; a human reviews and merges. Its token lives in the
 `factory` environment, which only `main` can use, and a deterministic step after each run
 rejects branches that change `.github/`, `.claude/` or `CLAUDE.md`
-([ADR-0025](adr/0025-software-factory-implementer.md)).
+([ADR-0025](adr/0025-software-factory-implementer.md)). On a user report's issue, a step first
+fetches the report for the agent to read, with a token the agent never gets, and a step after
+the run takes down comments and descriptions that quote it
+([ADR-0041](adr/0041-factory-reads-user-reports.md)).
 
 Once CI passes on a new commit of any pull request from this repository except Dependabot's
 (unless someone else, such as the CI fixer, has pushed to it)

@@ -95,3 +95,9 @@ Option 3, as a new `support` module (API and web, [ADR-0023](0023-modular-monoli
   bounded table.
 - Nothing the client sends reaches an issue: the page is one of a fixed list or `other`. A new
   page in the web app needs adding to that list (`modules/support/handlers.ts`) to be named.
+
+## Updates
+
+- **2026-11-20:** [ADR-0041](0041-factory-reads-user-reports.md) lets the factory's implementer
+  read a report's description, and diagnostics a report now carries, through a token the agent
+  never sees. The issue still holds safe context only.

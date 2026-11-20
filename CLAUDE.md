@@ -45,6 +45,8 @@ each module is what a future service or microfrontend would become.
   Tickets come from the forms in `.github/ISSUE_TEMPLATE/`. The same workflow fixes CI failures on
   factory PRs and on PRs labeled `autofix` ([ADR-0028](docs/adr/0028-software-factory-ci-fixer.md)).
   `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)).
+  On a user report's issue it first fetches the report with `.github/factory/fetch-report.sh` (a
+  token the agent never sees), and `guard-report-text.sh` takes down what quotes it ([ADR-0041](docs/adr/0041-factory-reads-user-reports.md)).
   `.github/workflows/sweeper.yml` checks open factory PRs every 30 minutes: it reruns a cancelled CI
   once and labels any other stuck PR `needs-human` with the reason ([ADR-0040](docs/adr/0040-factory-sweeper.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and

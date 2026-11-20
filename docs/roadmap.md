@@ -192,7 +192,9 @@ Building blocks, in order:
    ([ADR-0022](adr/0022-effect-for-the-api.md)). Next: the kinds of the request body's fields on
    every error (`jobUrl: null`, `company: string(0)`), so a validation or handler bug can be
    reproduced from the Sentry issue alone. Agents never get real values: that would expose user
-   data and make stored text a prompt-injection path.
+   data and make stored text a prompt-injection path. The one exception is a user's own problem
+   report, which the owner reads before labeling it `ready`
+   ([ADR-0041](adr/0041-factory-reads-user-reports.md)).
 
    Dependabot already notifies and opens security fix PRs on its own, and dependency review blocks
    PRs that add a vulnerable package, so its alerts don't need code scanning's pipeline
