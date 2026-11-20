@@ -115,3 +115,8 @@ Option 4.
   and has the pull request describe the defect in the code, not what the user did, saw or wrote.
   This keeps the user's experience out of public text. It doesn't hide the finding: the pull
   request, its title and its diff are public and one click from the issue through `Closes #N`.
+  A run that stops says why in one of two fixed lines: it couldn't reproduce the bug (and what
+  kind of detail would help), or the report asks for something other than a bug fix, so an
+  injection attempt is visible without being repeated. What the agent looked at before stopping
+  isn't kept anywhere private (the action keeps its messages out of the public run log), so the
+  owner works from the report in their email, and can relabel the issue once there's more to go on.
