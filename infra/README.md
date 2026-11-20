@@ -386,30 +386,31 @@ wrote and what their browser saw, and fixes the bug
 ([ADR-0041](../docs/adr/0041-factory-reads-user-reports.md)). Without it, the implementer asks you
 for the details instead.
 
-1. Generate a token, and keep it in your clipboard only:
+1. From `infra/`, generate a token into a shell variable and put it on the server. The server
+   refuses anything that isn't a hex token, so a stray paste can't end up in `.env`:
 
    ```bash
-   openssl rand -hex 32 | pbcopy
+   token=$(openssl rand -hex 32)
    ```
-
-2. Put it on the server. From `infra/` (it prompts for the value; a hex token needs no quotes):
 
    ```bash
-   ssh -t ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; read -rsp "FACTORY_REPORTS_TOKEN: " v; echo; [ -n "$v" ] && sed -i "/^FACTORY_REPORTS_TOKEN=/d" "$f" && printf "FACTORY_REPORTS_TOKEN=%s\n" "$v" >> "$f"; echo "✓ done"'
+   ssh ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; read -r v; case "$v" in *[!0-9a-f]*|"") echo "✗ not a hex token" >&2; exit 1;; esac; sed -i "/^FACTORY_REPORTS_TOKEN=/d" "$f"; printf "FACTORY_REPORTS_TOKEN=%s\n" "$v" >> "$f"; echo "✓ server done"' <<<"$token"
    ```
 
-3. Put the same value in GitHub, as a secret of the `factory` environment (Settings →
-   Environments → `factory` → Add environment secret, or from the repository root):
+2. Put the same value in GitHub, as a secret of the `factory` environment, then forget it:
 
    ```bash
-   pbpaste | gh secret set FACTORY_REPORTS_TOKEN --env factory
+   gh secret set FACTORY_REPORTS_TOKEN --env factory <<<"$token" && unset token
    ```
 
-4. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**). Check with an issue the
+   Run all three in the same terminal: the token lives only in that shell's `token` variable,
+   never in the clipboard, where copying the next command would replace it.
+
+3. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**). Check with an issue the
    report App opened: label it `ready`, and the Factory run's "Fetch the user's report" step says
    `Fetched report <id>.`
 
-**Rotating it:** run the three steps with a new token. **If it leaks:** replace it on the server
+**Rotating it:** run the steps again; each run makes a new token. **If it leaks:** replace it on the server
 and redeploy first. It can only read reports under 30 days old, by id, never who sent them.
 
 ## Monitoring
