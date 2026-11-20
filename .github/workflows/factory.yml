@@ -73,7 +73,26 @@ jobs:
       # Copied out of the workspace before the agent switches branches, so the instructions it
       # runs under are main's, whatever a branch contains.
       - name: Load the implementer's instructions and the secret guard from main
-        run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
+        run: |
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+            .github/factory/fetch-report.sh .github/factory/guard-report-text.sh "$RUNNER_TEMP/"
+          mkdir -p "$RUNNER_TEMP/user-report"
+      # A user report's own words and what the user's browser saw (ADR-0041), for issues the report
+      # App opened. Fetched in this step alone, so the token never reaches the agent: the agent
+      # gets the report as a file in user-report/, and a note in its instructions.
+      - name: Fetch the user's report
+        id: report
+        if: >-
+          !github.event.issue.pull_request &&
+          github.event.issue.user.login == 'roundtable-user-reports[bot]' &&
+          contains(github.event.issue.labels.*.name, 'user-report')
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          TOKEN: ${{ secrets.FACTORY_REPORTS_TOKEN }}
+          REPORTS_URL: https://roundtableapp.us/api/factory/reports
+          OUT: ${{ runner.temp }}/user-report
+          PROMPT: ${{ runner.temp }}/implementer.md
+        run: '"$RUNNER_TEMP/fetch-report.sh"'
       - uses: ./.github/actions/isolate-agent
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       # No dependency cache here (ADR-0030): this job's caches are saved under main, and what it
@@ -133,6 +152,7 @@ jobs:
             --max-turns 150
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
+            --add-dir ${{ runner.temp }}/user-report
             --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git --config-env:*),Bash(git --config-env=*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
 
@@ -221,6 +241,42 @@ jobs:
             fi
           done
           [ "$leaked" = 0 ] || { echo "::error::The agent published something that looks like a credential. It was taken down; rotate the credential."; exit 1; }
+
+      # A user report is private (ADR-0041), and everything the agent publishes is public. Its
+      # comments and pull request descriptions that quote the report are taken down; a branch
+      # that does can't be, so its pull request goes to a human, who rewrites it before merging.
+      - name: Take down anything that quotes the user's report
+        if: always() && steps.report.outputs.fetched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.claude.outputs.branch_name }}
+        run: |
+          description="$RUNNER_TEMP/user-report/description.txt"
+          guard() { "$RUNNER_TEMP/guard-report-text.sh" "$description"; }
+          quoted=0
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/comments" --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id'); do
+            if ! gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body | guard; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="This comment was removed because it quoted the user's private report (ADR-0041). [The run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) has the outcome."
+              quoted=1
+            fi
+          done
+          if [ -n "$BRANCH" ]; then
+            for pr in $(gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'); do
+              if ! gh pr view "$pr" --json body --jq .body | guard; then
+                gh pr edit "$pr" --body "Closes #$NUMBER. The description was removed because it quoted the user's private report (ADR-0041)."
+                quoted=1
+              fi
+              # The lines the branch adds, and its commit messages.
+              if ! gh api "repos/$GITHUB_REPOSITORY/compare/main...$BRANCH" \
+                     --jq '(.files[].patch // "" | split("\n")[] | select(startswith("+")) | .[1:]), .commits[].commit.message' | guard; then
+                gh pr edit "$pr" --add-label needs-human
+                gh pr comment "$pr" --body "This branch quotes the user's private report (ADR-0041) in its code or commit messages, which are public. Rewrite those lines and commits before merging, then remove \`needs-human\`."
+                quoted=1
+              fi
+            done
+          fi
+          [ "$quoted" = 0 ] || { echo "::error::The agent published part of the user's private report. See the comments it left."; exit 1; }
 
   # Which failing pull request to fix, if any, and which attempt this is. Holds no secrets.
   select-fix:
