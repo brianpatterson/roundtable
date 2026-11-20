@@ -1,4 +1,4 @@
-# The factory's security auditor (ADR-0036): once a week an agent with its own instructions and no
+# The factory's security auditor (ADR-0036, nightly since ADR-0039): each night main changed, an agent with its own instructions and no
 # stake in the code looks for security holes the scanners and the per-PR reviewer miss. It follows
 # data out of the process, checks auth and tenancy, probes inputs and config, and injects faults
 # (database down, mailer throwing) by writing throwaway tests in apps/api/test/audit/ and running
@@ -20,7 +20,7 @@ name: Security audit
 
 on:
   schedule:
-    - cron: '41 6 * * 3' # Wednesdays
+    - cron: '41 6 * * *' # nightly, skipped when main hasn't changed since the last audit
   workflow_dispatch:
 
 permissions:
@@ -31,8 +31,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A night when main is where the last finished audit left it has nothing new to audit (ADR-0039).
+  # Compared with that audit's commit, not a time window, so a late or dropped run can't skip a
+  # commit. A manual run always audits.
+  changed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read # the last successful audit run
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != schedule ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A skipped night ends `success` too, at the same commit, so it doesn't move the baseline.
+          last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow security-audit.yml --branch main \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+          if [ -n "$last" ] && [ "$last" = "$GITHUB_SHA" ]; then
+            echo "Main is still at ${last:0:7}, which the last audit covered: nothing new to audit."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   # Before spending an Opus run: the filing job's secrets are set. Only "set or not" leaves this job.
   preflight:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: security-advisories
@@ -110,7 +142,7 @@ jobs:
           # It only reads the repository, so the job's own read-only token is enough.
           github_token: ${{ github.token }}
           prompt: |
-            Run this week's security audit of ${{ github.repository }}, following your instructions.
+            Run tonight's security audit of ${{ github.repository }}, following your instructions.
             Write your findings to ${{ env.FINDINGS }}.
           claude_args: >-
             --model claude-opus-5-5
