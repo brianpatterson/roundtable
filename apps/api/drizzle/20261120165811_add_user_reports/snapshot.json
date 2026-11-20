@@ -2,7 +2,7 @@
   "type": "diff",
   "version": "9",
   "dialect": "postgres",
-  "id": "99eb7f2b-4e88-4bd9-93e4-9155a34069b0",
+  "id": "8afb7b75-6360-4e77-addf-2a552a9f2503",
   "prevIds": [
     "4d63f1fb-4a83-41b3-84c6-eb1c4d93109e"
   ],
@@ -65,6 +65,26 @@
         "n|tbl|public.user_reports",
         "n|sch|public",
         "n|col|public.user_reports.issue_requested_at"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "user_reports",
+        "user_reports_created_at_idx"
+      ],
+      "writes": [
+        "s|idx|public.user_reports_created_at_idx",
+        "n|idx|public.user_reports_created_at_idx",
+        "e|idx|public.user_reports_created_at_idx",
+        "n|rel|public.user_reports_created_at_idx"
+      ],
+      "reads": [
+        "n|tbl|public.user_reports",
+        "n|sch|public",
+        "n|col|public.user_reports.created_at"
       ]
     }
   ],
@@ -295,6 +315,30 @@
         "columns": [
           {
             "value": "issue_requested_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_reports",
+        "name": "user_reports_created_at_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "created_at",
             "isExpression": false,
             "asc": true,
             "nullsFirst": false,

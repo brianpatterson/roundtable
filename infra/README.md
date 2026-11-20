@@ -333,36 +333,49 @@ on their GitHub account, to get into your account.
 "Report a problem" stores every report in Postgres, opens a GitHub issue in this repository with
 safe context only (report id, page path, release, time, browser family; never what the user
 typed), and emails the owner the full report
-([ADR-0038](../docs/adr/0038-user-problem-reports.md)). Both settings are optional: without the
-token no issue is opened, without the email no report is emailed. **Cost:** $0.
+([ADR-0038](../docs/adr/0038-user-problem-reports.md)). Both are optional: without the GitHub
+App no issue is opened, without the email no report is emailed. **Cost:** $0.
+
+Issues are opened by a **GitHub App**, never with a personal token: the factory starts on a
+`ready` label or an `@claude` comment made by the owner (`github.actor == github.repository_owner`),
+so a leaked token of the owner's could start the implementer on text an attacker wrote. The App's
+issues are authored by `<app-name>[bot]`, which the factory doesn't trust.
 
 ### One-time setup
 
-1. GitHub → **Settings** → **Developer settings** → **Personal access tokens** →
-   **Fine-grained tokens** → **Generate new token**:
-   - Token name: `roundtable-user-reports`; expiration: 1 year (put a reminder in the calendar).
-   - Resource owner: the repository's owner. **Repository access:** _Only select repositories_ →
-     this repository.
+1. GitHub → **Settings** → **Developer settings** → **GitHub Apps** → **New GitHub App**:
+   - Name: `roundtable-user-reports` (its bot will be `roundtable-user-reports[bot]`). Homepage
+     URL: the site. **Webhook:** untick _Active_.
    - **Repository permissions:** **Issues: Read and write**. Nothing else (Metadata: read-only is
-     added automatically). No account permissions.
-2. Copy the token (shown once) and put it, and the address reports go to, on the server. From
-   `infra/`, as for the OAuth credentials above:
+     added automatically). No organization or account permissions.
+   - _Where can this GitHub App be installed?_ **Only on this account**.
+2. On the App's page: note the **App ID**, then **Generate a private key** (a `.pem` downloads).
+   **Install App** → this account → _Only select repositories_ → this repository. The
+   installation's URL ends in its **installation ID** (`…/settings/installations/<id>`).
+3. Put them, and the address reports go to, on the server. From `infra/`, as for the OAuth
+   credentials above:
 
    ```bash
-   ssh -t ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; for k in GITHUB_ISSUES_TOKEN REPORTS_EMAIL; do read -rsp "$k: " v; echo; [ -n "$v" ] && sed -i "/^$k=/d" "$f" && printf "%s=%s\n" "$k" "$v" >> "$f"; done; echo "✓ done"'
+   ssh -t ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; for k in GITHUB_ISSUES_APP_ID GITHUB_ISSUES_INSTALLATION_ID REPORTS_EMAIL; do read -rsp "$k: " v; echo; [ -n "$v" ] && sed -i "/^$k=/d" "$f" && printf "%s=%s\n" "$k" "$v" >> "$f"; done; echo "✓ done"'
+   # The private key, on one line with its newlines written as \n, then delete the .pem:
+   awk '{printf "%s\\n", $0}' path/to/the-app.private-key.pem | ssh ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; read -r v; sed -i "/^GITHUB_ISSUES_PRIVATE_KEY=/d" "$f"; printf "GITHUB_ISSUES_PRIVATE_KEY=%s\n" "$v" >> "$f"; echo "✓ done"'
    ```
 
-3. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**), then send a report from the
-   sign-in page: an issue labelled `bug` and `user-report` appears, and the email arrives.
+4. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**), then send a report from the
+   sign-in page: an issue labelled `bug` and `user-report`, authored by the App's bot, appears,
+   and the email arrives.
 
 Issues go to `GITHUB_ISSUES_REPOSITORY` (`brianpatterson/roundtable` by default in
 `compose.prod.yml`). The labels must exist in that repository; the API never applies `ready`.
-At most `REPORT_LIMIT_PER_DAY` (default 20) issues and report emails go out per 24 hours, and one
-address may send 5 reports an hour; reports past the daily cap are still stored.
+For each issue the API asks for an installation token that lasts an hour, narrowed to this
+repository and Issues: write. At most `REPORT_LIMIT_PER_DAY` (default 20) issues and report emails
+go out per 24 hours (reports past that cap are still stored); one address (an IPv6 address's /64) may send 5 reports an hour, and everyone
+together 50, past which the form answers "try again later".
 
-**Rotating the token:** generate a new one the same way, run the command above for
-`GITHUB_ISSUES_TOKEN` only, redeploy, then delete the old token. **If it leaks:** delete it on
-GitHub first. It can only read and write this repository's issues.
+**Rotating the key:** generate a new private key on the App's page, run the second command above,
+redeploy, then delete the old key there. **If it leaks:** delete the key on the App's page first
+(or suspend the installation). It can only read and write this repository's issues, as the App's
+bot.
 
 ## Monitoring
 

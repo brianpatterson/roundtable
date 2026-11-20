@@ -11,6 +11,8 @@ const WebUrl = Schema.String.check(
   Schema.makeFilter((value: string) => (URL.canParse(value) ? undefined : 'must be a URL')),
 );
 
+const Digits = Schema.String.check(Schema.isPattern(/^\d+$/, { message: 'must be a number' }));
+
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 
 const EnvSchema = Schema.Struct({
@@ -39,12 +41,16 @@ const EnvSchema = Schema.Struct({
   /** All emails per 24 hours. Resend's free plan allows 100 a day; this leaves headroom. */
   EMAIL_LIMIT_PER_DAY: PositiveInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(80))),
   /**
-   * Fine-grained GitHub token, this repository only, Issues read/write and nothing else
-   * (ADR-0038). Opens an issue for each problem report. Blank: reports are stored and emailed,
-   * and no issue is opened.
+   * The GitHub App that opens an issue for each problem report: installed on this repository
+   * only, Issues read/write and nothing else (ADR-0038). Its issues are authored by the App's bot,
+   * never the owner, whom the factory trusts. All three, or none: blank, reports are stored and
+   * emailed, and no issue is opened.
    */
-  GITHUB_ISSUES_TOKEN: Schema.optional(Secret),
-  /** Where report issues go, as `owner/name`. Required with GITHUB_ISSUES_TOKEN. */
+  GITHUB_ISSUES_APP_ID: Schema.optional(Digits),
+  GITHUB_ISSUES_INSTALLATION_ID: Schema.optional(Digits),
+  /** The App's private key, PEM; on one line, write its newlines as `\n`. */
+  GITHUB_ISSUES_PRIVATE_KEY: Schema.optional(Secret),
+  /** Where report issues go, as `owner/name`. Required with the GitHub App. */
   GITHUB_ISSUES_REPOSITORY: Schema.optional(
     Schema.String.check(
       Schema.makeFilter((value: string) =>
@@ -64,11 +70,23 @@ const EnvSchema = Schema.Struct({
       ? undefined
       : 'RESEND_API_KEY and EMAIL_FROM are required in production',
   ),
-  Schema.makeFilter((env) =>
-    !env.GITHUB_ISSUES_TOKEN || env.GITHUB_ISSUES_REPOSITORY
+  Schema.makeFilter((env) => {
+    const app = [
+      env.GITHUB_ISSUES_APP_ID,
+      env.GITHUB_ISSUES_INSTALLATION_ID,
+      env.GITHUB_ISSUES_PRIVATE_KEY,
+    ];
+
+    if (app.every((value) => value === undefined)) return undefined;
+
+    if (app.includes(undefined)) {
+      return 'GITHUB_ISSUES_APP_ID, GITHUB_ISSUES_INSTALLATION_ID and GITHUB_ISSUES_PRIVATE_KEY go together';
+    }
+
+    return env.GITHUB_ISSUES_REPOSITORY
       ? undefined
-      : 'GITHUB_ISSUES_REPOSITORY is required with GITHUB_ISSUES_TOKEN',
-  ),
+      : 'GITHUB_ISSUES_REPOSITORY is required with the GitHub App';
+  }),
 );
 
 export type Env = typeof EnvSchema.Type;

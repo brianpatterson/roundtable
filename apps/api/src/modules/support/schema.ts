@@ -21,8 +21,8 @@ export const userReports = pgTable(
     release: text().notNull(),
     userAgent: text('user_agent'),
     /**
-     * HMAC of the client's IP address, keyed with the server's secret: counts reports per address
-     * for the hourly limit without storing the address itself.
+     * HMAC of the client's IP address (an IPv6 address's /64), keyed with the server's secret:
+     * counts reports per address for the hourly limit without storing the address itself.
      */
     clientKey: text('client_key').notNull(),
     /** When this report claimed one of the day's GitHub issues; null if it didn't. */
@@ -33,5 +33,7 @@ export const userReports = pgTable(
   (t) => [
     index('user_reports_client_key_created_at_idx').on(t.clientKey, t.createdAt),
     index('user_reports_issue_requested_at_idx').on(t.issueRequestedAt),
+    // The hourly ceiling on all reports counts by time alone.
+    index('user_reports_created_at_idx').on(t.createdAt),
   ],
 );

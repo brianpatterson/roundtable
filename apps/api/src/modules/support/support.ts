@@ -9,13 +9,17 @@ export interface SupportOptions {
   readonly githubIssues?: Layer.Layer<GitHubIssues> | undefined;
 }
 
-/** GitHub when a token is set, otherwise a log line per report saying the issue was skipped. */
+/** GitHub when its App is set, otherwise a log line per report saying the issue was skipped. */
 function issuesFromEnv(env: Env, log: Pick<Log, 'info'>) {
-  return env.GITHUB_ISSUES_TOKEN && env.GITHUB_ISSUES_REPOSITORY
-    ? gitHubIssuesLayer({
-        token: env.GITHUB_ISSUES_TOKEN,
-        repository: env.GITHUB_ISSUES_REPOSITORY,
-      })
+  const {
+    GITHUB_ISSUES_APP_ID: appId,
+    GITHUB_ISSUES_INSTALLATION_ID: installationId,
+    GITHUB_ISSUES_PRIVATE_KEY: privateKey,
+    GITHUB_ISSUES_REPOSITORY: repository,
+  } = env;
+
+  return appId && installationId && privateKey && repository
+    ? gitHubIssuesLayer({ appId, installationId, privateKey, repository })
     : GitHubIssues.skipped(log);
 }
 

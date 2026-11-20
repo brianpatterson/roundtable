@@ -13,4 +13,5 @@ CREATE TABLE "user_reports" (
 );
 --> statement-breakpoint
 CREATE INDEX "user_reports_client_key_created_at_idx" ON "user_reports" ("client_key","created_at");--> statement-breakpoint
-CREATE INDEX "user_reports_issue_requested_at_idx" ON "user_reports" ("issue_requested_at");
+CREATE INDEX "user_reports_issue_requested_at_idx" ON "user_reports" ("issue_requested_at");--> statement-breakpoint
+CREATE INDEX "user_reports_created_at_idx" ON "user_reports" ("created_at");

@@ -33,27 +33,30 @@ const ReplyEmail = Schema.String.check(
   Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, { message: 'must be an email address' }),
 );
 
-/** Drops `?query` and `#hash`: they can hold tokens (a reset link's) and never go in a report. */
-const withoutQuery = (path: string) => path.replace(/[?#].*$/s, '');
-
-const isPagePath = (path: string) => path.length <= 200 && /^\/[A-Za-z0-9/_.-]*$/.test(path);
+export const REPORT_PAGE_PATH_MAX = 500;
 
 /**
- * The page the user was on, as a path. Only letters, digits and `/-_.`, at most 200 characters:
- * it goes in a GitHub issue title, so it must not be able to carry a sentence (ADR-0038). The
- * query and hash are dropped in both directions, so the client never sends them. (The check
- * ignores them too: the client checks `location.pathname + search` before encoding drops it.)
+ * Drops `?query` and `#hash`, which can hold tokens (a reset link's) and never go in a report,
+ * and keeps at most 500 characters.
+ */
+const pagePath = (path: string) => path.replace(/[?#].*$/s, '').slice(0, REPORT_PAGE_PATH_MAX);
+
+/**
+ * The page the user was on, as a path: any path, so a user on a mistyped link can still report
+ * it. It never goes in a GitHub issue as sent: the server names a known page or `other` there
+ * (ADR-0038). The query and hash are dropped in both directions, so the client never sends them.
+ * (The check ignores them too: the client checks its value before encoding drops them.)
  */
 const PagePath = Schema.String.pipe(
   Schema.decodeTo(
     Schema.String.check(
       Schema.makeFilter((value: string) =>
-        isPagePath(withoutQuery(value)) ? undefined : 'must be a page path',
+        pagePath(value).startsWith('/') ? undefined : 'must be a page path',
       ),
     ),
     new SchemaTransformation.Transformation(
-      SchemaGetter.transform(withoutQuery),
-      SchemaGetter.transform(withoutQuery),
+      SchemaGetter.transform(pagePath),
+      SchemaGetter.transform(pagePath),
     ),
   ),
 );

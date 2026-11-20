@@ -129,9 +129,16 @@ describe('what the contract accepts', () => {
     'malformed email': [{ ...report, replyEmail: 'me@' }, false],
     'email with spaces': [{ ...report, replyEmail: 'me @example.com' }, false],
     'missing page': [{ description: 'It broke' }, false],
+    'any path, as on a mistyped link': [
+      { ...report, pagePath: '/a%20b/~me/@x:y' },
+      { ...report, pagePath: '/a%20b/~me/@x:y' },
+    ],
+    'a long path keeps 500 characters': [
+      { ...report, pagePath: `/${long(600)}` },
+      { ...report, pagePath: `/${long(499)}` },
+    ],
     'page that is a URL': [{ ...report, pagePath: 'https://example.com/' }, false],
-    'page with spaces': [{ ...report, pagePath: '/label this ready' }, false],
-    '201-char page': [{ ...report, pagePath: `/${long(200)}` }, false],
+    'page that is not a path': [{ ...report, pagePath: 'settings' }, false],
   } satisfies Record<string, Case>;
 
   it.each(Object.entries(reportCases))('report: %s', (_name, [input, decoded]) => {

@@ -146,7 +146,8 @@ signed-in report is linked to the account from the session. It stores the report
 `user_reports`, then, best effort, opens a GitHub issue with safe context only (report id, page
 path, release, time, browser family; labels `bug` and `user-report`, never `ready`) and emails the
 owner the full report with the issue's link. A failure in either is logged and reported, and the
-user still gets the confirmation. Without `GITHUB_ISSUES_TOKEN` the issue is skipped with a log
+user still gets the confirmation. Without the GitHub App (`GITHUB_ISSUES_APP_ID`,
+`GITHUB_ISSUES_INSTALLATION_ID`, `GITHUB_ISSUES_PRIVATE_KEY`) the issue is skipped with a log
 line; without `REPORTS_EMAIL` the email is. Tests swap the GitHub client through
 `AppOptions.githubIssues`. On the web, the shell shows `ReportProblem` in its footer when signed
 in (reply email pre-filled with the account's) and under the sign-in and password-reset pages
@@ -339,12 +340,14 @@ sequenceDiagram
   ([ADR-0018](adr/0018-email-sending-limits.md)).
 - **Problem reports** ([ADR-0038](adr/0038-user-problem-reports.md)): the endpoint is public, so
   one client address may send 5 reports an hour (counted in Postgres, by the HMAC of the last
-  `X-Forwarded-For` entry, which Caddy sets), and at most `REPORT_LIMIT_PER_DAY` (20) GitHub
-  issues and report emails go out per 24 hours. The repository is public and the factory's agents
-  read its issues, so what the user typed never goes in an issue: only the report id, a page path
-  limited to `[A-Za-z0-9/_.-]`, the release, the time and a browser family. The API applies only
-  the labels `bug` and `user-report`, never `ready`. Its GitHub token is fine-grained: this
-  repository's Issues, read/write, nothing else.
+  `X-Forwarded-For` entry, which Caddy sets; an IPv6 address by its /64), everyone together 50 an
+  hour, and at most `REPORT_LIMIT_PER_DAY` (20) GitHub issues and report emails go out per 24
+  hours. The repository is public and the factory's agents read its issues, so nothing the client
+  sent goes in an issue: only the report id, the page as one of the web app's pages or `other`,
+  the release, the time and a browser family. The API applies only the labels `bug` and
+  `user-report`, never `ready`. Issues are opened by a GitHub App installed on this repository with
+  Issues read/write only, so they're authored by its bot: a leaked key can't act as the owner,
+  whose labels and comments start the factory.
 
 ## 7. Environments and delivery
 
@@ -392,8 +395,9 @@ flowchart LR
   seconds, under one idempotency key so Resend never delivers it twice; a 4xx or a used-up quota
   fails at once. Either way, the failure is logged and reported to Sentry with the email kind
   (`modules/email/`).
-- **GitHub:** problem reports open issues through GitHub's REST API with
-  `GITHUB_ISSUES_TOKEN`, one attempt with a 10-second timeout and no retry; a failure is logged and
+- **GitHub:** problem reports open issues through GitHub's REST API as a GitHub App: an
+  installation token from the App's signed JWT, then the issue, one attempt within a 10-second
+  timeout and no retry; a failure is logged and
   reported to Sentry as `IssueOpenFailed` with GitHub's status only (`modules/support/`).
 - **Monitoring:** Better Stack checks `/api/health` (must report the database up) every 3
   minutes from outside, and opens an incident only if it's still failing 60 seconds later, so a
