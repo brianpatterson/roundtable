@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
 
 // Session expiry, for every module at once: the whole shell renders against a stand-in `fetch`.
@@ -128,6 +128,10 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+// Better Auth's session store unsubscribes from `window` a second after the last test unmounts
+// it. Wait for that here, or it runs after jsdom has torn the window down and throws.
+afterAll(() => new Promise((resolve) => setTimeout(resolve, 1100)));
 
 const renderShell = async () => {
   // Better Auth keeps the session in a store created with the client, which outlives a test
