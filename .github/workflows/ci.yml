@@ -61,6 +61,8 @@ jobs:
       # When the sweeper reruns CI or hands a stuck factory pull request to a human (ADR-0040).
       - name: Sweeper decisions
         run: .github/factory/test-sweep-prs.sh
+      - name: User report hand-off
+        run: .github/factory/test-report-handoff.sh
       - name: Schema and migrations are in sync
         run: |
           pnpm db:generate

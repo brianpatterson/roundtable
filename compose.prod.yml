@@ -53,6 +53,8 @@ services:
       GITHUB_ISSUES_REPOSITORY: ${GITHUB_ISSUES_REPOSITORY:-brianpatterson/roundtable}
       REPORTS_EMAIL: ${REPORTS_EMAIL:-}
       REPORT_LIMIT_PER_DAY: ${REPORT_LIMIT_PER_DAY:-}
+      # Lets the factory read a report's text by id (ADR-0041). Blank: that endpoint is a 401.
+      FACTORY_REPORTS_TOKEN: ${FACTORY_REPORTS_TOKEN:-}
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

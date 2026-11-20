@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { REPORT_DESCRIPTION_MAX } from '@roundtable/contract';
 import { Alert, Button, Dialog, TextArea, TextField } from '../../design-system';
 import { api } from '../../shared/api';
+import { collectDiagnostics } from '../../shared/diagnostics';
 import styles from './ReportProblem.module.css';
 
 export interface ReportProblemProps {
@@ -13,7 +14,8 @@ export interface ReportProblemProps {
 /**
  * "Report a problem" (ADR-0038): a link-style button that opens a short form. Works signed out
  * (the sign-in page) and signed in; the API links a signed-in report to the account itself,
- * from the session cookie. Sends the page path without its query string, which can hold tokens.
+ * from the session cookie. Sends the page path without its query string, which can hold tokens,
+ * and what the browser saw before the report (`shared/diagnostics`, ADR-0041).
  */
 export function ReportProblem({ defaultReplyEmail }: ReportProblemProps) {
   const formId = useId();
@@ -37,6 +39,8 @@ export function ReportProblem({ defaultReplyEmail }: ReportProblemProps) {
       // An email input already strips surrounding whitespace; empty means no reply wanted.
       replyEmail: replyEmail || null,
       pagePath: window.location.pathname,
+      // The latest API requests and errors (ADR-0041), private like the description.
+      diagnostics: collectDiagnostics(),
     });
   }
 
@@ -54,7 +58,7 @@ export function ReportProblem({ defaultReplyEmail }: ReportProblemProps) {
         description={
           sent
             ? 'Thanks: your report reached us.'
-            : 'Tell us what went wrong, in a few words. What you write is kept private: only the people who run Roundtable read it.'
+            : 'Tell us what went wrong, in a few words. What you write, and the recent errors we attach, stay private: only the people who run Roundtable and the AI assistant that helps them fix bugs read them.'
         }
         actions={
           sent ? (

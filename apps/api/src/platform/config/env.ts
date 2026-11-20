@@ -62,6 +62,14 @@ const EnvSchema = Schema.Struct({
   REPORTS_EMAIL: Schema.optional(Schema.String),
   /** Report issues opened, and report emails sent, per 24 hours: a flood can't fill the repo. */
   REPORT_LIMIT_PER_DAY: PositiveInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(20))),
+  /**
+   * Lets the factory's implementer read one problem report, by id, from GET
+   * /api/factory/reports/:id (ADR-0041). Generate with `openssl rand -hex 32`; the same value is
+   * the `factory` environment's secret in GitHub. Blank: that endpoint answers 401 to everyone.
+   */
+  FACTORY_REPORTS_TOKEN: Schema.optional(
+    Schema.RedactedFromValue(Schema.String.check(Schema.isMinLength(32))),
+  ),
 }).check(
   // Sign-up requires clicking an emailed link, so production without a real mailer would lock
   // every new user out. Fail at startup instead: the deploy's health check fails and rolls back.

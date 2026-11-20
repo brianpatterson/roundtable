@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearDiagnostics, recordError } from '../../shared/diagnostics';
 import { ReportProblem } from './index';
 
 // The support module through its interface, against a stand-in API behind `fetch`.
@@ -15,6 +16,7 @@ let answer: () => Response;
 
 beforeEach(() => {
   received = [];
+  clearDiagnostics();
   answer = () => Response.json({ id: REPORT_ID }, { status: 201 });
   window.history.replaceState(null, '', '/reset-password?token=secret#top');
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -53,7 +55,9 @@ describe('ReportProblem', () => {
     renderReport();
     const dialog = await openForm();
 
-    expect(dialog.textContent).toContain('What you write is kept private');
+    expect(dialog.textContent).toContain(
+      'What you write, and the recent errors we attach, stay private: only the people who run Roundtable and the AI assistant that helps them fix bugs read them.',
+    );
 
     const description = screen.getByRole('textbox', {
       name: 'What went wrong?',
@@ -93,11 +97,36 @@ describe('ReportProblem', () => {
         description: 'GitHub sign-in failed',
         replyEmail: 'me@example.com',
         pagePath: '/reset-password',
+        diagnostics: expect.objectContaining({ requests: [], errors: [] }),
       },
     ]);
 
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('attaches what the browser saw: the window, the theme and the errors it hit', async () => {
+    document.documentElement.dataset['theme'] = 'dark';
+    recordError({ message: 'TypeError: list is undefined' });
+    renderReport();
+    await openForm();
+    await userEvent.type(screen.getByLabelText('What went wrong?'), 'The list vanished');
+    await userEvent.click(screen.getByRole('button', { name: 'Send report' }));
+    await screen.findByRole('status');
+    delete document.documentElement.dataset['theme'];
+
+    expect(received).toEqual([
+      expect.objectContaining({
+        diagnostics: {
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          theme: 'dark',
+          requests: [],
+          errors: [
+            expect.objectContaining({ message: 'TypeError: list is undefined', secondsBefore: 0 }),
+          ],
+        },
+      }),
+    ]);
   });
 
   it('pre-fills the reply email, and sends none when the user clears it', async () => {
@@ -114,7 +143,12 @@ describe('ReportProblem', () => {
 
     await screen.findByRole('status');
     expect(received).toEqual([
-      { description: 'Broken', replyEmail: null, pagePath: '/reset-password' },
+      {
+        description: 'Broken',
+        replyEmail: null,
+        pagePath: '/reset-password',
+        diagnostics: expect.any(Object),
+      },
     ]);
   });
 

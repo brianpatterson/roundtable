@@ -2,7 +2,7 @@
 // wording lives here, one section per module. A new error in the contract needs a line here.
 import { Schema } from 'effect';
 import { ApplicationNotFound } from '../applications.js';
-import { ReportRateLimited } from '../support.js';
+import { ReportNotFound, ReportRateLimited } from '../support.js';
 
 /** A failed API call, with a message fit to show the user. `cause` is the original error. */
 export class ApiError extends Error {
@@ -18,6 +18,9 @@ const isNotFound = Schema.is(ApplicationNotFound);
 // Support
 const isReportRateLimited = Schema.is(ReportRateLimited);
 
+// Only the factory reads reports back (ADR-0041); no page shows this.
+const isReportNotFound = Schema.is(ReportNotFound);
+
 export function toApiError(cause: unknown): ApiError {
   if (isNotFound(cause)) return new ApiError('That application no longer exists.', { cause });
 
@@ -27,6 +30,8 @@ export function toApiError(cause: unknown): ApiError {
       { cause },
     );
   }
+
+  if (isReportNotFound(cause)) return new ApiError('That report no longer exists.', { cause });
 
   // A request body the contract rejects, caught before it's sent: says which field and why.
   if (Schema.isSchemaError(cause)) return new ApiError(cause.message, { cause });

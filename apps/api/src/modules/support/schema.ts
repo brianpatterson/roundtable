@@ -1,4 +1,5 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { ReportDiagnostics } from '@roundtable/contract';
+import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * Problem reports from "Report a problem" (ADR-0038). The description and reply email are the
@@ -20,6 +21,11 @@ export const userReports = pgTable(
     /** The API build that took it (SENTRY_RELEASE: the deployed image). */
     release: text().notNull(),
     userAgent: text('user_agent'),
+    /**
+     * What the browser saw before the report (ADR-0041), as the contract's ReportDiagnostics.
+     * Private like the description. Null when the client sent none (older web builds).
+     */
+    diagnostics: jsonb().$type<ReportDiagnostics>(),
     /**
      * HMAC of the client's IP address (an IPv6 address's /64), keyed with the server's secret:
      * counts reports per address for the hourly limit without storing the address itself.

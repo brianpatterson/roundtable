@@ -379,6 +379,39 @@ redeploy, then delete the old key there. **If it leaks:** delete the key on the 
 (or suspend the installation). It can only read and write this repository's issues, as the App's
 bot.
 
+### Letting the factory read reports
+
+With this set up, labeling a report's issue `ready` is enough: the factory reads what the user
+wrote and what their browser saw, and fixes the bug
+([ADR-0041](../docs/adr/0041-factory-reads-user-reports.md)). Without it, the implementer asks you
+for the details instead.
+
+1. Generate a token, and keep it in your clipboard only:
+
+   ```bash
+   openssl rand -hex 32 | pbcopy
+   ```
+
+2. Put it on the server. From `infra/` (it prompts for the value; a hex token needs no quotes):
+
+   ```bash
+   ssh -t ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; read -rsp "FACTORY_REPORTS_TOKEN: " v; echo; [ -n "$v" ] && sed -i "/^FACTORY_REPORTS_TOKEN=/d" "$f" && printf "FACTORY_REPORTS_TOKEN=%s\n" "$v" >> "$f"; echo "✓ done"'
+   ```
+
+3. Put the same value in GitHub, as a secret of the `factory` environment (Settings →
+   Environments → `factory` → Add environment secret, or from the repository root):
+
+   ```bash
+   pbpaste | gh secret set FACTORY_REPORTS_TOKEN --env factory
+   ```
+
+4. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**). Check with an issue the
+   report App opened: label it `ready`, and the Factory run's "Fetch the user's report" step says
+   `Fetched report <id>.`
+
+**Rotating it:** run the three steps with a new token. **If it leaks:** replace it on the server
+and redeploy first. It can only read reports under 30 days old, by id, never who sent them.
+
 ## Monitoring
 
 Better Stack watches the site and the backups from outside; Sentry collects API errors
