@@ -6,6 +6,8 @@
 # such as the CI fixer, pushes to one), once CI passes on each new commit (ADR-0033), and any pull
 # request the owner labels `review` at once. Both triggers run
 # this file from `main`, never from a branch, and the pull request's code is only read, never run.
+#
+# When it asks for changes on a factory pull request, the Rework workflow takes over (ADR-0037).
 name: Review
 
 on:
@@ -198,3 +200,19 @@ jobs:
           else
             gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
           fi
+
+      # What the Rework workflow reads to decide whether to run (ADR-0037): the pull request, the
+      # commit and the verdict, all checked above. The review's text stays in the comment.
+      - name: Record the verdict
+        if: steps.claude.outputs.structured_output != ''
+        env:
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          jq -n --argjson pr "$PR" --arg sha "$SHA" --arg verdict "$(jq -r .verdict <<<"$RESULT")" \
+            '{pr: $pr, sha: $sha, verdict: $verdict}' > "$RUNNER_TEMP/verdict.json"
+      - uses: actions/upload-artifact@v7
+        if: steps.claude.outputs.structured_output != ''
+        with:
+          name: review-verdict
+          path: ${{ runner.temp }}/verdict.json
+          retention-days: 7
