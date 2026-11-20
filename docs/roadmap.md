@@ -246,6 +246,25 @@ Building blocks, in order:
    a reason. The reviewer checks every PR's design in the same vocabulary. Later: Strong findings
    straight to implementation, once several have been accepted unchanged.
 
+9. **Fewer checks by hand** (2026-11-20): the reviewer's "Check by hand" list is the owner's
+   remaining manual work on most pull requests. Shrink it, cheapest first:
+   - **Browser tests in CI**: Playwright against the built app. Assertions for keyboard and
+     focus behavior (focus returns to the button that opened a dialog), screenshots at phone and
+     desktop widths in light and dark themes, and an axe scan. The screenshots go in the run's
+     artifacts for the reviewer to look at. The implementer writes these for UI changes, and the
+     reviewer lists only what a test truly can't check. No secrets and no production access, so
+     no new risk. Covers the Acceptance tests, Visual regression and Accessibility rows below.
+   - **Check config at startup**: the API parses the problem-report App's private key when it
+     starts, not on the first report, so a bad key fails the deploy's health check and rolls
+     back, instead of being found when the owner sends a test report. (The 2026-11-20 quoting bug,
+     [#110](https://github.com/brianpatterson/roundtable/pull/110), failed earlier, in `deploy.sh`:
+     this catches a key that is quoted right but malformed or truncated.)
+   - **Production secrets in GitHub**: secrets of the `production` environment, from which the
+     deploy job writes `.env`, instead of ssh one-liners the owner runs on the server. Needs an
+     ADR. GitHub then holds production's secrets, and a change to `deploy.yml` on `main` could
+     read them. The environment admits only `main`, the factory's agents run in the `factory`
+     environment and never see them, and changes to `.github/` need the owner's merge.
+
 ## What "ensuring quality" can mean
 
 Quality comes in layers. Each answers a different question, and they compound. Already in place
