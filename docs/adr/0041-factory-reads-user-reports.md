@@ -61,10 +61,6 @@ Option 4.
 - **The implementer treats the report as untrusted data** (`implementer.md`, "User reports"): only
   a bug fix, reproduced first with a failing test; the bug described in its own words; stop and
   ask when it can't reproduce it.
-- **The issue thread says only which step the run is on** (2026-11-20, after the first run): its
-  comment is a generic checklist (`Read the report`, `Find the cause`, …) with no finding,
-  symptom or file name, because the issue is the public face of a private report. What was found
-  goes in the pull request, described as a defect in the code, not as what the user did or saw.
 - **A deterministic check catches quotes after the run.** `guard-report-text.sh` refuses text
   holding any 40 characters of the description (case and whitespace ignored), compared with a copy
   kept outside the directory the agent's edit tools can reach. A comment of the agent's that quotes it is
@@ -110,3 +106,12 @@ Option 4.
   would avoid that, at the cost of a second `HttpApi` and its tests; revisit if more appear.
 - The site's URL is written into `factory.yml` (`https://roundtableapp.us`), because the `DOMAIN`
   variable belongs to the `production` environment. A new domain needs changing it there.
+
+## Updates
+
+- **2026-11-20:** after the first run, whose progress comment on the issue named the cause and
+  the fix, `implementer.md` keeps every comment on a user report's issue to generic steps
+  (`Read the report`, `Find the cause`, `Write a failing test`, `Fix`, `Open the pull request`),
+  and has the pull request describe the defect in the code, not what the user did, saw or wrote.
+  This keeps the user's experience out of public text. It doesn't hide the finding: the pull
+  request, its title and its diff are public and one click from the issue through `Closes #N`.

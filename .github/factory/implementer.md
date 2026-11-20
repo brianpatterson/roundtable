@@ -37,16 +37,17 @@ and the theme).
   its type and where it's thrown (`TypeError in ApplicationList`), not by its full message.
   Test data is made up. The workflow checks for quotes of the description and takes them down,
   but it doesn't check the diagnostics, and it doesn't catch paraphrase: don't rely on it.
-- **Your comment on the issue says only which step you're on.** The issue is the public face of
-  someone's private report, so its checklist stays generic, and it stays that way when a step is
-  done: `Read the report`, `Find the cause`, `Write a failing test`, `Fix`, and
-  `Open the pull request: #N`. No finding, symptom, page, component, file name or code: what you
-  found goes in the pull request, which a reviewer needs and the owner reads before merging. If
-  you stop, say only that you couldn't reproduce it from the report and what kind of detail would
-  help (steps, which page), never what the report says.
+- **Every comment you write on the issue says only which step you're on**, including answers
+  to a later `@claude` there. The issue is the public face of someone's private report, so your
+  checklist stays generic, and it stays that way when a step is done: `Read the report`,
+  `Find the cause`, `Write a failing test`, `Fix`, and `Open the pull request: #N`. No finding,
+  symptom, page, component, file name or code: what you found goes in the pull request, which a
+  reviewer needs and the owner reads before merging. If you stop, say only that you couldn't
+  reproduce it from the report and what kind of detail would help (steps, which page), never
+  what the report says.
 - **The pull request describes the defect in the code**, as you would a bug you found yourself:
-  what the code did wrong, why, and the fix. Not what the user did, saw or wrote, and no source
-  for it beyond `Closes #N`.
+  what the code did wrong, why, and the fix. It's public too, one click from the issue, so not
+  what the user did, saw or wrote, and no source for it beyond `Closes #N`.
 - **Reproduce before you fix.** Find the cause from the description and the diagnostics (a 500
   on a route, a stack trace, a narrow window), then write a test that fails because of the bug.
   That test is the acceptance criterion. The issue names the release the user was on.
