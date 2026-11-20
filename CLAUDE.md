@@ -45,6 +45,8 @@ each module is what a future service or microfrontend would become.
   Tickets come from the forms in `.github/ISSUE_TEMPLATE/`. The same workflow fixes CI failures on
   factory PRs and on PRs labeled `autofix` ([ADR-0028](docs/adr/0028-software-factory-ci-fixer.md)).
   `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)).
+  `.github/workflows/sweeper.yml` checks open factory PRs every 30 minutes: it reruns a cancelled CI
+  once and labels any other stuck PR `needs-human` with the reason ([ADR-0040](docs/adr/0040-factory-sweeper.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
   publish only through `.github/factory/guard-secrets.sh` ([ADR-0029](docs/adr/0029-software-factory-credential-hardening.md)).
   Agent jobs keep no dependency cache: theirs would be saved under main ([ADR-0030](docs/adr/0030-factory-code-scanning-findings.md)).

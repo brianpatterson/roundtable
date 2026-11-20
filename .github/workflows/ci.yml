@@ -58,6 +58,9 @@ jobs:
       # How the security auditor's findings are filed as advisories (ADR-0036).
       - name: Advisory filing fixtures
         run: .github/factory/test-file-advisories.sh
+      # When the sweeper reruns CI or hands a stuck factory pull request to a human (ADR-0040).
+      - name: Sweeper decisions
+        run: .github/factory/test-sweep-prs.sh
       - name: Schema and migrations are in sync
         run: |
           pnpm db:generate
