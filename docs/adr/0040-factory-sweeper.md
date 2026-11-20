@@ -31,8 +31,9 @@ and a fixer or rework run that crashes before it can label anything.
 ## Decision
 
 `.github/workflows/sweeper.yml` runs `.github/factory/sweep-prs.sh` every 30 minutes (and by hand,
-with a dry run option) over open, non-draft pull requests labeled `factory` or `autofix` without
-`needs-human`. No agent runs; it holds only the job's own token.
+with a dry run option) over open pull requests labeled `factory` or `autofix` without
+`needs-human`, drafts included: the factory opens a draft when its checks still fail or it pushed
+a branch without a pull request, and those are the likeliest to stall. No agent runs; it holds only the job's own token.
 
 | State                                                               | Action                                    |
 | ------------------------------------------------------------------- | ----------------------------------------- |

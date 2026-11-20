@@ -1,5 +1,5 @@
 # The factory's sweeper (ADR-0040): every 30 minutes, each open factory pull request (labeled
-# `factory` or `autofix`, not a draft, not already `needs-human`) is checked for being stuck in a
+# `factory` or `autofix`, drafts included, not already `needs-human`) is checked for being stuck in a
 # state no workflow reacts to: CI cancelled or timed out, CI never started or never finished, a
 # conflict with main, a green commit the reviewer never reviewed, a failure the CI fixer never
 # fixed, changes asked for and never reworked. A cancelled CI is rerun once; everything else gets

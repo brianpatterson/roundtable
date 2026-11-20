@@ -81,7 +81,7 @@ if [ "${1:-}" = --one ]; then
   # The reviewer's one comment names the commit it reviewed (review.yml).
   review=$("$GH" api "repos/$repo/issues/$number/comments" --paginate \
     --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"<!-- factory-review -->\")) and (.body | contains(\"$sha\")))
-          | {verdict: (if (.body | contains(\"### Factory review: ✅ Ready for you\")) then \"ready\" else \"changes\" end), updated: .updated_at}" | tail -1)
+          | {verdict: (if (.body | startswith(\"<!-- factory-review -->\\n### Factory review: ✅ Ready for you\")) then \"ready\" else \"changes\" end), updated: .updated_at}" | tail -1)
   review_state=null
   if [ -n "$review" ]; then
     review_state=$(jq -c --argjson age "$(minutes_since "$(jq -r .updated <<<"$review")")" \
@@ -112,8 +112,8 @@ if [ "${1:-}" = --one ]; then
 fi
 
 prs=$("$GH" pr list -R "$repo" --state open --limit 100 \
-  --json number,labels,isDraft,mergeable,headRefOid \
-  --jq '[.[] | select(.isDraft | not)
+  --json number,labels,mergeable,headRefOid \
+  --jq '[.[]
          | select([.labels[].name] | (index("factory") or index("autofix")) and (index("needs-human") | not))
          | {number, mergeable, sha: .headRefOid, factory: ([.labels[].name] | index("factory") != null)}]')
 
