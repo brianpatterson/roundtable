@@ -107,10 +107,11 @@ const renderGate = async () => {
   queryClient.setQueryData(['signed-in-data'], 'cached');
   render(
     <QueryClientProvider client={queryClient}>
-      <identity.AuthGate>
-        {({ userName, signOut, signOutError }) => (
+      <identity.AuthGate signedOut={<p>Signed-out extra</p>}>
+        {({ userName, userEmail, signOut, signOutError }) => (
           <>
             <p>Signed in as {userName}</p>
+            <p>Email {userEmail}</p>
             <button onClick={signOut}>Sign out</button>
             {signOutError && <p role="alert">{signOutError}</p>}
           </>
@@ -121,6 +122,37 @@ const renderGate = async () => {
 
   return { sessionEnded: identity.sessionEnded, queryClient };
 };
+
+describe('AuthGate: what it shows', () => {
+  it('gives the signed-in view the user’s name and email, without the signed-out extra', async () => {
+    await renderGate();
+
+    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
+    expect(screen.getByText('Email ada@example.com')).toBeDefined();
+    expect(screen.queryByText('Signed-out extra')).toBeNull();
+  });
+
+  it('shows the signed-out extra under the sign-in page', async () => {
+    firstSession = null;
+    await renderGate();
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.getByText('Signed-out extra')).toBeDefined();
+  });
+
+  it('shows the signed-out extra under the password-reset page', async () => {
+    window.history.replaceState(null, '', '/reset-password?token=abc');
+
+    try {
+      await renderGate();
+
+      expect(await screen.findByText('Signed-out extra')).toBeDefined();
+      expect(screen.queryByText('Signed in as Ada')).toBeNull();
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+});
 
 describe('AuthGate: session ended', () => {
   it('shows the sign-in page with a notice, clears the cache and re-checks the session once', async () => {

@@ -16,6 +16,8 @@ export {
   type Snackbars,
 } from './components/Snackbar/Snackbar';
 
+export { TextArea, type TextAreaProps } from './components/TextArea/TextArea';
+
 export { TextField, type TextFieldProps } from './components/TextField/TextField';
 
 export {
