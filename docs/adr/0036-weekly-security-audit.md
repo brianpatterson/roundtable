@@ -107,3 +107,5 @@ and `.github/factory/auditor.md`.
   refused command, and the agent names its test files after what it's probing, so the public log
   hinted at what it looked into (not what it found). The audit job now sets `DENIAL_LABELS=programs`:
   program names, the fixed reason when a call is flagged, and a file's tool only.
+- **2026-11-20:** the audit runs nightly, skipping nights when main has no new commits
+  ([ADR-0039](0039-nightly-mutation-and-security-audit.md)).

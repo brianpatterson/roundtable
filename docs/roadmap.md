@@ -205,8 +205,8 @@ Building blocks, in order:
      covers them), so this needs a fine-grained token from the owner (Dependabot alerts and
      contents, read-only). Deferred until then; Dependabot's own alert emails are the signal.
 
-6. ✅ **Security auditor** ([ADR-0036](adr/0036-weekly-security-audit.md); weekly, files private draft
-   advisories; a per-PR trigger is left for later): a scheduled agent (weekly, and on any PR that touches auth, logging,
+6. ✅ **Security auditor** ([ADR-0036](adr/0036-weekly-security-audit.md); nightly since [ADR-0039](adr/0039-nightly-mutation-and-security-audit.md), files private draft
+   advisories; a per-PR trigger is left for later): a scheduled agent (nightly, and on any PR that touches auth, logging,
    error tracking, `infra/` or a new external service) whose only job is to find security holes.
    It has its own prompt and no stake in the code it audits. Every finding becomes a ticket with
    a test that reproduces it. Scanners only catch known patterns. The 2026-11-10 leak passed
@@ -231,9 +231,9 @@ Building blocks, in order:
    tests; every survivor left is reviewed in ADR-0027's updates. In CI:
    - ✅ **A scheduled full run in CI**: nightly on `main` (`.github/workflows/mutation.yml`),
      with the score and survivors in the job summary and the report in an artifact.
-   - ✅ **Incremental runs on pull requests**: CI's `api-mutation` job reuses the nightly
-     results and mutates only what changed, or runs in full when a change is one incremental
-     results can't see; the reviewer reads its survivors like the web app's.
+   - ~~Incremental runs on pull requests~~: built, then removed with the web app's PR job
+     ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)): a full run timed out and
+     stalled a factory pull request. Both run nightly on main instead.
 
 8. ✅ **Weekly architecture review** ([ADR-0031](adr/0031-weekly-architecture-review.md)): Matt
    Pocock's `improve-codebase-architecture` skill runs unattended every Monday and turns each Strong
@@ -246,23 +246,23 @@ Building blocks, in order:
 Quality comes in layers. Each answers a different question, and they compound. Already in place
 is marked ✅.
 
-| Layer                       | Question it answers                                           | Tools                                                                        | Status                                                                            |
-| --------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Static checks               | Is the code well-formed?                                      | TypeScript strict, Oxlint, Prettier                                          | ✅                                                                                |
-| Contract                    | Do the frontend and backend agree?                            | Shared Effect `HttpApi` contract and typed client                            | ✅                                                                                |
-| Integration tests           | Does the API behave correctly against a real DB?              | Vitest + Postgres                                                            | ✅                                                                                |
-| Security scanning           | Known-vulnerable deps? Injection bugs?                        | Dependabot, dependency review, CodeQL                                        | ✅                                                                                |
-| Docs as a gate              | Is the "why" recorded?                                        | Dependency register check, PR template, ADRs                                 | ✅                                                                                |
-| **Acceptance tests**        | Does it do what the ticket asked?                             | Playwright E2E, one test per acceptance criterion                            | Phase 3                                                                           |
-| **Coverage gate**           | Is new code exercised at all?                                 | Vitest coverage, with a threshold on changed lines                           | Phase 3                                                                           |
-| **Mutation testing**        | Would the tests catch a bug? Coverage can't tell you that.    | Stryker ([ADR-0027](adr/0027-mutation-testing-stryker.md))                   | Web app in CI, advisory, read by the reviewer ✅. Next: the API, then a threshold |
-| **AI code review**          | Does it match the ticket, the conventions and good design?    | Reviewer agent with a checklist                                              | Phase 3                                                                           |
-| **Security audits**         | What can leak or be abused that no scanner knows to look for? | Security auditor agent (building block 6): data-flow review, fault injection | Phase 3                                                                           |
-| **Visual regression**       | Did the UI change unexpectedly?                               | Playwright screenshots                                                       | Later                                                                             |
-| **Accessibility**           | Is it usable with a keyboard or screen reader?                | axe-core in Playwright                                                       | Phase 3 (cheap)                                                                   |
-| **Performance budgets**     | Did it get slower or heavier?                                 | Lighthouse CI, bundle size limits, API latency tests                         | Later                                                                             |
-| **Production verification** | Does it work for real users?                                  | Smoke tests after deploy, error rates, SLOs with alerts, auto-rollback       | Phase 2–3                                                                         |
-| **DORA metrics**            | Is the factory itself healthy?                                | Deploy frequency, lead time, change failure rate, time to restore            | Later: the factory's own dashboard                                                |
+| Layer                       | Question it answers                                           | Tools                                                                        | Status                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Static checks               | Is the code well-formed?                                      | TypeScript strict, Oxlint, Prettier                                          | ✅                                                                                                                            |
+| Contract                    | Do the frontend and backend agree?                            | Shared Effect `HttpApi` contract and typed client                            | ✅                                                                                                                            |
+| Integration tests           | Does the API behave correctly against a real DB?              | Vitest + Postgres                                                            | ✅                                                                                                                            |
+| Security scanning           | Known-vulnerable deps? Injection bugs?                        | Dependabot, dependency review, CodeQL                                        | ✅                                                                                                                            |
+| Docs as a gate              | Is the "why" recorded?                                        | Dependency register check, PR template, ADRs                                 | ✅                                                                                                                            |
+| **Acceptance tests**        | Does it do what the ticket asked?                             | Playwright E2E, one test per acceptance criterion                            | Phase 3                                                                                                                       |
+| **Coverage gate**           | Is new code exercised at all?                                 | Vitest coverage, with a threshold on changed lines                           | Phase 3                                                                                                                       |
+| **Mutation testing**        | Would the tests catch a bug? Coverage can't tell you that.    | Stryker ([ADR-0027](adr/0027-mutation-testing-stryker.md))                   | Web app and API nightly on main, advisory ✅ ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)). Next: a threshold |
+| **AI code review**          | Does it match the ticket, the conventions and good design?    | Reviewer agent with a checklist                                              | Phase 3                                                                                                                       |
+| **Security audits**         | What can leak or be abused that no scanner knows to look for? | Security auditor agent (building block 6): data-flow review, fault injection | Phase 3                                                                                                                       |
+| **Visual regression**       | Did the UI change unexpectedly?                               | Playwright screenshots                                                       | Later                                                                                                                         |
+| **Accessibility**           | Is it usable with a keyboard or screen reader?                | axe-core in Playwright                                                       | Phase 3 (cheap)                                                                                                               |
+| **Performance budgets**     | Did it get slower or heavier?                                 | Lighthouse CI, bundle size limits, API latency tests                         | Later                                                                                                                         |
+| **Production verification** | Does it work for real users?                                  | Smoke tests after deploy, error rates, SLOs with alerts, auto-rollback       | Phase 2–3                                                                                                                     |
+| **DORA metrics**            | Is the factory itself healthy?                                | Deploy frequency, lead time, change failure rate, time to restore            | Later: the factory's own dashboard                                                                                            |
 
 Guiding principle: **an agent should never be the only judge of its own work.** Every gate above
 is either deterministic (a test, a type check) or independent (a separate reviewer agent, a
