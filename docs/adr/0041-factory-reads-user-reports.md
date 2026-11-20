@@ -106,3 +106,12 @@ Option 4.
   would avoid that, at the cost of a second `HttpApi` and its tests; revisit if more appear.
 - The site's URL is written into `factory.yml` (`https://roundtableapp.us`), because the `DOMAIN`
   variable belongs to the `production` environment. A new domain needs changing it there.
+
+## Updates
+
+- **2026-11-20:** after the first run, whose progress comment on the issue named the cause and
+  the fix, `implementer.md` keeps every comment on a user report's issue to generic steps
+  (`Read the report`, `Find the cause`, `Write a failing test`, `Fix`, `Open the pull request`),
+  and has the pull request describe the defect in the code, not what the user did, saw or wrote.
+  This keeps the user's experience out of public text. It doesn't hide the finding: the pull
+  request, its title and its diff are public and one click from the issue through `Closes #N`.
