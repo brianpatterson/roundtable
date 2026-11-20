@@ -258,4 +258,5 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   locally until dropped.
 - **2026-11-20:** mutation testing no longer runs on pull requests, only nightly on main, now for
   the web app too, and the nightly API job's limit is 60 minutes, up from 30
-  ([ADR-0039](0039-nightly-mutation-and-security-audit.md)).
+  ([ADR-0039](0039-nightly-mutation-and-security-audit.md)). With no pull request to reuse it,
+  `api-mutation-report` no longer includes Stryker's incremental file.

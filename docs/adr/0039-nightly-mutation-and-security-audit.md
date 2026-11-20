@@ -38,7 +38,8 @@ production for a week before the auditor looks.
   by hand). CI's `mutation` and `api-mutation` jobs are gone, and the reviewer no longer reads
   survivors. The API job's limit is 60 minutes.
 - `.github/workflows/security-audit.yml` runs nightly at 06:41 UTC. A `changed` job skips the
-  run when main has no commits in the last 25 hours; a manual run always audits. The filing job
+  run when main is still at the commit the last successful audit ran on; a manual run always
+  audits. The filing job
   already skips titles it has filed, so a hole still open isn't filed again each night.
 
 ## Consequences

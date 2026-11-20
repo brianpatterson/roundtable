@@ -20,7 +20,7 @@ name: Security audit
 
 on:
   schedule:
-    - cron: '41 6 * * *' # nightly, skipped when main hasn't changed in a day
+    - cron: '41 6 * * *' # nightly, skipped when main hasn't changed since the last audit
   workflow_dispatch:
 
 permissions:
@@ -31,13 +31,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A night with no new commits on main has nothing new to audit (ADR-0039). A manual run always
-  # audits.
+  # A night when main is where the last finished audit left it has nothing new to audit (ADR-0039).
+  # Compared with that audit's commit, not a time window, so a late or dropped run can't skip a
+  # commit. A manual run always audits.
   changed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
+      actions: read # the last successful audit run
     outputs:
       run: ${{ steps.check.outputs.run }}
     steps:
@@ -50,13 +51,14 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          since=$(date -u -d '25 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          count=$(gh api "repos/$GITHUB_REPOSITORY/commits?sha=main&since=$since&per_page=1" --jq length)
-          if [ "$count" -gt 0 ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No commits on main since $since: nothing new to audit."
+          # A skipped night ends `success` too, at the same commit, so it doesn't move the baseline.
+          last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow security-audit.yml --branch main \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+          if [ -n "$last" ] && [ "$last" = "$GITHUB_SHA" ]; then
+            echo "Main is still at ${last:0:7}, which the last audit covered: nothing new to audit."
             echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
   # Before spending an Opus run: the filing job's secrets are set. Only "set or not" leaves this job.

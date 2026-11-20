@@ -206,7 +206,7 @@ Building blocks, in order:
      contents, read-only). Deferred until then; Dependabot's own alert emails are the signal.
 
 6. ✅ **Security auditor** ([ADR-0036](adr/0036-weekly-security-audit.md); nightly since [ADR-0039](adr/0039-nightly-mutation-and-security-audit.md), files private draft
-   advisories; a per-PR trigger is left for later): a scheduled agent (weekly, and on any PR that touches auth, logging,
+   advisories; a per-PR trigger is left for later): a scheduled agent (nightly, and on any PR that touches auth, logging,
    error tracking, `infra/` or a new external service) whose only job is to find security holes.
    It has its own prompt and no stake in the code it audits. Every finding becomes a ticket with
    a test that reproduces it. Scanners only catch known patterns. The 2026-11-10 leak passed
