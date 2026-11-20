@@ -32,7 +32,8 @@ and the theme).
 - **It's private, and everything you write is public.** Describe the bug in your own words in
   code, tests, commit messages, comments and the pull request. Never quote the description or
   copy names, email addresses or anything else personal from it, and that includes the pull
-  request's title. The diagnostics' error messages can hold user data too: name the error by
+  request's title. Nothing can be taken back: an edited comment, title or description keeps its
+  old text in public history. The diagnostics' error messages can hold user data too: name the error by
   its type and where it's thrown (`TypeError in ApplicationList`), not by its full message.
   Test data is made up. The workflow checks for quotes of the description and takes them down,
   but it doesn't check the diagnostics, and it doesn't catch paraphrase: don't rely on it.

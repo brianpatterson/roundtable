@@ -1,9 +1,14 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { Effect, Redacted } from 'effect';
+import { Effect, Option, Redacted, Schema } from 'effect';
 import { HttpServerRequest } from 'effect/http';
 import { HttpApiBuilder } from 'effect/http-api';
-import { ReportNotFound, RoundtableApi, Unauthorized } from '@roundtable/contract';
+import {
+  ReportDiagnostics,
+  ReportNotFound,
+  RoundtableApi,
+  Unauthorized,
+} from '@roundtable/contract';
 import type { Env } from '../../platform/config/env.js';
 import { Database } from '../../platform/database/effect.js';
 import { browserFamily } from './handlers.js';
@@ -11,6 +16,9 @@ import { userReports } from './schema.js';
 
 /** Reports older than this are a 404 to the factory: a leaked token reads only recent ones. */
 export const FACTORY_REPORT_MAX_AGE_DAYS = 30;
+
+/** The column is typed, not checked: decode what comes back from storage. */
+const decodeDiagnostics = Schema.decodeUnknownOption(ReportDiagnostics);
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
@@ -64,6 +72,19 @@ export const FactoryReportsApiLive = (env: Env) =>
 
             if (!report) return yield* new ReportNotFound();
 
+            // A row that doesn't decode (it can't be written so, but a column is only typed)
+            // costs the factory its diagnostics, not the whole report.
+            const diagnostics =
+              report.diagnostics === null
+                ? null
+                : Option.getOrNull(decodeDiagnostics(report.diagnostics));
+
+            if (report.diagnostics !== null && diagnostics === null) {
+              yield* Effect.logWarning("A report's stored diagnostics don't decode").pipe(
+                Effect.annotateLogs({ reportId: report.id }),
+              );
+            }
+
             yield* Effect.logInfo('Problem report read by the factory').pipe(
               Effect.annotateLogs({ reportId: report.id }),
             );
@@ -76,7 +97,7 @@ export const FactoryReportsApiLive = (env: Env) =>
               browser: browserFamily(report.userAgent ?? undefined),
               signedIn: report.userId !== null,
               createdAt: report.createdAt,
-              diagnostics: report.diagnostics,
+              diagnostics,
             };
           }),
       });

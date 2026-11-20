@@ -63,9 +63,12 @@ Option 4.
   ask when it can't reproduce it.
 - **A deterministic check catches quotes after the run.** `guard-report-text.sh` refuses text
   holding any 40 characters of the description (case and whitespace ignored), compared with a copy
-  kept outside the directory the agent can edit. The agent's comments are taken down, and a pull
-  request's title and description that quote it are replaced; a branch whose added lines or commit
-  messages do gets `needs-human`, because a push can't be taken back. Diagnostics aren't checked:
+  kept outside the directory the agent can edit. A comment of the agent's that quotes it is
+  deleted, which removes its edit history too. A pull request's title and description can't be
+  deleted, and edits keep the old text in public history, so they are replaced and the pull
+  request gets `needs-human` with a note telling the owner to delete the old revisions. A branch
+  whose added lines or commit messages quote it gets the same, whether or not it has a pull
+  request (the issue gets it if there is none). Diagnostics aren't checked:
   error messages such as `TypeError: x is undefined` are what a fix rightly names, so the
   implementer is told instead to name errors by type and place, not by their full message.
 
@@ -83,6 +86,9 @@ Option 4.
   ids are in the public issues): their text and diagnostics, never who sent them. Nothing else.
   Rotate it in both places (`infra/README.md`). The report text now reaches Anthropic through the
   agent, like the code does.
+- **A quoted pull request title can't be fully removed:** GitHub keeps "changed the title" in the
+  timeline, and only the owner can delete a description's old revisions. The instructions ask for
+  the agent's own words for this reason; the check makes a slip visible, it can't undo it.
 - **The guard is a backstop, not a proof.** It catches copying, not paraphrase, and nothing under
   40 characters, so a name alone gets through. A quote in a commit is public until the owner
   rewrites the branch.

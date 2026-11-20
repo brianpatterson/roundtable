@@ -107,6 +107,23 @@ describe('the factory reads a report', () => {
     expect(res.body).not.toContain('The list is empty');
   });
 
+  it('a stored diagnostics value that does not decode costs only the diagnostics', async () => {
+    const id = await sendReport(t);
+
+    await t.db
+      .update(userReports)
+      .set({ diagnostics: sql`'{"theme":"pink"}'::jsonb` })
+      .where(eq(userReports.id, id));
+
+    const res = await read(t, id, `Bearer ${TOKEN}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ description: string; diagnostics: unknown }>()).toMatchObject({
+      description: 'The list is empty after I add an application',
+      diagnostics: null,
+    });
+  });
+
   it('an unknown id is a 404, and a malformed one a 400', async () => {
     expect((await read(t, crypto.randomUUID(), `Bearer ${TOKEN}`)).statusCode).toBe(404);
     expect((await read(t, 'not-a-uuid', `Bearer ${TOKEN}`)).statusCode).toBe(400);
