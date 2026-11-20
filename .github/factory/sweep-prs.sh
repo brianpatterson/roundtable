@@ -7,6 +7,8 @@
 #
 #   sweep-prs.sh            sweep every open factory pull request (needs GH_TOKEN, GITHUB_REPOSITORY)
 #   sweep-prs.sh --decide   read one state as JSON on stdin, print the decision (for the tests)
+#   sweep-prs.sh --one PR   check one pull request (JSON from the list below); the sweep runs each
+#                           in its own process, so one that fails doesn't stop the rest
 #
 # DRY_RUN=true prints what it would do and changes nothing. GH overrides the gh binary (tests).
 set -euo pipefail
@@ -14,7 +16,9 @@ set -euo pipefail
 GH=${GH:-gh}
 
 # The decision, from a state the main loop gathers (ages in minutes):
-#   {mergeable, head_age, ci: null | {status, conclusion, attempt, age}, review: null | {verdict, age}}
+#   {factory, mergeable, head_age, ci: null | {status, conclusion, attempt, age}, review: null | {verdict, age}}
+# `factory` is false for a pull request only labeled `autofix`: it gets no rework (ADR-0037), so a
+# `changes` verdict there is the owner's turn, like `ready`.
 # Prints {action: wait | ok | rerun | human, reason}.
 # shellcheck disable=SC2016 # jq's own $variables
 decide='
@@ -32,6 +36,7 @@ decide='
       if .ci.age > 60 then out("human"; "CI passed \(.ci.age) minutes ago and the reviewer hasn'"'"'t reviewed this commit")
       else out("wait"; "waiting for the reviewer") end
     elif .review.verdict == "ready" then out("ok"; "reviewed and ready: the owner'"'"'s turn")
+    elif .factory != true then out("ok"; "changes asked on a pull request the factory doesn'"'"'t rework: the owner'"'"'s turn")
     elif .review.age > 120 then out("human"; "the reviewer asked for changes \(.review.age) minutes ago and no rework was pushed")
     else out("wait"; "waiting for the rework") end
   elif .ci.conclusion == "failure" then
@@ -56,23 +61,19 @@ minutes_since() { echo $(((now - $(jq -rn --arg t "$1" '$t | fromdateiso8601')) 
 # shellcheck disable=SC2016 # backticks are Markdown
 handback='To hand it back to the factory, fix what blocks it and remove `needs-human`. ADR-0040.'
 
-prs=$("$GH" pr list -R "$repo" --state open --limit 100 \
-  --json number,labels,isDraft,mergeable,headRefOid \
-  --jq '[.[] | select(.isDraft | not)
-         | select([.labels[].name] | (index("factory") or index("autofix")) and (index("needs-human") | not))
-         | {number, mergeable, sha: .headRefOid}]')
-
-jq -c '.[]' <<<"$prs" | while read -r pr; do
+if [ "${1:-}" = --one ]; then
+  pr=$2
   number=$(jq -r .number <<<"$pr")
   sha=$(jq -r .sha <<<"$pr")
   committed=$("$GH" api "repos/$repo/commits/$sha" --jq .commit.committer.date)
 
   ci=$("$GH" run list -R "$repo" --workflow ci.yml --commit "$sha" --event pull_request --limit 1 \
-    --json databaseId,status,conclusion,attempt,createdAt,updatedAt --jq '.[0] // empty')
+    --json databaseId,status,conclusion,attempt,startedAt,updatedAt --jq '.[0] // empty')
   ci_state=null
   if [ -n "$ci" ]; then
-    # Minutes since it finished, or, while it runs, since it started.
-    since=$(jq -r 'if .status == "completed" then .updatedAt else .createdAt end' <<<"$ci")
+    # Minutes since it finished, or, while it runs, since this attempt started (a rerun keeps the
+    # first attempt's creation time).
+    since=$(jq -r 'if .status == "completed" then .updatedAt else .startedAt end' <<<"$ci")
     ci_state=$(jq -c --argjson age "$(minutes_since "$since")" \
       '{status, conclusion, attempt, age: $age}' <<<"$ci")
   fi
@@ -80,7 +81,7 @@ jq -c '.[]' <<<"$prs" | while read -r pr; do
   # The reviewer's one comment names the commit it reviewed (review.yml).
   review=$("$GH" api "repos/$repo/issues/$number/comments" --paginate \
     --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"<!-- factory-review -->\")) and (.body | contains(\"$sha\")))
-          | {verdict: (if (.body | contains(\"Ready for you\")) then \"ready\" else \"changes\" end), updated: .updated_at}" | tail -1)
+          | {verdict: (if (.body | contains(\"### Factory review: ✅ Ready for you\")) then \"ready\" else \"changes\" end), updated: .updated_at}" | tail -1)
   review_state=null
   if [ -n "$review" ]; then
     review_state=$(jq -c --argjson age "$(minutes_since "$(jq -r .updated <<<"$review")")" \
@@ -89,13 +90,13 @@ jq -c '.[]' <<<"$prs" | while read -r pr; do
 
   state=$(jq -nc --argjson pr "$pr" --argjson ci "$ci_state" --argjson review "$review_state" \
     --argjson head_age "$(minutes_since "$committed")" \
-    '{mergeable: $pr.mergeable, head_age: $head_age, ci: $ci, review: $review}')
+    '{factory: $pr.factory, mergeable: $pr.mergeable, head_age: $head_age, ci: $ci, review: $review}')
   decision=$(jq -c "$decide" <<<"$state")
   action=$(jq -r .action <<<"$decision")
   reason=$(jq -r .reason <<<"$decision")
   echo "#$number ${sha:0:7}: $action ($reason)"
 
-  [ "${DRY_RUN:-}" = true ] && continue
+  [ "${DRY_RUN:-}" = true ] && exit 0
   case "$action" in
     rerun)
       run=$(jq -r .databaseId <<<"$ci")
@@ -107,4 +108,20 @@ jq -c '.[]' <<<"$prs" | while read -r pr; do
       "$GH" pr comment "$number" -R "$repo" --body "The factory is stuck on this pull request: $reason. Over to you. $handback"
       ;;
   esac
-done
+  exit 0
+fi
+
+prs=$("$GH" pr list -R "$repo" --state open --limit 100 \
+  --json number,labels,isDraft,mergeable,headRefOid \
+  --jq '[.[] | select(.isDraft | not)
+         | select([.labels[].name] | (index("factory") or index("autofix")) and (index("needs-human") | not))
+         | {number, mergeable, sha: .headRefOid, factory: ([.labels[].name] | index("factory") != null)}]')
+
+failed=0
+while read -r pr; do
+  "$0" --one "$pr" || {
+    echo "::warning::Couldn't sweep #$(jq -r .number <<<"$pr"); carrying on with the rest."
+    failed=$((failed + 1))
+  }
+done < <(jq -c '.[]' <<<"$prs")
+[ "$failed" -eq 0 ]
