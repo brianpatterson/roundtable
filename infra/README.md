@@ -276,12 +276,17 @@ callback is `https://<domain>/api/auth/callback/<provider>`.
    OAuth App, not a GitHub App).
    - Application name: `Roundtable`
    - Homepage URL: `https://<domain>`
-   - Authorization callback URL: `https://<domain>/api/auth/callback/github`
+   - Redirect URI (older GitHub pages call it "Authorization callback URL"):
+     `https://<domain>/api/auth/callback/github`, exactly: `https`, no `www.`, no trailing slash.
+     Anything else and GitHub stops users with "The redirect_uri is not associated with this
+     application".
 2. **Register application**, then **Generate a new client secret**. Keep the page open: the
    secret is shown once.
 
-An OAuth App allows one callback URL, so local development needs a second app with
-`http://localhost:5173` and `http://localhost:5173/api/auth/callback/github`, in your local `.env`.
+Local development needs `http://localhost:5173/api/auth/callback/github`. Add it as a second
+redirect URI if the app accepts more than one; otherwise register a second app with
+`http://localhost:5173` and that redirect URI, and put its ID and secret in your local `.env`.
+Never put the development app's credentials on the server.
 
 ### Google
 
