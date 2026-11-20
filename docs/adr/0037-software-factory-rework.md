@@ -26,7 +26,10 @@ Forces:
   only one pending run per group, cancelling the older: the Factory workflow took its branch's
   group for every check that finished, most of them no-ops, so one could replace a pending fix.
 - **Untrusted comments.** Anyone can comment on a pull request in a public repository; the
-  review the agent acts on must be the reviewer's.
+  review the agent acts on must be the reviewer's. The filter decides what the agent is handed,
+  not what it can read: like the CI fixer and the implementer, it keeps `gh pr view` and
+  `gh issue view`, so a stranger's comment stays reachable and only its instructions keep it
+  out. The protected-path check and the owner's merge bound what such a comment could do.
 - **Untrusted runs.** `workflow_run` matches workflows by name, so a fork's pull request can run
   a workflow of its own called Review, with whatever artifact it likes.
 - **Wrong findings.** A reviewer finding can be wrong; an agent told to obey it would make the

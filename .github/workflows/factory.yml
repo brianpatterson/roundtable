@@ -268,7 +268,7 @@ jobs:
 
           if [ "${attempts:-0}" -ge 2 ]; then
             gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --add-label needs-human
-            gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory tried to fix CI twice and it still fails. Over to you; push a fix, or remove \`needs-human\` to let it try again."
+            gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory tried to fix CI twice and it still fails. Over to you: push a fix. To hand it back, push a commit yourself (that resets the count) and remove \`needs-human\`; it tries again on the next failure."
             exit 0
           fi
 

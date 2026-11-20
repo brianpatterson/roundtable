@@ -74,7 +74,7 @@ jobs:
 
           if [ "${attempts:-0}" -ge 2 ]; then
             gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --add-label needs-human
-            gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory reworked this pull request twice and the reviewer still asks for changes. Over to you: push a fix, or remove \`needs-human\` to let it try again. ADR-0037."
+            gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory reworked this pull request twice and the reviewer still asks for changes. Over to you: push a fix. To hand it back, push a commit yourself (that resets the count) and remove \`needs-human\`; it tries again on the next \`changes\` verdict. ADR-0037."
             exit 0
           fi
 
