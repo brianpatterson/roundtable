@@ -258,6 +258,13 @@ describe('AuthGate: session ended', () => {
     );
     expect(screen.getByText('Signed in as Ada')).toBeDefined();
     expect(queryClient.getQueryData(['signed-in-data'])).toBe('cached');
+    // A problem report sent now would say so (ADR-0041): the request never got an answer. The
+    // same module instance the gate loaded, after resetModules.
+    const { collectDiagnostics } = await import('../../shared/diagnostics');
+
+    expect(collectDiagnostics().requests).toContainEqual(
+      expect.objectContaining({ method: 'POST', path: '/api/auth/sign-out', status: 0 }),
+    );
   });
 
   it('clears the sign-out error when the user tries again and succeeds', async () => {

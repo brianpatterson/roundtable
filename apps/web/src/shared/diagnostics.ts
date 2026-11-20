@@ -51,7 +51,7 @@ const REPORT_PATH = '/api/reports';
  * Notes one API request: its method, path and status (0 when the network failed). Anything that
  * isn't a same-origin `/api/` request, and the report itself, is ignored.
  */
-export function recordRequest(method: string, url: string | URL, status: number) {
+function recordRequest(method: string, url: string | URL, status: number) {
   const path = apiPath(String(url));
 
   if (!path || path === REPORT_PATH) return;
@@ -65,7 +65,8 @@ export function recordRequest(method: string, url: string | URL, status: number)
 
 /**
  * A fetch that notes each API request (`recordRequest`), then answers exactly as `inner` does.
- * The typed client uses it; Better Auth's client notes its requests through its own hook.
+ * The typed client uses it with the default, which looks up the global fetch on each call;
+ * Better Auth's client passes the fetch it would have used, captured when it's created.
  */
 export function recordingFetch(
   inner: typeof fetch = (input, init) => globalThis.fetch(input, init),

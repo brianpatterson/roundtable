@@ -9,7 +9,6 @@ import {
   clearDiagnostics,
   collectDiagnostics,
   recordError,
-  recordRequest,
   recordUncaughtErrors,
   recordingFetch,
 } from './diagnostics';
@@ -54,8 +53,10 @@ describe('recordingFetch', () => {
     expect(collectDiagnostics().requests).toEqual([]);
   });
 
-  it('notes what a client reports through its own hook, as Better Auth does', () => {
-    recordRequest('get', new URL('/api/auth/get-session?x=1', window.location.origin), 401);
+  it('takes a URL as Better Auth passes it', async () => {
+    await answering(401)(new URL('/api/auth/get-session?x=1', window.location.origin), {
+      method: 'get',
+    });
 
     expect(collectDiagnostics().requests).toEqual([
       { method: 'GET', path: '/api/auth/get-session', status: 401, secondsBefore: 0 },

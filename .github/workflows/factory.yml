@@ -75,7 +75,8 @@ jobs:
       - name: Load the implementer's instructions and the secret guard from main
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
-            .github/factory/fetch-report.sh .github/factory/guard-report-text.sh "$RUNNER_TEMP/"
+            .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
+            .github/factory/takedown-report-quotes.sh "$RUNNER_TEMP/"
           mkdir -p "$RUNNER_TEMP/user-report"
       # A user report's own words and what the user's browser saw (ADR-0041), for issues the report
       # App opened. Fetched in this step alone, so the token never reaches the agent: the agent
@@ -243,57 +244,17 @@ jobs:
           done
           [ "$leaked" = 0 ] || { echo "::error::The agent published something that looks like a credential. It was taken down; rotate the credential."; exit 1; }
 
-      # A user report is private (ADR-0041), and everything the agent publishes is public. A comment
-      # that quotes it is deleted, which also removes its edit history. Editing can't do that: a
-      # pull request's title and description keep public revisions, so they are replaced and the
-      # owner is told to delete the old revisions (a quoted title stays in the timeline). A branch
-      # can't be taken back either, so it goes to a human, with or without a pull request.
+      # A user report is private (ADR-0041), and everything the agent publishes is public: delete or
+      # replace what quotes it, and hand what can't be taken back to a human. Tested in
+      # test-report-handoff.sh.
       - name: Take down anything that quotes the user's report
         if: always() && steps.report.outputs.fetched == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
           BRANCH: ${{ steps.claude.outputs.branch_name }}
-        run: |
-          description="$RUNNER_TEMP/report-guard/description.txt"
-          quotes() { ! "$RUNNER_TEMP/guard-report-text.sh" "$description" <<<"$1"; }
-          problems=""
-          for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/comments" --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id'); do
-            if quotes "$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body)"; then
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$id"
-              problems+=$'\n'"- A comment of the agent's quoted it. It was deleted, with its edit history."
-            fi
-          done
-          prs=""
-          if [ -n "$BRANCH" ]; then
-            prs=$(gh pr list --head "$BRANCH" --state all --json number --jq '.[].number')
-            for pr in $prs; do
-              if quotes "$(gh pr view "$pr" --json title,body --jq '.title + "\n" + .body')"; then
-                gh pr edit "$pr" --title "Fix $(gh issue view "$NUMBER" --json title --jq .title)" \
-                  --body "Closes #$NUMBER. The title and description were replaced because one of them quoted the user's private report (ADR-0041)."
-                problems+=$'\n'"- #$pr's title or description quoted it. Both were replaced, but GitHub keeps the old ones: delete the earlier revisions from the description's edit history (its \"edited\" menu). A quoted title stays visible in the timeline."
-              fi
-            done
-            # The lines the branch adds and its commit messages, whether or not it has a pull request.
-            changes=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$BRANCH" \
-              --jq '(.files[].patch // "" | split("\n")[] | select(startswith("+")) | .[1:]), .commits[].commit.message') || changes=""
-            if quotes "$changes"; then
-              problems+=$'\n'"- The branch \`$BRANCH\` quotes it in code or commit messages. Rewrite those lines and commits, or delete the branch, before merging."
-            fi
-          fi
-          [ -n "$problems" ] || exit 0
-          message="This run published part of the user's private report (ADR-0041).$problems"$'\n\n'"Remove \`needs-human\` once it's cleaned up."
-          if [ -n "$prs" ]; then
-            for pr in $prs; do
-              gh pr edit "$pr" --add-label needs-human
-              gh pr comment "$pr" --body "$message"
-            done
-          else
-            gh issue edit "$NUMBER" --add-label needs-human
-            gh issue comment "$NUMBER" --body "$message"
-          fi
-          echo "::error::The agent published part of the user's private report; see the comment it left."
-          exit 1
+          DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
+        run: '"$RUNNER_TEMP/takedown-report-quotes.sh"'
 
   # Which failing pull request to fix, if any, and which attempt this is. Holds no secrets.
   select-fix:

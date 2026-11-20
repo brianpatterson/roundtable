@@ -7,8 +7,9 @@
 #   TOKEN        FACTORY_REPORTS_TOKEN
 #   REPORTS_URL  e.g. https://roundtableapp.us/api/factory/reports
 #   OUT          directory for report.json (the agent may read it)
-#   GUARD        where to write the description for guard-report-text.sh: outside OUT, so the
-#                agent, which may edit files, can't change what its output is checked against
+#   GUARD        where to write the description for guard-report-text.sh: outside OUT, out of
+#                reach of the agent's Edit and Write tools. Code the agent runs (its tests) could
+#                still change it, as it could the guard scripts: this stops slips, not a hijack
 #   PROMPT       the implementer's instructions file, which gets the note appended
 #   CURL         overrides curl (tests)
 #
