@@ -244,3 +244,15 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   ([ADR-0026](0026-software-factory-reviewer.md)). An incremental result can still be stale for
   a module-level mutant a new test now kills (seen in this spike); the nightly full run corrects
   it.
+- **2026-11-19:** timeouts on GitHub's runners. The nightly workflow's first run (on its pull
+  request) took 28.5 of its 30 minutes and timed out 65 mutants, against 1 on a laptop; a full run
+  of the same commit in CI, on another runner, timed out 3. A timed-out mutant counts as killed,
+  so that run scored 99% instead of 96% and hid 12 survivors. 64 of the 65 were static mutants,
+  which rerun the whole suite. Stryker sets each mutant's limit from the initial test run
+  (`timeoutFactor` × the tests' time, plus `timeoutMS` and startup), which uses one worker. The
+  mutants then run four at a time on four CPUs shared with Postgres, so a whole-suite run on a
+  slow runner can exceed a limit set without that contention. The factor is now 4 instead of
+  1.5, and both API summaries count the mutants killed by timing out and warn when there are
+  more than 10. Worker restarts after a timeout also give the new worker a new id, so a new
+  `app_test_<id>` database (about 0.1 s to create and migrate): harmless in CI, but they pile up
+  locally until dropped.
