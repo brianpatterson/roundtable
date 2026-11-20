@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { ApplicationsLive } from './modules/applications/index.js';
 import { EmailLive, type EmailTransport } from './modules/email/index.js';
 import { IdentityLive } from './modules/identity/index.js';
+import { GitHubIssues, SupportLive } from './modules/support/index.js';
 import type { Env } from './platform/config/env.js';
 import { Database } from './platform/database/effect.js';
 import { PromiseDatabase } from './platform/database/promise.js';
@@ -30,6 +31,8 @@ export interface AppOptions {
   readonly log: Log;
   /** Tests: replaces the email transport chosen from the environment (Resend or the log). */
   readonly emailTransport?: Layer.Layer<EmailTransport>;
+  /** Tests: replaces the GitHub client for report issues chosen from the environment. */
+  readonly githubIssues?: Layer.Layer<GitHubIssues>;
   /** Tests: Sentry options, e.g. a beforeSend that captures events. Sentry needs SENTRY_DSN. */
   readonly errorTracking?: Partial<Sentry.NodeOptions>;
 }
@@ -62,18 +65,18 @@ const ReportErrors = HttpRouter.middleware((httpEffect) => Effect.withErrorRepor
 });
 
 /** Every route, with the modules and the resources they need. */
-function routesLayer({ env, log, emailTransport }: AppOptions) {
+function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
-    Layer.provide([SystemLive, ApplicationsLive]),
-    // Identity's endpoints, the Authorization middleware the groups above rely on, and Better
-    // Auth's own routes, all in one.
+    Layer.provide([SystemLive, ApplicationsLive, SupportLive(env, log, { githubIssues })]),
+    // Identity's endpoints, the Authorization and OptionalSession middleware the groups above
+    // rely on, and Better Auth's own routes, all in one.
     Layer.provide(IdentityLive(env, log)),
     // Name the invalid values in 400s: clients, and agents reading a failure, see what was wrong.
     Layer.provide(HttpApiMiddleware.layerProblemDetails({ includeDetails: true })),
   );
 
   return Layer.mergeAll(api, ReportErrors).pipe(
-    // The Mailer identity sends through, with email's limits and transport chosen inside.
+    // The Mailer identity and support send through, with email's limits and transport chosen inside.
     Layer.provide(EmailLive(env, log, { transport: emailTransport })),
     Layer.provide(Database.layer(env.DATABASE_URL)),
     Layer.provide(PromiseDatabase.layer(env.DATABASE_URL)),

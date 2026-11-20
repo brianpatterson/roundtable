@@ -8,7 +8,12 @@
 import { Effect } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { HttpApiClient } from 'effect/http-api';
-import { RoundtableApi, type CreateApplication, type UpdateApplication } from '../index.js';
+import {
+  RoundtableApi,
+  type CreateApplication,
+  type CreateReport,
+  type UpdateApplication,
+} from '../index.js';
 import { toApiError } from './errors.js';
 
 export { ApiError } from './errors.js';
@@ -43,6 +48,8 @@ export function makeApiClient(options: ApiClientOptions) {
       run((client) => client.applications.update({ params: { id }, payload })),
     deleteApplication: (id: string) =>
       run((client) => client.applications.delete({ params: { id } })),
+    createReport: (payload: CreateReport) =>
+      run((client) => client.support.createReport({ payload })),
   };
 }
 

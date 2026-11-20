@@ -48,6 +48,7 @@ flowchart LR
   web -->|JSON over /api/*<br/>session cookie| api
   api -->|SQL via Drizzle| db
   api -.OAuth.-> idp[GitHub / Google]
+  api -.report issues<br/>REST, safe context only.-> gh[GitHub Issues]
   contract[[packages/contract<br/>Effect HttpApi contract + typed client]] -.imported by.-> web
   contract -.imported by.-> api
 ```
@@ -72,8 +73,10 @@ breaks the rules (another module's internals, the assembly, or another module's 
 ```mermaid
 flowchart TB
   subgraph api[apps/api/src]
-    server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & identity & email
+    server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & identity & email & support
     applications[modules/applications<br/>CRUD, applications table] --> identity
+    support[modules/support<br/>problem reports, GitHub issues,<br/>user_reports] --> email
+    support --> platform
     identity[modules/identity<br/>Better Auth, Authorization, auth tables] --> email
     email[modules/email<br/>Mailer, transport, email_sends] --> platform
     applications --> platform
@@ -81,22 +84,24 @@ flowchart TB
     platform[platform/<br/>config, database, observability]
   end
   subgraph web[apps/web/src]
-    shell[shell/<br/>providers, layout,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications] & wid[modules/identity]
+    shell[shell/<br/>providers, layout,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications] & wid[modules/identity] & wsup[modules/support]
     wapps --> wshared[shared/<br/>API client]
     wid --> wshared
-    shell & wapps & wid --> ds[design-system/<br/>tokens, theme, components on Base UI]
+    wsup --> wshared
+    shell & wapps & wid & wsup --> ds[design-system/<br/>tokens, theme, components on Base UI]
   end
 ```
 
-| Module       | API                                                                                                    | Web                                                            | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ----------------- |
-| applications | CRUD handlers, `applications` table                                                                    | `ApplicationsPage` (form + table), its query keys              | `applications.ts` |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` middleware, `/api/auth-config`, auth tables | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`  | none                                                           | none              |
-| (system)     | `/api/health`, in `server.ts`                                                                          | none                                                           | `system.ts`       |
+| Module       | API                                                                                                                          | Web                                                            | Contract          |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers, `applications` table                                                                                          | `ApplicationsPage` (form + table), its query keys              | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                        | none                                                           | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports`                  | `ReportProblem` (link-style button + dialog)                   | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                | none                                                           | `system.ts`       |
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
-the web app's components (Button, TextField, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
+the web app's components (Button, TextField, TextArea, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
@@ -125,13 +130,28 @@ The shell reaches the snackbar from outside React through `createSnackbars()` (B
 manager). Signing out shows the sign-in page only once the server confirms it; a failed sign-out
 stays signed in with an error.
 
-**Email** gives the App one layer too, `EmailLive(env, log)`: the `Mailer` identity sends
-through. Inside, it reads its sending limits (the per-address and per-day caps,
+**Email** gives the App one layer too, `EmailLive(env, log)`: the `Mailer` identity and support
+send through. Inside, it reads its sending limits (the per-address and per-day caps,
 `EMAIL_LIMIT_PER_ADDRESS` and `EMAIL_LIMIT_PER_DAY`) and picks its transport (Resend when
 configured, otherwise the log), so a new limit or email kind never touches `server.ts`. The
-email kinds (password reset, verification) are one `EmailKind` schema; limits are counted per
-kind, per address. The App provides the `Database` it shares, and tests swap the transport
-through `AppOptions.emailTransport`.
+email kinds (password reset, verification, user report) are one `EmailKind` schema; limits are
+counted per kind, per address. User reports all go to the owner's one address, so their
+per-address limit is `REPORT_LIMIT_PER_DAY` instead. The App provides the `Database` it shares,
+and tests swap the transport through `AppOptions.emailTransport`.
+
+**Support** gives the App `SupportLive(env, log)`: "Report a problem"
+([ADR-0038](adr/0038-user-problem-reports.md)). `POST /api/reports` is public, behind identity's
+`OptionalSession` middleware, which provides a `Viewer` (the user, or none) and never fails, so a
+signed-in report is linked to the account from the session. It stores the report in
+`user_reports`, then, best effort, opens a GitHub issue with safe context only (report id, page
+path, release, time, browser family; labels `bug` and `user-report`, never `ready`) and emails the
+owner the full report with the issue's link. A failure in either is logged and reported, and the
+user still gets the confirmation. Without the GitHub App (`GITHUB_ISSUES_APP_ID`,
+`GITHUB_ISSUES_INSTALLATION_ID`, `GITHUB_ISSUES_PRIVATE_KEY`) the issue is skipped with a log
+line; without `REPORTS_EMAIL` the email is. Tests swap the GitHub client through
+`AppOptions.githubIssues`. On the web, the shell shows `ReportProblem` in its footer when signed
+in (reply email pre-filled with the account's) and under the sign-in and password-reset pages
+(through `AuthGate`'s `signedOut` slot) when not.
 
 **The App** (`server.ts`) is the one module that knows every other. Callers pass `{ env, log }`
 and pick one of two adapters: `serveApp` (a Node server, for production) or `appWebHandler`
@@ -186,6 +206,19 @@ erDiagram
     timestamptz created_at "also the application date"
     timestamptz updated_at "bumped on every update"
   }
+  user_reports {
+    uuid id PK "gen_random_uuid()"
+    text description "NOT NULL, private"
+    text reply_email "nullable, private"
+    text user_id "nullable, no FK"
+    text page_path "NOT NULL, no query string"
+    text release "NOT NULL"
+    text user_agent "nullable"
+    text client_key "HMAC of the client address"
+    timestamptz issue_requested_at "claimed one of the day's issues"
+    text issue_url "nullable"
+    timestamptz created_at
+  }
 ```
 
 - **Tenant isolation:** every `applications` query filters on `user_id` from the session. Another
@@ -199,8 +232,13 @@ accepted`, plus the terminal states `rejected` and `withdrawn`. Transitions aren
   ([ADR-0006](adr/0006-status-enum-and-dates.md)).
 - Index `applications_user_id_updated_at_idx (user_id, updated_at DESC)` serves the only list
   query: one user's applications, newest first.
+- `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
+  `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
+  account). The description and reply email never leave the database except in the owner's
+  email. Indexes on `(client_key, created_at)` and `issue_requested_at` serve the hourly and daily
+  limits.
 - Source of truth: each module's `schema.ts` (`apps/api/src/modules/*/schema.ts`): identity owns
-  the auth tables, applications its own, email `email_sends`. One database and one migrations
+  the auth tables, applications its own, email `email_sends`, support `user_reports`. One database and one migrations
   folder. Migrations are generated into `apps/api/drizzle/`,
   one folder each (`<timestamp>_<name>/migration.sql` + `snapshot.json`, Drizzle 1.0's layout)
   ([ADR-0004](adr/0004-drizzle-orm-and-migrations.md), [ADR-0022](adr/0022-effect-for-the-api.md)).
@@ -221,16 +259,17 @@ for `Unauthorized`, a return to the sign-in page (see Identity above). `client.t
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
-| Method   | Path                    | Auth    | Success | Errors                                                                |
-| -------- | ----------------------- | ------- | ------- | --------------------------------------------------------------------- |
-| GET      | `/api/health`           | public  | 200     | (reports `db: "down"` instead of failing)                             |
-| GET      | `/api/auth-config`      | public  | 200     | (lists enabled social providers)                                      |
-| GET/POST | `/api/auth/*`           | public  | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session |
-| GET      | `/api/applications`     | session | 200     | 401                                                                   |
-| GET      | `/api/applications/:id` | session | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                   |
-| POST     | `/api/applications`     | session | 201     | 400, 401                                                              |
-| PATCH    | `/api/applications/:id` | session | 200     | 400 (body or id), 401, 404                                            |
-| DELETE   | `/api/applications/:id` | session | 204     | 400 (malformed id), 401, 404                                          |
+| Method   | Path                    | Auth                      | Success | Errors                                                                |
+| -------- | ----------------------- | ------------------------- | ------- | --------------------------------------------------------------------- |
+| GET      | `/api/health`           | public                    | 200     | (reports `db: "down"` instead of failing)                             |
+| GET      | `/api/auth-config`      | public                    | 200     | (lists enabled social providers)                                      |
+| GET/POST | `/api/auth/*`           | public                    | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session |
+| GET      | `/api/applications`     | session                   | 200     | 401                                                                   |
+| GET      | `/api/applications/:id` | session                   | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                   |
+| POST     | `/api/applications`     | session                   | 201     | 400, 401                                                              |
+| PATCH    | `/api/applications/:id` | session                   | 200     | 400 (body or id), 401, 404                                            |
+| DELETE   | `/api/applications/:id` | session                   | 204     | 400 (malformed id), 401, 404                                          |
+| POST     | `/api/reports`          | public (session optional) | 201     | 400, 429 (5 per client address per hour)                              |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.
@@ -299,6 +338,16 @@ sequenceDiagram
   (Better Auth, in memory), then at most 3 emails of each kind per address and 80 in total per
   24 hours (Postgres, survives deploys). Over a limit the email is silently dropped
   ([ADR-0018](adr/0018-email-sending-limits.md)).
+- **Problem reports** ([ADR-0038](adr/0038-user-problem-reports.md)): the endpoint is public, so
+  one client address may send 5 reports an hour (counted in Postgres, by the HMAC of the last
+  `X-Forwarded-For` entry, which Caddy sets; an IPv6 address by its /64), everyone together 50 an
+  hour, and at most `REPORT_LIMIT_PER_DAY` (20) GitHub issues and report emails go out per 24
+  hours. The repository is public and the factory's agents read its issues, so nothing the client
+  sent goes in an issue: only the report id, the page as one of the web app's pages or `other`,
+  the release, the time and a browser family. The API applies only the labels `bug` and
+  `user-report`, never `ready`. Issues are opened by a GitHub App installed on this repository with
+  Issues read/write only, so they're authored by its bot: a leaked key can't act as the owner,
+  whose labels and comments start the factory.
 
 ## 7. Environments and delivery
 
@@ -346,6 +395,10 @@ flowchart LR
   seconds, under one idempotency key so Resend never delivers it twice; a 4xx or a used-up quota
   fails at once. Either way, the failure is logged and reported to Sentry with the email kind
   (`modules/email/`).
+- **GitHub:** problem reports open issues through GitHub's REST API as a GitHub App: an
+  installation token from the App's signed JWT, then the issue, one attempt within a 10-second
+  timeout and no retry; a failure is logged and
+  reported to Sentry as `IssueOpenFailed` with GitHub's status only (`modules/support/`).
 - **Monitoring:** Better Stack checks `/api/health` (must report the database up) every 3
   minutes from outside, and opens an incident only if it's still failing 60 seconds later, so a
   deploy's ~10-second gap doesn't page anyone, and expects a ping from every nightly backup. Sentry receives unexpected

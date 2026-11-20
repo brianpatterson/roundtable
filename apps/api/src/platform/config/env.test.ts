@@ -11,6 +11,12 @@ const baseEnv = {
   BETTER_AUTH_URL: 'https://example.com',
 };
 
+const githubApp = {
+  GITHUB_ISSUES_APP_ID: '123',
+  GITHUB_ISSUES_INSTALLATION_ID: '42',
+  GITHUB_ISSUES_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\ngithub-app-private-key-value',
+};
+
 describe('loadEnv', () => {
   it('requires a real mailer in production', () => {
     expect(() => loadEnv({ ...baseEnv, NODE_ENV: 'production' })).toThrow(/RESEND_API_KEY/);
@@ -53,6 +59,47 @@ describe('loadEnv', () => {
     expect(env.EMAIL_LIMIT_PER_DAY).toBe(5);
   });
 
+  it('reads the report settings, with a daily cap of 20 by default', () => {
+    const env = loadEnv({
+      ...baseEnv,
+      ...githubApp,
+      GITHUB_ISSUES_REPOSITORY: 'owner/repo',
+      REPORTS_EMAIL: 'owner@example.com',
+    });
+
+    expect(env.GITHUB_ISSUES_APP_ID).toBe('123');
+    expect(env.GITHUB_ISSUES_INSTALLATION_ID).toBe('42');
+    expect(env.GITHUB_ISSUES_REPOSITORY).toBe('owner/repo');
+    expect(env.REPORTS_EMAIL).toBe('owner@example.com');
+    expect(env.REPORT_LIMIT_PER_DAY).toBe(20);
+    expect(loadEnv(baseEnv).GITHUB_ISSUES_PRIVATE_KEY).toBeUndefined();
+  });
+
+  it('requires the GitHub App settings together, with a repository written owner/name', () => {
+    expect(() => loadEnv({ ...baseEnv, ...githubApp })).toThrow(
+      /GITHUB_ISSUES_REPOSITORY is required with the GitHub App/,
+    );
+    expect(() =>
+      loadEnv({
+        ...baseEnv,
+        ...githubApp,
+        GITHUB_ISSUES_INSTALLATION_ID: '',
+        GITHUB_ISSUES_REPOSITORY: 'owner/repo',
+      }),
+    ).toThrow(/go together/);
+    expect(() =>
+      loadEnv({
+        ...baseEnv,
+        ...githubApp,
+        GITHUB_ISSUES_APP_ID: 'my-app',
+        GITHUB_ISSUES_REPOSITORY: 'owner/repo',
+      }),
+    ).toThrow(/must be a number[\s\S]*GITHUB_ISSUES_APP_ID/);
+    expect(() => loadEnv({ ...baseEnv, GITHUB_ISSUES_REPOSITORY: 'just-a-name' })).toThrow(
+      /must be owner\/name/,
+    );
+  });
+
   it('names the invalid variable', () => {
     expect(() => loadEnv({ ...baseEnv, BETTER_AUTH_SECRET: 'short' })).toThrow(
       /BETTER_AUTH_SECRET/,
@@ -71,6 +118,8 @@ describe('secrets stay out of logs and errors', () => {
     GITHUB_CLIENT_SECRET: 'gh-client-secret-value',
     RESEND_API_KEY: 're_api_key_value',
     SENTRY_DSN: 'https://dsn-key-value@o0.ingest.sentry.io/0',
+    ...githubApp,
+    GITHUB_ISSUES_REPOSITORY: 'owner/repo',
   });
 
   const secrets = [
@@ -79,6 +128,7 @@ describe('secrets stay out of logs and errors', () => {
     'gh-client-secret-value',
     're_api_key_value',
     'dsn-key-value',
+    'github-app-private-key-value',
   ];
 
   it('the whole env, logged or serialised, shows none of them', () => {

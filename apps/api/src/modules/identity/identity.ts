@@ -4,7 +4,7 @@ import { HttpApiBuilder } from 'effect/http-api';
 import { RoundtableApi } from '@roundtable/contract';
 import type { Env } from '../../platform/config/env.js';
 import type { Log } from '../../platform/observability/logging.js';
-import { AuthorizationLive } from './authorization.js';
+import { AuthorizationLive, OptionalSessionLive } from './authorization.js';
 import { BetterAuth, configuredProviders } from './better-auth.js';
 
 /** The identity group of the contract: which sign-in providers this deployment offers. */
@@ -31,11 +31,15 @@ const BetterAuthRoute = Layer.unwrap(
 
 /**
  * Everything identity gives the App, provided once: its endpoints (auth-config), the
- * Authorization middleware every protected group relies on, and Better Auth's routes, with
+ * Authorization middleware every protected group relies on, the OptionalSession middleware
+ * public endpoints use to see who's calling, and Better Auth's routes, with
  * Better Auth built inside from the App's Mailer and Promise database. If identity ever becomes
  * its own service, this layer is what gets swapped for one that asks it over the network.
  */
 export const IdentityLive = (env: Env, log: Log) =>
-  Layer.mergeAll(IdentityApiLive(env), AuthorizationLive, BetterAuthRoute).pipe(
-    Layer.provide(BetterAuth.layer(env, log)),
-  );
+  Layer.mergeAll(
+    IdentityApiLive(env),
+    AuthorizationLive,
+    OptionalSessionLive,
+    BetterAuthRoute,
+  ).pipe(Layer.provide(BetterAuth.layer(env, log)));

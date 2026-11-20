@@ -7,6 +7,7 @@ import { appWebHandler } from '../src/server.js';
 import { createDb } from '../src/platform/database/promise.js';
 import { runMigrations } from '../src/platform/database/migrate.js';
 import { EmailTransport, type Email, type SendEmail } from '../src/modules/email/index.js';
+import { GitHubIssues, type NewIssue, type OpenedIssue } from '../src/modules/support/index.js';
 import { loadEnv, type Env } from '../src/platform/config/env.js';
 import { scrubEvent } from '../src/platform/observability/error-tracking.js';
 import { createLogger } from '../src/platform/observability/logging.js';
@@ -54,6 +55,11 @@ export interface TestAppOptions {
   sendEmail?: SendEmail;
   /** Point the app at another database, e.g. an unreachable one to test outages. */
   databaseUrl?: string;
+  /**
+   * Opens report issues instead of GitHub (capture them, or throw). Without it the app has no
+   * token, so issues are skipped, as in development.
+   */
+  openIssue?: (issue: NewIssue) => Promise<OpenedIssue>;
   /** Where the app's log lines go; logging is off otherwise. */
   logStream?: { write(line: string): void };
   /** Add GET /api/test-crash, which throws 'route exploded': for error-reporting tests. */
@@ -95,6 +101,7 @@ export function setupTestApp(options: TestAppOptions = {}) {
           sentEmails.push(email);
         }),
     ),
+    githubIssues: options.openIssue && GitHubIssues.fromPromise(options.openIssue),
     errorTracking: errorEvents && {
       // Capture instead of sending anywhere.
       beforeSend: (event, hint) => {

@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
 
 // Session expiry, for every module at once: the whole shell renders against a stand-in `fetch`.
@@ -56,6 +56,9 @@ let signOutFails: boolean;
 /** How many applications calls answered 401. */
 let unauthorizedAnswers: number;
 
+/** Problem reports the server received. */
+let reports: unknown[];
+
 async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init);
   const { pathname } = new URL(request.url);
@@ -77,6 +80,12 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   }
 
   if (pathname === '/api/auth-config') return Response.json({ providers: [] });
+
+  if (pathname === '/api/reports') {
+    reports.push(await request.json());
+
+    return Response.json({ id: 'report-1' }, { status: 201 });
+  }
 
   if (request.method !== 'GET' && serverError) return new Response(null, { status: 500 });
 
@@ -111,6 +120,7 @@ beforeEach(() => {
   failedReads = 0;
   signOutFails = false;
   unauthorizedAnswers = 0;
+  reports = [];
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -118,6 +128,10 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+// Better Auth's session store unsubscribes from `window` a second after the last test unmounts
+// it. Wait for that here, or it runs after jsdom has torn the window down and throws.
+afterAll(() => new Promise((resolve) => setTimeout(resolve, 1100)));
 
 const renderShell = async () => {
   // Better Auth keeps the session in a store created with the client, which outlives a test
@@ -292,6 +306,50 @@ describe('App: session expiry', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Something went wrong. Please try again.',
     );
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
+  });
+});
+
+describe('App: report a problem', () => {
+  const sendReport = async (description: string) => {
+    await userEvent.click(screen.getByRole('button', { name: 'Report a problem' }));
+    await screen.findByRole('alertdialog', { name: 'Report a problem' });
+    await userEvent.type(screen.getByLabelText('What went wrong?'), description);
+    await userEvent.click(screen.getByRole('button', { name: 'Send report' }));
+    await screen.findByText(/^Report report-1\./);
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+  };
+
+  it('is offered on the sign-in page, with no reply email filled in', async () => {
+    session = null;
+    await renderShell();
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    await userEvent.click(screen.getByRole('button', { name: 'Report a problem' }));
+    await screen.findByRole('alertdialog', { name: 'Report a problem' });
+    expect(screen.getByLabelText<HTMLInputElement>('Reply email').value).toBe('');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await sendReport('GitHub sign-in failed');
+    expect(reports).toEqual([
+      { description: 'GitHub sign-in failed', replyEmail: null, pagePath: '/' },
+    ]);
+  });
+
+  it('is in the footer when signed in, with the account email as the reply email', async () => {
+    callsBeforeExpiry = 1;
+    await renderShell();
+
+    expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
+    expect(
+      within(screen.getByRole('contentinfo')).getByRole('button', { name: 'Report a problem' }),
+    ).toBeDefined();
+
+    await sendReport('The table is empty');
+    expect(reports).toEqual([
+      { description: 'The table is empty', replyEmail: 'ada@example.com', pagePath: '/' },
+    ]);
+    // Still signed in: the report has nothing to do with the session.
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
   });
 });

@@ -41,6 +41,7 @@ describe('runMigrations', () => {
         'applications',
         'email_sends',
         'sessions',
+        'user_reports',
         'users',
         'verifications',
       ]);

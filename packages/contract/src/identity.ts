@@ -1,6 +1,6 @@
 // The identity module's contract: who the caller is, and how they can sign in. Better Auth's own
 // routes under /api/auth/* are mounted by the API outside this contract.
-import { Context, ErrorReporter, Schema } from 'effect';
+import { Context, ErrorReporter, Option, Schema } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from 'effect/http-api';
 
 /** The shortest password Better Auth accepts; the web app's forms say and check the same. */
@@ -37,6 +37,24 @@ export class Authorization extends HttpApiMiddleware.Service<
   Authorization,
   { provides: CurrentUser; requires: never }
 >()('roundtable/Authorization', { error: Unauthorized }) {}
+
+/**
+ * Who is calling a public endpoint, if anyone: `Option.some` with a valid session, `Option.none`
+ * without one. Provided by the OptionalSession middleware.
+ */
+export class Viewer extends Context.Service<Viewer, Option.Option<{ readonly id: string }>>()(
+  'roundtable/Viewer',
+) {}
+
+/**
+ * For public endpoints that link what they store to the caller when there is one (a problem
+ * report). Never fails: no session, or an expired one, is simply no Viewer. The identity module
+ * implements it.
+ */
+export class OptionalSession extends HttpApiMiddleware.Service<
+  OptionalSession,
+  { provides: Viewer; requires: never }
+>()('roundtable/OptionalSession') {}
 
 /** Public: the sign-in page asks which providers to offer before anyone is signed in. */
 export class IdentityApi extends HttpApiGroup.make('identity').add(

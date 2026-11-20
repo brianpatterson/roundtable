@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Identity through its interface (index.ts): the gate, and `sessionEnded`, which the shell calls
 // for every Unauthorized answer. Only Better Auth's server is a stand-in, behind `fetch`.
@@ -94,6 +94,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// Better Auth's session store unsubscribes from `window` a second after the last test unmounts
+// it. Wait for that here, or it runs after jsdom has torn the window down and throws.
+afterAll(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+
 /** Lets any request the gate would make go out, so a test can check it didn't. */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)));
 
@@ -107,10 +111,11 @@ const renderGate = async () => {
   queryClient.setQueryData(['signed-in-data'], 'cached');
   render(
     <QueryClientProvider client={queryClient}>
-      <identity.AuthGate>
-        {({ userName, signOut, signOutError }) => (
+      <identity.AuthGate signedOut={<p>Signed-out extra</p>}>
+        {({ userName, userEmail, signOut, signOutError }) => (
           <>
             <p>Signed in as {userName}</p>
+            <p>Email {userEmail}</p>
             <button onClick={signOut}>Sign out</button>
             {signOutError && <p role="alert">{signOutError}</p>}
           </>
@@ -121,6 +126,37 @@ const renderGate = async () => {
 
   return { sessionEnded: identity.sessionEnded, queryClient };
 };
+
+describe('AuthGate: what it shows', () => {
+  it('gives the signed-in view the user’s name and email, without the signed-out extra', async () => {
+    await renderGate();
+
+    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
+    expect(screen.getByText('Email ada@example.com')).toBeDefined();
+    expect(screen.queryByText('Signed-out extra')).toBeNull();
+  });
+
+  it('shows the signed-out extra under the sign-in page', async () => {
+    firstSession = null;
+    await renderGate();
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.getByText('Signed-out extra')).toBeDefined();
+  });
+
+  it('shows the signed-out extra under the password-reset page', async () => {
+    window.history.replaceState(null, '', '/reset-password?token=abc');
+
+    try {
+      await renderGate();
+
+      expect(await screen.findByText('Signed-out extra')).toBeDefined();
+      expect(screen.queryByText('Signed in as Ada')).toBeNull();
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+});
 
 describe('AuthGate: session ended', () => {
   it('shows the sign-in page with a notice, clears the cache and re-checks the session once', async () => {

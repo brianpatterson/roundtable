@@ -8,6 +8,7 @@ import { SignInPage } from './SignInPage';
 /** What the signed-in part of the app gets from identity. */
 export interface SignedIn {
   readonly userName: string;
+  readonly userEmail: string;
   readonly signOut: () => Promise<void>;
   /** Why the last sign-out didn't happen (the user is still signed in), or null. */
   readonly signOutError: string | null;
@@ -29,8 +30,16 @@ interface EndedSession {
  * Shows the sign-in and password-reset pages until there's a session, then renders `children`
  * with the signed-in user. The shell decides what that is, so identity never imports the shell.
  * When the API stops accepting the session (`sessionEnded()`), it goes back to sign-in.
+ * `signedOut` is shown under the sign-in and password-reset pages (the shell's "Report a
+ * problem"), so identity needn't know what it is.
  */
-export function AuthGate({ children }: { children: (signedIn: SignedIn) => ReactNode }) {
+export function AuthGate({
+  children,
+  signedOut,
+}: {
+  children: (signedIn: SignedIn) => ReactNode;
+  signedOut?: ReactNode;
+}) {
   const queryClient = useQueryClient();
   const session = authClient.useSession();
   const { refetch } = session;
@@ -71,12 +80,24 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
   // Signed in again: the old session, and the notice about it, no longer apply.
   if (ended && sessionId !== undefined && sessionId !== ended.id) setEnded(undefined);
 
-  if (window.location.pathname === '/reset-password') return <ResetPasswordPage />;
+  if (window.location.pathname === '/reset-password') {
+    return (
+      <>
+        <ResetPasswordPage />
+        {signedOut}
+      </>
+    );
+  }
 
   if (session.isPending && !loadedOnce) return <main>Loading…</main>;
 
   if (!session.data || session.data.session.id === ended?.id) {
-    return <SignInPage sessionEnded={ended?.expired ?? false} />;
+    return (
+      <>
+        <SignInPage sessionEnded={ended?.expired ?? false} />
+        {signedOut}
+      </>
+    );
   }
 
   const signedInId = session.data.session.id;
@@ -105,6 +126,7 @@ export function AuthGate({ children }: { children: (signedIn: SignedIn) => React
 
   return children({
     userName: session.data.user.name,
+    userEmail: session.data.user.email,
     signOut,
     signOutError: signOutFailed ? SIGN_OUT_FAILED : null,
   });

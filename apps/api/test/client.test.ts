@@ -56,6 +56,19 @@ describe('the web client', () => {
     await expect(signedOut).rejects.toHaveProperty('cause', expect.any(Unauthorized));
   });
 
+  it('sends a report signed out, without its query string, and says when the hour’s limit is reached', async () => {
+    const signedOut = clientFor();
+    const payload = { description: ' It broke ', pagePath: '/reset-password?token=secret' };
+
+    for (let i = 0; i < 5; i++) {
+      expect(await signedOut.createReport(payload)).toEqual({ id: expect.any(String) });
+    }
+
+    await expect(signedOut.createReport(payload)).rejects.toThrow(
+      "We've received a lot of reports in the last hour. Please try again later.",
+    );
+  });
+
   it('refuses invalid input before sending it', async () => {
     let requests = 0;
 
