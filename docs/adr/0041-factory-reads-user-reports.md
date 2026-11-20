@@ -61,6 +61,10 @@ Option 4.
 - **The implementer treats the report as untrusted data** (`implementer.md`, "User reports"): only
   a bug fix, reproduced first with a failing test; the bug described in its own words; stop and
   ask when it can't reproduce it.
+- **The issue thread says only which step the run is on** (2026-11-20, after the first run): its
+  comment is a generic checklist (`Read the report`, `Find the cause`, …) with no finding,
+  symptom or file name, because the issue is the public face of a private report. What was found
+  goes in the pull request, described as a defect in the code, not as what the user did or saw.
 - **A deterministic check catches quotes after the run.** `guard-report-text.sh` refuses text
   holding any 40 characters of the description (case and whitespace ignored), compared with a copy
   kept outside the directory the agent's edit tools can reach. A comment of the agent's that quotes it is
