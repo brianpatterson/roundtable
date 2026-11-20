@@ -162,6 +162,53 @@ describe('reporting a problem', () => {
     expect(issues[1]?.title).toMatch(/: \/$/);
   });
 
+  it('stores what the browser saw, emails it to the owner, and keeps it out of the issue', async () => {
+    const diagnostics = {
+      viewport: { width: 360, height: 740 },
+      theme: 'dark',
+      requests: [{ method: 'POST', path: '/api/applications', status: 0, secondsBefore: 2 }],
+      errors: [
+        {
+          message: `TypeError: ${SECRET_WORDS}`,
+          stack: 'at a (a.js:1)\nat b (b.js:2)',
+          secondsBefore: 1,
+        },
+      ],
+    };
+
+    const res = await report(t, { ...valid, diagnostics });
+    const { id } = res.json<{ id: string }>();
+    const [row] = await t.db.select().from(userReports).where(eq(userReports.id, id));
+    const [email] = t.sentEmails.filter((sent) => sent.to === OWNER);
+
+    expect(row?.diagnostics).toEqual(diagnostics);
+    expect(email?.text).toContain('Window: 360×740, theme: dark');
+    expect(email?.text).toContain('2s before: POST /api/applications → network error');
+    expect(email?.text).toContain(`1s before: TypeError: ${SECRET_WORDS}`);
+    expect(email?.text).toContain('    at b (b.js:2)');
+    expect(`${issues[0]?.title}\n${issues[0]?.body}`).not.toContain('TypeError');
+    expect(`${issues[0]?.title}\n${issues[0]?.body}`).not.toContain('/api/applications');
+  });
+
+  it('says so in the email when no diagnostics were sent', async () => {
+    await report(t, valid);
+    const [email] = t.sentEmails.filter((sent) => sent.to === OWNER);
+
+    expect(email?.text).toContain('No diagnostics were sent.');
+  });
+
+  it('refuses diagnostics past their limits, storing nothing', async () => {
+    const request = { method: 'GET', path: '/api/x', status: 200, secondsBefore: 1 };
+    const tooMany = { requests: Array.from({ length: 21 }, () => request) };
+    const tooLong = { errors: [{ message: 'x'.repeat(501), secondsBefore: 1 }] };
+
+    for (const diagnostics of [tooMany, tooLong]) {
+      expect((await report(t, { ...valid, diagnostics })).statusCode).toBe(400);
+    }
+
+    expect(await storedReports(t)).toHaveLength(0);
+  });
+
   it('accepts any page path a user can be on', async () => {
     for (const pagePath of ['/a%20b/~me/@x:y', `/${'x'.repeat(300)}`]) {
       expect((await report(t, { ...valid, pagePath })).statusCode, pagePath).toBe(201);

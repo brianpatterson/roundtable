@@ -1,6 +1,7 @@
 import { Layer } from 'effect';
 import type { Env } from '../../platform/config/env.js';
 import type { Log } from '../../platform/observability/logging.js';
+import { FactoryReportsApiLive } from './factory-reports.js';
 import { GitHubIssues, gitHubIssuesLayer } from './github.js';
 import { SupportApiLive } from './handlers.js';
 
@@ -25,7 +26,11 @@ function issuesFromEnv(env: Env, log: Pick<Log, 'info'>) {
 
 /**
  * Everything support gives the App, provided once: the report endpoint, with its GitHub client
- * chosen inside. The App provides the Database, the Mailer and the OptionalSession middleware.
+ * chosen inside, and the factory's read endpoint (ADR-0041). The App provides the Database, the
+ * Mailer and the OptionalSession middleware.
  */
 export const SupportLive = (env: Env, log: Pick<Log, 'info'>, options: SupportOptions = {}) =>
-  SupportApiLive(env).pipe(Layer.provide(options.githubIssues ?? issuesFromEnv(env, log)));
+  Layer.mergeAll(
+    SupportApiLive(env).pipe(Layer.provide(options.githubIssues ?? issuesFromEnv(env, log))),
+    FactoryReportsApiLive(env),
+  );

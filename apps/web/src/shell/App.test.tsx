@@ -332,7 +332,18 @@ describe('App: report a problem', () => {
 
     await sendReport('GitHub sign-in failed');
     expect(reports).toEqual([
-      { description: 'GitHub sign-in failed', replyEmail: null, pagePath: '/' },
+      {
+        description: 'GitHub sign-in failed',
+        replyEmail: null,
+        pagePath: '/',
+        // What the app asked the API before the report, through the real clients (ADR-0041).
+        diagnostics: expect.objectContaining({
+          requests: expect.arrayContaining([
+            expect.objectContaining({ method: 'GET', path: '/api/auth/get-session' }),
+            expect.objectContaining({ method: 'GET', path: '/api/auth-config', status: 200 }),
+          ]),
+        }),
+      },
     ]);
   });
 
@@ -347,7 +358,16 @@ describe('App: report a problem', () => {
 
     await sendReport('The table is empty');
     expect(reports).toEqual([
-      { description: 'The table is empty', replyEmail: 'ada@example.com', pagePath: '/' },
+      {
+        description: 'The table is empty',
+        replyEmail: 'ada@example.com',
+        pagePath: '/',
+        diagnostics: expect.objectContaining({
+          requests: expect.arrayContaining([
+            expect.objectContaining({ method: 'GET', path: '/api/applications', status: 200 }),
+          ]),
+        }),
+      },
     ]);
     // Still signed in: the report has nothing to do with the session.
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();

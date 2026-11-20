@@ -4,7 +4,12 @@ import { eq, gt, sql } from 'drizzle-orm';
 import { Cause, Effect, ErrorReporter, Option, Redacted } from 'effect';
 import { HttpServerRequest } from 'effect/http';
 import { HttpApiBuilder } from 'effect/http-api';
-import { ReportRateLimited, RoundtableApi, Viewer } from '@roundtable/contract';
+import {
+  ReportRateLimited,
+  RoundtableApi,
+  Viewer,
+  type ReportDiagnostics,
+} from '@roundtable/contract';
 import type { Env } from '../../platform/config/env.js';
 import { Database } from '../../platform/database/effect.js';
 import { Mailer } from '../email/index.js';
@@ -117,6 +122,28 @@ export function reportIssue(report: StoredReport) {
   };
 }
 
+/** Diagnostics as plain text for the owner's email, or a line saying there were none. */
+export function diagnosticsText(diagnostics: ReportDiagnostics | null): string[] {
+  if (!diagnostics) return ['No diagnostics were sent.'];
+
+  const { viewport, theme, requests = [], errors = [] } = diagnostics;
+
+  return [
+    `Window: ${viewport ? `${viewport.width}×${viewport.height}` : 'unknown'}, theme: ${theme ?? 'unknown'}`,
+    '',
+    `API requests before the report (${requests.length}):`,
+    ...requests.map(
+      (r) => `  ${r.secondsBefore}s before: ${r.method} ${r.path} → ${r.status || 'network error'}`,
+    ),
+    '',
+    `Errors before the report (${errors.length}):`,
+    ...errors.flatMap((e) => [
+      `  ${e.secondsBefore}s before: ${e.message}`,
+      ...(e.stack ? e.stack.split('\n').map((line) => `    ${line}`) : []),
+    ]),
+  ];
+}
+
 /** The owner's email: the whole report, the description included. */
 function ownerEmail(to: string, report: StoredReport, issue: string) {
   return {
@@ -136,6 +163,10 @@ function ownerEmail(to: string, report: StoredReport, issue: string) {
       'What they wrote:',
       '',
       report.description,
+      '',
+      'What their browser saw:',
+      '',
+      ...diagnosticsText(report.diagnostics),
     ].join('\n'),
   };
 }
@@ -288,6 +319,7 @@ export const SupportApiLive = (env: Env) =>
               pagePath: payload.pagePath,
               release,
               userAgent: userAgent ?? null,
+              diagnostics: payload.diagnostics ?? null,
               clientKey: keyFor(clientBucket(clientAddress(request))),
             }).pipe(Effect.orDie);
 

@@ -1,0 +1,47 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "d29212d4-d72a-4d47-b8b7-1a8e5d590a0b",
+  "prevIds": [
+    "8afb7b75-6360-4e77-addf-2a552a9f2503"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "user_reports",
+        "diagnostics"
+      ],
+      "writes": [
+        "s|col|public.user_reports.diagnostics",
+        "n|col|public.user_reports.diagnostics",
+        "e|col|public.user_reports.diagnostics"
+      ],
+      "reads": [
+        "n|tbl|public.user_reports",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "user_reports",
+        "name": "diagnostics",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

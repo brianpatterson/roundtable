@@ -139,6 +139,18 @@ describe('what the contract accepts', () => {
     ],
     'page that is a URL': [{ ...report, pagePath: 'https://example.com/' }, false],
     'page that is not a path': [{ ...report, pagePath: 'settings' }, false],
+    'with diagnostics': [
+      { ...report, diagnostics: { theme: 'dark', requests: [], errors: [] } },
+      { ...report, diagnostics: { theme: 'dark', requests: [], errors: [] } },
+    ],
+    'diagnostics with an unknown theme': [{ ...report, diagnostics: { theme: 'pink' } }, false],
+    'a negative status': [
+      {
+        ...report,
+        diagnostics: { requests: [{ method: 'GET', path: '/', status: -1, secondsBefore: 0 }] },
+      },
+      false,
+    ],
   } satisfies Record<string, Case>;
 
   it.each(Object.entries(reportCases))('report: %s', (_name, [input, decoded]) => {
@@ -247,13 +259,15 @@ describe('expected errors stay out of Sentry', () => {
 
     expect(errorClassNames.sort()).toEqual([
       'ApplicationNotFound',
+      'ReportNotFound',
       'ReportRateLimited',
       'Unauthorized',
     ]);
   });
 
-  it('ApplicationNotFound (404), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+  it('ApplicationNotFound and ReportNotFound (404), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
     expect(new contract.ApplicationNotFound()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.ReportNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.Unauthorized()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.ReportRateLimited()[ErrorReporter.ignore]).toBe(true);
   });

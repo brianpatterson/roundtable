@@ -120,6 +120,7 @@ describe('secrets stay out of logs and errors', () => {
     SENTRY_DSN: 'https://dsn-key-value@o0.ingest.sentry.io/0',
     ...githubApp,
     GITHUB_ISSUES_REPOSITORY: 'owner/repo',
+    FACTORY_REPORTS_TOKEN: 'factory-reports-token-value-0123456789abcdef',
   });
 
   const secrets = [
@@ -129,6 +130,7 @@ describe('secrets stay out of logs and errors', () => {
     're_api_key_value',
     'dsn-key-value',
     'github-app-private-key-value',
+    'factory-reports-token-value-0123456789abcdef',
   ];
 
   it('the whole env, logged or serialised, shows none of them', () => {
