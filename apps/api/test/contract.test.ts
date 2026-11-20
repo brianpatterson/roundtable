@@ -101,6 +101,46 @@ describe('what the contract accepts', () => {
     expect(Exit.isSuccess(Schema.decodeExit(IdParams)({ id }))).toBe(valid);
   });
 
+  const report = { description: 'It broke', pagePath: '/' };
+
+  const reportCases = {
+    minimal: [report, report],
+    'trims the description': [{ ...report, description: '  It broke \n' }, report],
+    'reply email': [
+      { ...report, replyEmail: 'me@example.com' },
+      { ...report, replyEmail: 'me@example.com' },
+    ],
+    'null reply email': [
+      { ...report, replyEmail: null },
+      { ...report, replyEmail: null },
+    ],
+    '2000 chars': [
+      { ...report, description: long(2000) },
+      { ...report, description: long(2000) },
+    ],
+    'drops the query and hash': [
+      { ...report, pagePath: '/reset-password?token=secret#top' },
+      { ...report, pagePath: '/reset-password' },
+    ],
+    'unknown key is dropped': [{ ...report, userId: 'someone' }, report],
+    'empty description': [{ ...report, description: '' }, false],
+    'blank description': [{ ...report, description: '  \n ' }, false],
+    '2001 chars': [{ ...report, description: long(2001) }, false],
+    'malformed email': [{ ...report, replyEmail: 'me@' }, false],
+    'email with spaces': [{ ...report, replyEmail: 'me @example.com' }, false],
+    'missing page': [{ description: 'It broke' }, false],
+    'page that is a URL': [{ ...report, pagePath: 'https://example.com/' }, false],
+    'page with spaces': [{ ...report, pagePath: '/label this ready' }, false],
+    '201-char page': [{ ...report, pagePath: `/${long(200)}` }, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(reportCases))('report: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.CreateReport)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
   // The typed client encodes request bodies before sending them, so text must trim on the way
   // out too: a form value of " Acme" is sent as "Acme" rather than refused in the browser.
   it('encodes text trimmed, and refuses blank text before it is sent', () => {
@@ -150,6 +190,12 @@ describe('real responses from the current API decode with the contract', () => {
     const health = await t.inject({ method: 'GET', url: '/api/health' });
     const authConfig = await t.inject({ method: 'GET', url: '/api/auth-config' });
 
+    const receipt = await t.inject({
+      method: 'POST',
+      url: '/api/reports',
+      payload: { description: 'It broke', pagePath: '/' },
+    });
+
     const decoded = Schema.decodeUnknownSync(contract.Application)(created.json());
 
     expect(decoded.createdAt).toBeInstanceOf(Date);
@@ -160,6 +206,8 @@ describe('real responses from the current API decode with the contract', () => {
     expect(() => Schema.decodeUnknownSync(contract.Application)(one.json())).not.toThrow();
     expect(() => Schema.decodeUnknownSync(contract.Health)(health.json())).not.toThrow();
     expect(() => Schema.decodeUnknownSync(contract.AuthConfig)(authConfig.json())).not.toThrow();
+    expect(receipt.statusCode).toBe(201);
+    expect(() => Schema.decodeUnknownSync(contract.ReportReceipt)(receipt.json())).not.toThrow();
   });
 });
 
@@ -190,11 +238,16 @@ describe('expected errors stay out of Sentry', () => {
       .filter(([, value]) => value instanceof Function && value.prototype instanceof Error)
       .map(([name]) => name);
 
-    expect(errorClassNames.sort()).toEqual(['ApplicationNotFound', 'Unauthorized']);
+    expect(errorClassNames.sort()).toEqual([
+      'ApplicationNotFound',
+      'ReportRateLimited',
+      'Unauthorized',
+    ]);
   });
 
-  it('ApplicationNotFound (404) and Unauthorized (401) set ErrorReporter.ignore', () => {
+  it('ApplicationNotFound (404), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
     expect(new contract.ApplicationNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.Unauthorized()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.ReportRateLimited()[ErrorReporter.ignore]).toBe(true);
   });
 });

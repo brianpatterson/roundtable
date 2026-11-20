@@ -266,7 +266,7 @@ describe('the Mailer', () => {
 
 describe('email kinds', () => {
   it('are listed once, and both errors use that list', () => {
-    assert.deepStrictEqual(EmailKind.literals, ['password-reset', 'verification']);
+    assert.deepStrictEqual(EmailKind.literals, ['password-reset', 'verification', 'user-report']);
     assert.strictEqual(EmailSendFailed.fields.kind, EmailKind);
     assert.strictEqual(DailyEmailLimitReached.fields.kind, EmailKind);
   });

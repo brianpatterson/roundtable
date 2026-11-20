@@ -26,4 +26,5 @@ export const EmailLive = (env: Env, log: Pick<Log, 'info'>, options: EmailOption
   Mailer.layer({
     perAddress: env.EMAIL_LIMIT_PER_ADDRESS,
     perDay: env.EMAIL_LIMIT_PER_DAY,
+    perAddressByKind: { 'user-report': env.REPORT_LIMIT_PER_DAY },
   }).pipe(Layer.provide(options.transport ?? transportFromEnv(env, log)));

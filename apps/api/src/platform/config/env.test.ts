@@ -53,6 +53,29 @@ describe('loadEnv', () => {
     expect(env.EMAIL_LIMIT_PER_DAY).toBe(5);
   });
 
+  it('reads the report settings, with a daily cap of 20 by default', () => {
+    const env = loadEnv({
+      ...baseEnv,
+      GITHUB_ISSUES_TOKEN: 'github_pat_x',
+      GITHUB_ISSUES_REPOSITORY: 'owner/repo',
+      REPORTS_EMAIL: 'owner@example.com',
+    });
+
+    expect(env.GITHUB_ISSUES_REPOSITORY).toBe('owner/repo');
+    expect(env.REPORTS_EMAIL).toBe('owner@example.com');
+    expect(env.REPORT_LIMIT_PER_DAY).toBe(20);
+    expect(loadEnv(baseEnv).GITHUB_ISSUES_TOKEN).toBeUndefined();
+  });
+
+  it('requires a repository with the issues token, written owner/name', () => {
+    expect(() => loadEnv({ ...baseEnv, GITHUB_ISSUES_TOKEN: 'github_pat_x' })).toThrow(
+      /GITHUB_ISSUES_REPOSITORY is required with GITHUB_ISSUES_TOKEN/,
+    );
+    expect(() => loadEnv({ ...baseEnv, GITHUB_ISSUES_REPOSITORY: 'just-a-name' })).toThrow(
+      /must be owner\/name/,
+    );
+  });
+
   it('names the invalid variable', () => {
     expect(() => loadEnv({ ...baseEnv, BETTER_AUTH_SECRET: 'short' })).toThrow(
       /BETTER_AUTH_SECRET/,
@@ -71,6 +94,8 @@ describe('secrets stay out of logs and errors', () => {
     GITHUB_CLIENT_SECRET: 'gh-client-secret-value',
     RESEND_API_KEY: 're_api_key_value',
     SENTRY_DSN: 'https://dsn-key-value@o0.ingest.sentry.io/0',
+    GITHUB_ISSUES_TOKEN: 'github_pat_issues_token_value',
+    GITHUB_ISSUES_REPOSITORY: 'owner/repo',
   });
 
   const secrets = [
@@ -79,6 +104,7 @@ describe('secrets stay out of logs and errors', () => {
     'gh-client-secret-value',
     're_api_key_value',
     'dsn-key-value',
+    'github_pat_issues_token_value',
   ];
 
   it('the whole env, logged or serialised, shows none of them', () => {

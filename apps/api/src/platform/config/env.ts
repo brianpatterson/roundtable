@@ -38,6 +38,24 @@ const EnvSchema = Schema.Struct({
   EMAIL_LIMIT_PER_ADDRESS: PositiveInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(3))),
   /** All emails per 24 hours. Resend's free plan allows 100 a day; this leaves headroom. */
   EMAIL_LIMIT_PER_DAY: PositiveInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(80))),
+  /**
+   * Fine-grained GitHub token, this repository only, Issues read/write and nothing else
+   * (ADR-0037). Opens an issue for each problem report. Blank: reports are stored and emailed,
+   * and no issue is opened.
+   */
+  GITHUB_ISSUES_TOKEN: Schema.optional(Secret),
+  /** Where report issues go, as `owner/name`. Required with GITHUB_ISSUES_TOKEN. */
+  GITHUB_ISSUES_REPOSITORY: Schema.optional(
+    Schema.String.check(
+      Schema.makeFilter((value: string) =>
+        /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value) ? undefined : 'must be owner/name',
+      ),
+    ),
+  ),
+  /** Who gets each problem report by email, description included. Blank: reports aren't emailed. */
+  REPORTS_EMAIL: Schema.optional(Schema.String),
+  /** Report issues opened, and report emails sent, per 24 hours: a flood can't fill the repo. */
+  REPORT_LIMIT_PER_DAY: PositiveInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(20))),
 }).check(
   // Sign-up requires clicking an emailed link, so production without a real mailer would lock
   // every new user out. Fail at startup instead: the deploy's health check fails and rolls back.
@@ -45,6 +63,11 @@ const EnvSchema = Schema.Struct({
     env.NODE_ENV !== 'production' || (env.RESEND_API_KEY && env.EMAIL_FROM)
       ? undefined
       : 'RESEND_API_KEY and EMAIL_FROM are required in production',
+  ),
+  Schema.makeFilter((env) =>
+    !env.GITHUB_ISSUES_TOKEN || env.GITHUB_ISSUES_REPOSITORY
+      ? undefined
+      : 'GITHUB_ISSUES_REPOSITORY is required with GITHUB_ISSUES_TOKEN',
   ),
 );
 

@@ -7,6 +7,12 @@ import { EmailKind, EmailTransport, type Email, type EmailSendFailed } from './t
 export interface EmailLimits {
   /** Emails of one kind (e.g. password reset) to one address in any 24 hours. */
   readonly perAddress: number;
+  /**
+   * Replaces `perAddress` for these kinds. User reports all go to the owner's one address, so
+   * theirs is the report cap: enough for a real day, low enough that a flood leaves the daily
+   * total for auth emails.
+   */
+  readonly perAddressByKind?: Partial<Record<EmailKind, number>>;
   /** All emails in any 24 hours: keeps us inside the provider's free daily quota. */
   readonly perDay: number;
 }
@@ -48,6 +54,9 @@ export class Mailer extends Context.Service<
         const db = yield* Database;
         const transport = yield* EmailTransport;
 
+        const perAddressLimit = (kind: EmailKind) =>
+          limits.perAddressByKind?.[kind] ?? limits.perAddress;
+
         // One transaction: an interrupted send rolls back its row and releases the lock
         // (platform/database/database.test.ts checks the driver does that).
         const claim = (email: Email) =>
@@ -72,7 +81,7 @@ export class Mailer extends Context.Service<
 
               if (!counts || counts.total >= limits.perDay) return 'daily limit' as const;
 
-              if (counts.forAddress >= limits.perAddress) return 'address limit' as const;
+              if (counts.forAddress >= perAddressLimit(email.kind)) return 'address limit' as const;
               // Recorded before sending: a send that then fails still counts, which errs on the
               // safe side.
               yield* tx.insert(emailSends).values({ recipient, kind: email.kind });
@@ -100,7 +109,7 @@ export class Mailer extends Context.Service<
 
             if (verdict === 'address limit') {
               yield* Effect.logWarning('Email not sent: per-address limit reached').pipe(
-                Effect.annotateLogs({ kind: email.kind, limit: limits.perAddress }),
+                Effect.annotateLogs({ kind: email.kind, limit: perAddressLimit(email.kind) }),
               );
 
               return;
