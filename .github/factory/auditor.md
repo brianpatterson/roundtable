@@ -104,5 +104,5 @@ nothing:
 ````
 
 Use the OWASP Top 10:2025 category names the reviewer uses (`.github/factory/reviewer.md`). Keep
-titles stable across weeks: the same hole gets the same title, so it isn't filed twice. An empty
+titles stable across runs: the same hole gets the same title, so it isn't filed twice. An empty
 `findings` list is a good outcome, not a failure; don't pad it.

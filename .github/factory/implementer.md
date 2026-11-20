@@ -37,8 +37,9 @@ Write specific questions in your comment, commit nothing, and stop: the workflow
    seconds) and look at the survivors in the files you changed
    (`apps/web/reports/mutation/mutation.json`, status `Survived` or `NoCoverage`). Each is a small
    change to your code that no test noticed: strengthen a test to catch it, or, if the mutant
-   changes nothing observable, say so in the PR description. CI runs the same and the reviewer
-   reads what survives ([ADR-0027](../../docs/adr/0027-mutation-testing-stryker.md)).
+   changes nothing observable, say so in the PR description. This is the only mutation testing a
+   pull request gets: CI runs it nightly on main, not on pull requests
+   ([ADR-0039](../../docs/adr/0039-nightly-mutation-and-security-audit.md)).
 6. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
    test to get there. If you can't make it pass, say exactly what fails and why in the PR
    description.

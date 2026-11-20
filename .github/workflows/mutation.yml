@@ -1,12 +1,11 @@
-# Mutation testing for the API (ADR-0027), on a schedule: Stryker changes the API's code in small
-# ways and reports every change no test notices. A full run takes minutes against Postgres, too
-# long for every pull request, so it runs nightly on main. Advisory: it never fails on the score,
-# only if Stryker itself can't run. The score and the survivors go to the job summary; the report
-# and Stryker's incremental file go to the `api-mutation-report` artifact, which pull requests can
-# later reuse to mutate only what changed.
+# Mutation testing (ADR-0027, ADR-0039), nightly on main: Stryker changes the code in small ways
+# and reports every change no test notices. Pull requests don't run it: a full API run takes about
+# half an hour on a runner, and one that timed out left a factory pull request stuck. Advisory: it
+# never fails on the score, only if Stryker itself can't run. The score and the survivors go to
+# each job's summary and its artifact (`web-mutation-report`, `api-mutation-report`).
 #
 # It also runs on pull requests that change this file, so a change to it is tested before it lands.
-name: API mutation testing
+name: Mutation testing
 
 on:
   schedule:
@@ -19,10 +18,59 @@ permissions:
   contents: read
 
 concurrency:
-  group: api-mutation-${{ github.ref }}
+  group: mutation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # The whole web app: about 20 seconds of mutants on a laptop.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Mutate the web app
+        run: pnpm --filter @roundtable/web test:mutation
+      - name: Report the score and the survivors
+        env:
+          REPORT: apps/web/reports/mutation/mutation.json
+        run: |
+          {
+            echo '## Mutation testing (web)'
+            echo
+            jq -r '
+              [.files[].mutants[]] as $all
+              | ([$all[] | select(.status == "Killed" or .status == "Timeout")] | length) as $killed
+              | ([$all[] | select(.status == "Survived")] | length) as $survived
+              | ([$all[] | select(.status == "NoCoverage")] | length) as $uncovered
+              | "\($all | length) mutants: \($killed) killed, \($survived) survived, \($uncovered) not covered by any test. "
+                + "Score \(if ($killed + $survived + $uncovered) > 0 then (100 * $killed / ($killed + $survived + $uncovered) | floor) else 0 end)%, "
+                + "\(if ($killed + $survived) > 0 then (100 * $killed / ($killed + $survived) | floor) else 0 end)% of covered code."' "$REPORT"
+            echo
+            echo '### Survivors'
+            echo
+            jq -r '[.files | to_entries[] | .key as $f | .value.mutants[] | select(.status == "Survived" or .status == "NoCoverage")
+              | "- `apps/web/\($f):\(.location.start.line)` \(.status): \(.mutatorName), `` \(.replacement | gsub("\n"; " ") | .[0:80]) ``"]
+              | if length == 0 then "None." else .[] end' "$REPORT"
+          } > survivors.md
+
+          cat survivors.md >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p web-mutation-report
+          mv survivors.md web-mutation-report/
+          cp "$REPORT" web-mutation-report/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-mutation-report
+          path: web-mutation-report/
+          retention-days: 14
+
   api:
     runs-on: ubuntu-latest
     # About 7 minutes on a laptop with four workers; a runner is slower.
@@ -92,7 +140,7 @@ jobs:
           cat survivors.md >> "$GITHUB_STEP_SUMMARY"
           mkdir -p api-mutation-report
           mv survivors.md api-mutation-report/
-          cp "$REPORT" apps/api/reports/stryker-incremental.json api-mutation-report/
+          cp "$REPORT" api-mutation-report/
       - uses: actions/upload-artifact@v7
         with:
           name: api-mutation-report
