@@ -323,6 +323,42 @@ Otherwise the user sees "That email already has an account here" and signs in wi
 password instead. That blocks someone from pre-registering your address, or listing it unverified
 on their GitHub account, to get into your account.
 
+## Problem reports
+
+"Report a problem" stores every report in Postgres, opens a GitHub issue in this repository with
+safe context only (report id, page path, release, time, browser family; never what the user
+typed), and emails the owner the full report
+([ADR-0037](../docs/adr/0037-user-problem-reports.md)). Both settings are optional: without the
+token no issue is opened, without the email no report is emailed. **Cost:** $0.
+
+### One-time setup
+
+1. GitHub → **Settings** → **Developer settings** → **Personal access tokens** →
+   **Fine-grained tokens** → **Generate new token**:
+   - Token name: `roundtable-user-reports`; expiration: 1 year (put a reminder in the calendar).
+   - Resource owner: the repository's owner. **Repository access:** _Only select repositories_ →
+     this repository.
+   - **Repository permissions:** **Issues: Read and write**. Nothing else (Metadata: read-only is
+     added automatically). No account permissions.
+2. Copy the token (shown once) and put it, and the address reports go to, on the server. From
+   `infra/`, as for the OAuth credentials above:
+
+   ```bash
+   ssh -t ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; for k in GITHUB_ISSUES_TOKEN REPORTS_EMAIL; do read -rsp "$k: " v; echo; [ -n "$v" ] && sed -i "/^$k=/d" "$f" && printf "%s=%s\n" "$k" "$v" >> "$f"; done; echo "✓ done"'
+   ```
+
+3. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**), then send a report from the
+   sign-in page: an issue labelled `bug` and `user-report` appears, and the email arrives.
+
+Issues go to `GITHUB_ISSUES_REPOSITORY` (`brianpatterson/roundtable` by default in
+`compose.prod.yml`). The labels must exist in that repository; the API never applies `ready`.
+At most `REPORT_LIMIT_PER_DAY` (default 20) issues and report emails go out per 24 hours, and one
+address may send 5 reports an hour; reports past the daily cap are still stored.
+
+**Rotating the token:** generate a new one the same way, run the command above for
+`GITHUB_ISSUES_TOKEN` only, redeploy, then delete the old token. **If it leaks:** delete it on
+GitHub first. It can only read and write this repository's issues.
+
 ## Monitoring
 
 Better Stack watches the site and the backups from outside; Sentry collects API errors
