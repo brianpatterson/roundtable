@@ -256,3 +256,7 @@ the ones a test runs. The uncovered ones are files with no tests yet (the sign-i
   more than 10. Worker restarts after a timeout also give the new worker a new id, so a new
   `app_test_<id>` database (about 0.1 s to create and migrate): harmless in CI, but they pile up
   locally until dropped.
+- **2026-11-20:** the API jobs' limit is 60 minutes, up from 30. A pull request that touched the
+  contract and schema got a full run, which reached 96% (744 of 758 mutants) at 30 minutes and
+  was cancelled. A timed-out job leaves CI `cancelled`, not `failed`, so neither the CI fixer nor
+  the reviewer started and the pull request sat with no `needs-human` label.

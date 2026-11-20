@@ -145,10 +145,12 @@ jobs:
   # mode sees only mutated source and test files, so a change to anything else it depends on
   # (test helpers, migrations, tables, the contract, config, dependencies) gets a full run.
   # Skipped when the pull request doesn't touch the API. The reviewer reads the survivors.
+  # A full run takes about 31 minutes on GitHub's runners; a timeout cancels CI, which nothing in
+  # the factory acts on, so leave room.
   api-mutation:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       pull-requests: read # which files the pull request changed
