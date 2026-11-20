@@ -85,7 +85,6 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-      actions: read
     env:
       PR: ${{ needs.select.outputs.pr }}
       SHA: ${{ needs.select.outputs.sha }}
@@ -105,23 +104,6 @@ jobs:
           ref: ${{ env.SHA }}
           path: pr
           persist-credentials: false
-
-      # The survivors from CI's mutation jobs on this commit (ADR-0027), web and API, if they ran:
-      # code no test notices changing. Read as data, like the rest of the pull request.
-      - name: Load the mutation reports
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN: ${{ github.event.workflow_run.id }}
-        run: |
-          if [ -z "$RUN" ]; then
-            RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --json databaseId --jq '.[0].databaseId // empty')
-          fi
-          [ -n "$RUN" ] || { echo "No CI run for $SHA."; exit 0; }
-          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n mutation-report -D mutation ||
-            echo "No web mutation report in run $RUN."
-          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n api-mutation-report -D mutation-api ||
-            echo "No API mutation report in run $RUN."
 
       # The implementer's replies to earlier reviews of a factory pull request (ADR-0037). Only the
       # factory's own: anyone can comment on a pull request in a public repository.
