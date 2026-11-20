@@ -53,42 +53,64 @@ case "$reason" in *cancelled*) ;; *)
   ;;
 esac
 
-# The sweeper reads the verdict from the heading review.yml writes; if that wording changes, every
-# ready pull request would read as `changes`. Pin the two together.
+# The sweeper reads the verdict from the heading review.yml writes, and finds the review of the head
+# commit by the SHA in its footer. If either changes, every reviewed pull request would read as
+# `changes` or unreviewed. Pin them together.
 review_yml="$here/../workflows/review.yml"
 if ! grep -qF "ready) verdict='✅ Ready for you' ;;" "$review_yml" ||
-  ! grep -qF "printf '%s\n### Factory review: %s" "$review_yml" ||
+  ! grep -qF "printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s," "$review_yml" ||
   ! grep -qF '<!-- factory-review -->\\n### Factory review: ✅ Ready for you' "$here/sweep-prs.sh"; then
-  echo "FAIL: the ready heading in review.yml and the one sweep-prs.sh matches have drifted apart"
+  echo "FAIL: the review comment review.yml writes and what sweep-prs.sh matches have drifted apart"
   failures=$((failures + 1))
 fi
 
-# One pull request whose lookups fail doesn't stop the sweep for the rest. A stand-in gh lists
-# two; GitHub refuses #1's commit.
+# The sweep end to end, against a stand-in gh that answers from canned JSON and applies --jq as
+# gh would. #1's commit lookup fails, which mustn't stop the rest. #2 is green and the reviewer's
+# comment names its head commit, in the footer review.yml writes. #3 is green and its only review
+# is of an older commit, which doesn't count.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+long_ago=$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3H +%Y-%m-%dT%H:%M:%SZ)
+review() { # review <sha>: the comment review.yml posts, verdict ready
+  printf '<!-- factory-review -->\n### Factory review: %s\n\nLooks right.\n\n<sub>Commit %s, reviewed by the factory'"'"'s reviewer agent (ADR-0026). It never approves; the owner merges.</sub>\n' \
+    '✅ Ready for you' "$1"
+}
+jq -n --arg t "$long_ago" '[{number:1,mergeable:"MERGEABLE",headRefOid:"aaa",labels:[{name:"factory"}],author:{login:"app/claude"}},
+  {number:2,mergeable:"MERGEABLE",headRefOid:"bbb",labels:[{name:"factory"}],author:{login:"app/claude"}},
+  {number:3,mergeable:"MERGEABLE",headRefOid:"ccc",labels:[{name:"factory"}],author:{login:"app/claude"}}]' >"$work/prs.json"
+jq -n --arg t "$long_ago" '[{databaseId:9,status:"completed",conclusion:"success",attempt:1,startedAt:$t,updatedAt:$t}]' >"$work/run.json"
+jq -n --arg t "$long_ago" --arg b "$(review bbb)" '[{user:{login:"github-actions[bot]"},body:$b,updated_at:$t}]' >"$work/comments-2.json"
+jq -n --arg t "$long_ago" --arg b "$(review old)" '[{user:{login:"github-actions[bot]"},body:$b,updated_at:$t}]' >"$work/comments-3.json"
+jq -n --arg t "$long_ago" '{commit:{committer:{date:$t}}}' >"$work/commit.json"
 cat >"$work/gh" <<'GH'
 #!/usr/bin/env bash
+filter=.
+prev=
+for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
 case "$1 $2" in
-  "pr list") echo '[{"number":1,"mergeable":"MERGEABLE","sha":"aaa","factory":true},{"number":2,"mergeable":"MERGEABLE","sha":"bbb","factory":true}]' ;;
+  "pr list") file=prs.json ;;
+  "run list") file=run.json ;;
   "api repos/o/r/commits/aaa") echo "GitHub says no" >&2; exit 1 ;;
-  "api repos/o/r/commits/bbb") date -u +%Y-%m-%dT%H:%M:%SZ ;;
-  *) ;; # no CI run, no review
+  "api repos/o/r/commits/"*) file=commit.json ;;
+  "api repos/o/r/issues/2/comments") file=comments-2.json ;;
+  "api repos/o/r/issues/3/comments") file=comments-3.json ;;
+  *) exit 0 ;;
 esac
+jq -rc "$filter" "$WORK/$file" # gh prints strings raw, like -r
 GH
 chmod +x "$work/gh"
 status=0
-output=$(GH=$work/gh GITHUB_REPOSITORY=o/r DRY_RUN=true "$here/sweep-prs.sh" 2>&1) || status=$?
-case "$output" in *"#2 bbb: wait"*) ;; *)
-  echo "FAIL: a failing pull request stops the sweep: got [$output]"
-  failures=$((failures + 1))
-  ;;
-esac
-case "$output" in *"Couldn't sweep #1"*) ;; *)
-  echo "FAIL: a failing pull request isn't reported: got [$output]"
-  failures=$((failures + 1))
-  ;;
-esac
+output=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r DRY_RUN=true "$here/sweep-prs.sh" 2>&1) || status=$?
+expect() { # expect <name> <text the output must contain>
+  case "$output" in *"$2"*) ;; *)
+    echo "FAIL: $1: no [$2] in [$output]"
+    failures=$((failures + 1))
+    ;;
+  esac
+}
+expect "a failing pull request is reported and the sweep carries on" "Couldn't sweep #1"
+expect "a review naming the head commit, in review.yml's footer, reads as ready" "#2 bbb: ok"
+expect "a review of an older commit doesn't count" "#3 ccc: human"
 if [ "$status" -eq 0 ]; then
   echo "FAIL: a sweep with a failed pull request exits 0"
   failures=$((failures + 1))
