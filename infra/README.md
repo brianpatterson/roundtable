@@ -357,8 +357,10 @@ issues are authored by `<app-name>[bot]`, which the factory doesn't trust.
 
    ```bash
    ssh -t ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; for k in GITHUB_ISSUES_APP_ID GITHUB_ISSUES_INSTALLATION_ID REPORTS_EMAIL; do read -rsp "$k: " v; echo; [ -n "$v" ] && sed -i "/^$k=/d" "$f" && printf "%s=%s\n" "$k" "$v" >> "$f"; done; echo "✓ done"'
-   # The private key, on one line with its newlines written as \n, then delete the .pem:
-   awk '{printf "%s\\n", $0}' path/to/the-app.private-key.pem | ssh ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; read -r v; sed -i "/^GITHUB_ISSUES_PRIVATE_KEY=/d" "$f"; printf "GITHUB_ISSUES_PRIVATE_KEY=%s\n" "$v" >> "$f"; echo "✓ done"'
+   # The private key, on one line with its newlines written as \n, then delete the .pem. It's in
+   # single quotes because deploy.sh sources .env with bash: unquoted, the space in
+   # "BEGIN RSA PRIVATE KEY" ends the value and the deploy fails with "RSA: command not found".
+   awk '{printf "%s\\n", $0}' path/to/the-app.private-key.pem | ssh ops@$(tofu output -raw ipv4) 'f=/opt/interview-app/.env; read -r v; sed -i "/^GITHUB_ISSUES_PRIVATE_KEY=/d" "$f"; printf "GITHUB_ISSUES_PRIVATE_KEY='\''%s'\''\n" "$v" >> "$f"; echo "✓ done"'
    ```
 
 4. Redeploy (Actions → **Deploy** → latest run → **Re-run all jobs**), then send a report from the
