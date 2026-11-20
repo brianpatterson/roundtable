@@ -171,6 +171,8 @@ Building blocks, in order:
 3. ✅ **Reviewer** ([ADR-0026](adr/0026-software-factory-reviewer.md)): a second agent with a different prompt and no stake in the implementation
    reviews every PR against the ticket's acceptance criteria and the repo rules. It posts inline
    comments, then a human approves (you stay in the loop at first).
+   When it asks for changes on a factory PR, the implementer reworks it: two attempts, then
+   `needs-human` ([ADR-0037](adr/0037-software-factory-rework.md)).
 4. **Staging environment**: a second deploy target on the same VPS or a second small one. Every
    merge goes to staging first, and production follows automatically if staging is healthy.
    **Deferred until there are users** (2026-11-18): until then it would mostly protect test
