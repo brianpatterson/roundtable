@@ -2,8 +2,9 @@
 //   1. Another module is imported only through its index.ts.
 //   2. Modules never import the assembly: server.ts and main.ts (API) or shell/ (web).
 //   3. platform/, shared/ and design-system/ never import from modules/ (their tests may).
-//   4. An API module never imports another module's tables, except in its own schema.ts (a
-//      foreign key).
+//   4. An API module never imports another module's tables. The one exception is identity's
+//      `users`, which any module's schema.ts may import for a foreign key: links between other
+//      modules are plain ids, never foreign keys (ADR-0044).
 //   5. Code outside design-system/ imports it only through its index.ts, and only design-system/
 //      imports @base-ui/react (ADR-0024), so replacing Base UI touches one folder.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -53,6 +54,8 @@ function resolve(from: string, specifier: string): string | undefined {
 const importPattern = /(?:import|export)\s+(?:type\s+)?(?:\{([^}]*)\}|[^'"]*?)\s*from\s+'([^']+)'/g;
 
 /** Every API module's table and enum names, by module: what rule 4 protects. */
+const identity = 'apps/api/src/modules/identity';
+
 const tablesByModule = new Map<string, Set<string>>();
 
 for (const dir of readdirSync(join(root, 'apps/api/src/modules'))) {
@@ -101,16 +104,17 @@ for (const file of sources.flatMap(walk)) {
 
     const tables = toModule ? tablesByModule.get(toModule) : undefined;
     const imported = names.split(',').map((name) => name.replace(/^\s*type\s+/, '').trim());
-    const foreign = imported.filter((name) => tables?.has(name));
 
-    if (
-      fromModule &&
-      toModule !== fromModule &&
-      foreign.length > 0 &&
-      !file.endsWith('/schema.ts') &&
-      !isTest(file)
-    )
-      problems.push(`${where} (another module's tables: ${foreign.join(', ')})`);
+    const isUsersForeignKey = (name: string) =>
+      file.endsWith('/schema.ts') && toModule === identity && name === 'users';
+
+    const foreign = imported.filter((name) => tables?.has(name) && !isUsersForeignKey(name));
+
+    if (fromModule && toModule !== fromModule && foreign.length > 0 && !isTest(file))
+      problems.push(
+        `${where} (another module's tables: ${foreign.join(', ')}; ` +
+          "only identity's users may be a foreign key, other links are plain ids, ADR-0044)",
+      );
   }
 }
 
