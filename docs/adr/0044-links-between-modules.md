@@ -37,8 +37,9 @@ Option 3, as four rules:
 1. **Links across modules are plain ids**, never foreign keys. Dependencies run one way
    (applications → personas → identity); a module reads another's data only through that module's
    `index.ts`, and a module never needs to know who refers to its rows.
-2. **Any module's tables may reference `users`.** Identity sits under every module, and deleting
-   an account then deletes everything that belongs to it. This replaces ADR-0023's single
+2. **Any module's tables may reference `users`**, and those that do are deleted with the account.
+   Identity sits under every module. A table may still choose not to, as `user_reports` does so
+   a report outlives the account. This replaces ADR-0023's single
    exception. A module that moves to its own database trades the foreign key for an
    account-deleted notice from identity at that point.
 3. **What other modules refer to is archived, not deleted.** A Persona or Skill is archived
@@ -48,7 +49,8 @@ Option 3, as four rules:
    failing between them leaves only harmless leftovers, and retrying works. Sending an
    Application creates the Version first and updates the Application second: a failure leaves
    an unused Version and an unsent Application. Forks live in personas, filed under an
-   application id; deleting an Application asks personas to delete its Forks, and a failure
+   application id that personas treats as an opaque owner key and never resolves (it never
+   reads applications, so rule 1's direction holds); deleting an Application asks personas to delete its Forks, and a failure
    there leaves Forks nothing can reach.
 
 ## Consequences
