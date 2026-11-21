@@ -1,9 +1,9 @@
-import { index, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
-import { APPLICATION_STATUSES } from '@roundtable/contract';
+import { index, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { STORED_APPLICATION_STATUSES } from '@roundtable/contract';
 import { timestamps } from '../../platform/database/columns.js';
 import { users } from '../identity/index.js';
 
-export const applicationStatus = pgEnum('application_status', APPLICATION_STATUSES);
+export const applicationStatus = pgEnum('application_status', STORED_APPLICATION_STATUSES);
 
 // The foreign key to users is the one place this module reaches into identity's tables. It goes
 // if applications ever gets its own database (ADR-0023).
@@ -18,7 +18,9 @@ export const applications = pgTable(
     jobTitle: text('job_title').notNull(),
     jobUrl: text('job_url'),
     status: applicationStatus().notNull().default('applied'),
-    // The creation date doubles as the date the application was submitted.
+    // When it was sent; null while saved (ADR-0045). Postgres's clock, like the timestamps. The
+    // default covers the release before this column, whose inserts are always sent applications.
+    appliedAt: timestamp('applied_at', { withTimezone: true }).defaultNow(),
     ...timestamps,
   },
   // Every query filters by user and sorts by most recently updated.

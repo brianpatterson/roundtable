@@ -27,10 +27,12 @@ describe('the web client', () => {
 
     expect(created).toMatchObject({ company: 'Acme', jobTitle: 'SWE', status: 'applied' });
     expect(created.createdAt).toBeInstanceOf(Date);
+    expect(created.appliedAt).toEqual(created.createdAt);
 
     const updated = await api.updateApplication(created.id, { status: 'offer' });
 
     expect(updated.status).toBe('offer');
+    expect(updated.appliedAt).toEqual(created.appliedAt);
     expect(await api.listApplications()).toEqual([updated]);
 
     await api.deleteApplication(created.id);

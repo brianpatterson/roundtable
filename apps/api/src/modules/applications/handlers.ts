@@ -1,9 +1,19 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { Effect } from 'effect';
 import { HttpApiBuilder } from 'effect/http-api';
-import { ApplicationNotFound, CurrentUser, RoundtableApi } from '@roundtable/contract';
+import {
+  ApplicationNotFound,
+  CurrentUser,
+  RoundtableApi,
+  currentStatus,
+} from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
 import { applications } from './schema.js';
+
+type Row = typeof applications.$inferSelect;
+
+/** A row as the API returns it: a `screening` the previous release wrote reads as interviewing. */
+const toApplication = (row: Row) => ({ ...row, status: currentStatus(row.status) });
 
 /**
  * Every query filters on the signed-in user (CurrentUser, from the Authorization middleware).
@@ -29,7 +39,8 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .select()
             .from(applications)
             .where(eq(applications.userId, user.id))
-            .orderBy(desc(applications.updatedAt));
+            .orderBy(desc(applications.updatedAt))
+            .pipe(Effect.map((rows) => rows.map(toApplication)));
         }).pipe(Effect.orDie),
 
       get: ({ params }) =>
@@ -44,7 +55,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new ApplicationNotFound();
 
-          return row;
+          return toApplication(row);
         }),
 
       create: ({ payload }) =>
@@ -59,7 +70,8 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* Effect.die(new Error('insert returned no row'));
 
-          return row;
+          // applied_at defaults to now(): every status a request can set means it was sent.
+          return toApplication(row);
         }),
 
       update: ({ params, payload }) =>
@@ -68,14 +80,21 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           const [row] = yield* db
             .update(applications)
-            .set(payload)
+            .set({
+              ...payload,
+              // Every status a request can set means it was sent: one moving out of `saved` gets
+              // its applied date now, from Postgres's clock; one already sent keeps its date.
+              ...(payload.status && {
+                appliedAt: sql`coalesce(${applications.appliedAt}, now())`,
+              }),
+            })
             .where(ownedBy(user.id, params.id))
             .returning()
             .pipe(Effect.orDie);
 
           if (!row) return yield* new ApplicationNotFound();
 
-          return row;
+          return toApplication(row);
         }),
 
       delete: ({ params }) =>

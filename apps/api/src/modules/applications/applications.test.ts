@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { Schema } from 'effect';
 import { Application } from '@roundtable/contract';
 import { setupTestApp, signUp, type Json } from '#test/helpers';
+import { applications } from './schema.js';
 
 const t = setupTestApp();
 let cookie: string;
@@ -44,6 +46,8 @@ describe('applications API', () => {
       status: 'applied',
     });
     expect(json.createdAt).toBe(json.updatedAt);
+    // Sent when it was created, by Postgres's clock (ADR-0045).
+    expect(json.appliedAt).toBe(json.createdAt);
   });
 
   it('returns bodies that match the shared contract', async () => {
@@ -65,7 +69,7 @@ describe('applications API', () => {
   it('lists applications most recently updated first', async () => {
     const { json: first } = await create({ company: 'First', jobTitle: 'SWE' });
     await create({ company: 'Second', jobTitle: 'SWE' });
-    await request('PATCH', `/api/applications/${first.id}`, { status: 'screening' });
+    await request('PATCH', `/api/applications/${first.id}`, { status: 'interviewing' });
 
     const res = await request('GET', '/api/applications');
     expect(res.json<ApplicationJson[]>().map((a) => a.company)).toEqual(['First', 'Second']);
@@ -140,5 +144,80 @@ describe('applications API', () => {
     // leaks: a well-formed id that's missing or someone else's is still 404.
     expect(malformed.statusCode).toBe(400);
     expect(malformed.json()).toMatchObject({ errors: [{ path: ['params', 'id'] }] });
+  });
+});
+
+// A request can't set `saved` yet, and only the previous release writes `screening`, so these
+// tests put such rows in the database directly, the way that release (or the next one) would.
+describe('applied date and the status rework (ADR-0045)', () => {
+  async function storeAs(id: string, values: Partial<typeof applications.$inferInsert>) {
+    await t.db.update(applications).set(values).where(eq(applications.id, id));
+  }
+
+  it('keeps the applied date when a sent application changes status', async () => {
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE', status: 'offer' });
+    const res = await request('PATCH', `/api/applications/${created.id}`, { status: 'rejected' });
+
+    expect(created.appliedAt).toBe(created.createdAt);
+    expect(res.json<ApplicationJson>().appliedAt).toBe(created.appliedAt);
+  });
+
+  it('dates an application when it moves from saved to a sent status', async () => {
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
+
+    await storeAs(created.id, { status: 'saved', appliedAt: null });
+    const saved = await request('GET', `/api/applications/${created.id}`);
+
+    expect(saved.json<ApplicationJson>()).toMatchObject({ status: 'saved', appliedAt: null });
+
+    const res = await request('PATCH', `/api/applications/${created.id}`, { status: 'applied' });
+    const sent = res.json<ApplicationJson>();
+
+    expect(sent.status).toBe('applied');
+    expect(sent.appliedAt).toBe(sent.updatedAt);
+  });
+
+  it('leaves the applied date alone when only the details change', async () => {
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
+
+    await storeAs(created.id, { status: 'saved', appliedAt: null });
+    const res = await request('PATCH', `/api/applications/${created.id}`, { jobTitle: 'Staff' });
+
+    expect(res.json<ApplicationJson>()).toMatchObject({ status: 'saved', appliedAt: null });
+  });
+
+  it('reads a screening row as interviewing, in the list and on its own', async () => {
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
+
+    await storeAs(created.id, { status: 'screening' });
+
+    const one = await request('GET', `/api/applications/${created.id}`);
+    const list = await request('GET', '/api/applications');
+
+    expect(one.json<ApplicationJson>().status).toBe('interviewing');
+    expect(list.json<ApplicationJson[]>().map((a) => a.status)).toEqual(['interviewing']);
+  });
+
+  it('refuses screening and saved in request bodies', async () => {
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
+
+    for (const status of ['screening', 'saved']) {
+      const { res } = await create({ company: 'Acme', jobTitle: 'SWE', status });
+      const patched = await request('PATCH', `/api/applications/${created.id}`, { status });
+
+      expect(res.statusCode, status).toBe(400);
+      expect(patched.statusCode, status).toBe(400);
+    }
+  });
+
+  it('ignores an applied date in the request: the server sets it', async () => {
+    const { res, json } = await create({
+      company: 'Acme',
+      jobTitle: 'SWE',
+      appliedAt: '2020-01-01T00:00:00.000Z',
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(json.appliedAt).toBe(json.createdAt);
   });
 });
