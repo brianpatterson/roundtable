@@ -265,6 +265,29 @@ Building blocks, in order:
      read them. The environment admits only `main`, the factory's agents run in the `factory`
      environment and never see them, and changes to `.github/` need the owner's merge.
 
+## Phase 4: The job-search workflow
+
+The product itself: from a posting you're considering, through each interview, to knowing what to
+practice. The words are defined in [`GLOSSARY.md`](../GLOSSARY.md); documents are versioned
+([ADR-0042](adr/0042-version-persona-documents.md)) and written in Markdown
+([ADR-0043](adr/0043-markdown-documents.md)); a new `personas` module links to `applications`
+by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships something usable:
+
+1. **Application status rework**: a `saved` status for postings not yet sent, an applied date
+   separate from the creation date, and `screening` folded into `interviewing` (expand/contract,
+   since a deploy rollback can't undo a migration).
+2. **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
+   self-rating, and an outcome inferred from the next round or a rejection.
+3. **Agenda**: upcoming rounds in date order, with time left and prep progress.
+4. **Skills and prep**: a skill library per user; notes and prep tasks on a round, each task
+   optionally naming a skill.
+5. **Personas and documents**: the `personas` module, a Markdown editor, versions, forks, and
+   PDF export. The editor and PDF rendering each get their own design session and ADR.
+6. **Analytics v1**: pass rate and average self-rating per interview type, with the count of
+   rounds behind each.
+7. **Calendar**: an ICS feed to subscribe to from Google or Apple Calendar (its secret URL and
+   revocation designed first), then a month grid if the agenda isn't enough.
+
 ## What "ensuring quality" can mean
 
 Quality comes in layers. Each answers a different question, and they compound. Already in place
