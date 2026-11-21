@@ -47,19 +47,6 @@ export const currentStatus = (status: StoredApplicationStatus): ApplicationStatu
   status === 'screening' ? 'interviewing' : status;
 
 /**
- * The statuses a request can set. `saved` is readable in this release and settable from the next
- * one: a rollback to the release before it couldn't send a `saved` row in its responses
- * (ADR-0045). `screening` is no longer offered.
- */
-export const SETTABLE_APPLICATION_STATUSES = APPLICATION_STATUSES.filter(
-  (status): status is Exclude<ApplicationStatus, 'saved'> => status !== 'saved',
-);
-
-const SettableStatus = Schema.Literals(SETTABLE_APPLICATION_STATUSES);
-
-export type SettableApplicationStatus = typeof SettableStatus.Type;
-
-/**
  * A status in a response. Decodes a stored `screening` as `interviewing`, so the web app keeps
  * working against a server from before the fold (a tab left open across a rollback).
  */
@@ -111,7 +98,7 @@ export const CreateApplication = Schema.Struct({
   company: Text,
   jobTitle: Text,
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
-  status: Schema.optional(SettableStatus),
+  status: Schema.optional(ApplicationStatus),
 });
 
 export type CreateApplication = typeof CreateApplication.Type;
@@ -120,7 +107,7 @@ export const UpdateApplication = Schema.Struct({
   company: Schema.optional(Text),
   jobTitle: Schema.optional(Text),
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
-  status: Schema.optional(SettableStatus),
+  status: Schema.optional(ApplicationStatus),
 }).check(
   Schema.makeFilter((value) =>
     Object.keys(value).length > 0 ? undefined : 'At least one field is required',

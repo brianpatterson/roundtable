@@ -359,13 +359,14 @@ describe('ApplicationsTable: statuses and the applied date (ADR-0045)', () => {
     expect(appliedCellOf('Acme')).toBe(new Date(APPLIED_AT).toLocaleDateString());
   });
 
-  it('offers neither Screening nor Saved', async () => {
+  it('offers Saved first, and no Screening', async () => {
     await renderTable();
     await userEvent.click(statusFor('Acme'));
 
     const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
 
     expect(options).toEqual([
+      'Saved',
       'Applied',
       'Interviewing',
       'Offer',

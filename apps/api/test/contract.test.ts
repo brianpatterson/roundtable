@@ -63,8 +63,10 @@ describe('what the contract accepts', () => {
     'unknown status': [{ ...minimal, status: 'ghosted' }, false],
     // Folded into interviewing (ADR-0045).
     'screening status': [{ ...minimal, status: 'screening' }, false],
-    // Readable now, settable from the next release, so a rollback never meets one (ADR-0045).
-    'saved status': [{ ...minimal, status: 'saved' }, false],
+    'saved status': [
+      { ...minimal, status: 'saved' },
+      { ...minimal, status: 'saved' },
+    ],
     // The server sets it.
     'applied date is dropped': [{ ...minimal, appliedAt: '2020-01-01T00:00:00.000Z' }, minimal],
   } satisfies Record<string, Case>;
@@ -78,7 +80,7 @@ describe('what the contract accepts', () => {
     'empty company': [{ company: '' }, false],
     'data url': [{ jobUrl: 'data:text/html,x' }, false],
     'screening status': [{ status: 'screening' }, false],
-    'saved status': [{ status: 'saved' }, false],
+    'saved status': [{ status: 'saved' }, { status: 'saved' }],
   } satisfies Record<string, Case>;
 
   const idCases = {
