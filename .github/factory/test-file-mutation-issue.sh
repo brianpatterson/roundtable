@@ -10,7 +10,7 @@ trap 'rm -rf "$work"' EXIT
 failures=0
 
 # The stand-in gh: `issue list --state open` and `--state closed` answer from files (applying --jq
-# as gh would); `issue create` records its arguments, and anything else is recorded and succeeds.
+# as gh would); `issue create` appends its arguments, and anything else is recorded and succeeds.
 cat >"$work/gh" <<'GH'
 #!/usr/bin/env bash
 filter=.
@@ -22,7 +22,7 @@ done
 case "$*" in
   "issue list"*"--state open"*) jq -rc "$filter" "$WORK/open.json" ;;
   "issue list"*"--state closed"*) jq -rc "$filter" "$WORK/closed.json" ;;
-  "issue create"*) printf '%s\n' "$@" >"$WORK/created" ;;
+  "issue create"*) printf '%s\n' "$@" >>"$WORK/created" ;;
   *) echo "$*" >>"$WORK/other" ;;
 esac
 GH
@@ -70,6 +70,29 @@ refute() { # refute <name> <text> <what it must not contain>
 
 echo '[]' >"$work/open.json"
 echo '[]' >"$work/closed.json"
+titles() { grep '^Mutation: test' "$work/created" | paste -sd '|' -; }
+equal() { # equal <name> <expected> <actual>
+  [ "$2" = "$3" ] || { echo "FAIL: $1: expected [$2], got [$3]"; failures=$((failures + 1)); }
+}
+
+# Up to MAX_OPEN (5) tickets, one per file, the most undetected mutants first (ADR-0052).
+run
+equal "a ticket per file, most undetected mutants first" \
+  'Mutation: test `apps/web/src/Page.tsx`|Mutation: test `apps/api/src/a.ts`|Mutation: test `apps/api/src/b.ts`' "$(titles)"
+
+# Open tickets count against the cap, and a file with one open gets no second one.
+jq -nc '[{title: "Mutation: test `apps/web/src/Page.tsx`"}, {title: "Mutation: test `apps/x.ts`"}]' >"$work/open.json"
+MAX_OPEN=3 run
+equal "fills the free slot with the next file without an open ticket" 'Mutation: test `apps/api/src/a.ts`' "$(titles)"
+
+# At the cap, nothing is filed.
+MAX_OPEN=2 run
+expect "at the cap, nothing is filed" "$output" "the most allowed (2)"
+[ ! -s "$work/created" ] || { echo "FAIL: filed at the cap"; failures=$((failures + 1)); }
+echo '[]' >"$work/open.json"
+
+# The rest file one ticket at a time, to check which file comes first.
+export MAX_OPEN=1
 
 # The file with the most undetected mutants wins; killed and ignored ones don't count.
 run
@@ -81,13 +104,6 @@ expect "it lists a survivor with its line" "$created" '`apps/web/src/Page.tsx:5`
 refute "an ignored mutant isn't listed" "$created" "Page.tsx:8"
 expect "the command runs Stryker on that file alone" "$created" "pnpm --filter @roundtable/web test:mutation --mutate src/Page.tsx"
 expect "it asks for tests only" "$created" "changes only test files"
-
-# One ticket at a time.
-echo '[{"number":40}]' >"$work/open.json"
-run
-expect "an open mutation ticket stops filing" "$output" "#40 is still open"
-[ ! -s "$work/created" ] || { echo "FAIL: filed while a mutation ticket was open"; failures=$((failures + 1)); }
-echo '[]' >"$work/open.json"
 
 # A file the owner declined is skipped; the next file down is filed, its mutants in line order and
 # its multi-line replacement on one line.
