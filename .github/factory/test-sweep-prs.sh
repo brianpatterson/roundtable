@@ -57,7 +57,7 @@ esac
 # head commit by the SHA in its footer. If either changes, every reviewed pull request would read as
 # `changes` or unreviewed. Pin them together.
 poster="$here/post-review.sh"
-if ! grep -qF "ready) heading='✅ Ready for you' ;;" "$poster" ||
+if ! grep -qF "verdict=ready heading='✅ Ready for you'" "$poster" ||
   ! grep -qF "printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s," "$poster" ||
   ! grep -qF '<!-- factory-review -->\\n### Factory review: ✅ Ready for you' "$here/sweep-prs.sh"; then
   echo "FAIL: the review comment post-review.sh writes and what sweep-prs.sh matches have drifted apart"

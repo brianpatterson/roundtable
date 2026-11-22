@@ -1,4 +1,4 @@
-# 0052. Store a Round's schedule as a start instant or a calendar due date, replaced as a whole
+# 0054. Store a Round's schedule as a start instant or a calendar due date, replaced as a whole
 
 - **Status:** Accepted
 - **Date:** 2026-11-22
