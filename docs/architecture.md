@@ -85,24 +85,44 @@ flowchart TB
     platform[platform/<br/>config, database, observability]
   end
   subgraph web[apps/web/src]
-    shell[shell/<br/>providers, layout,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications] & wid[modules/identity] & wsup[modules/support]
+    shell[shell/<br/>providers, layout, routes,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications] & wid[modules/identity] & wsup[modules/support]
     wapps --> wshared[shared/<br/>API client]
     wid --> wshared
     wsup --> wshared
-    shell & wapps & wid & wsup --> ds[design-system/<br/>tokens, theme, components on Base UI]
+    shell & wapps & wid & wsup --> ds[design-system/<br/>tokens, theme, components on Base UI,<br/>Link on TanStack Router]
   end
 ```
 
-| Module       | API                                                                                                                                         | Web                                                            | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------- |
-| applications | CRUD handlers, `applications` table                                                                                                         | `ApplicationsPage` (form + table), its query keys              | `applications.ts` |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                           | none              |
-| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                   | `support.ts`      |
-| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                           | `system.ts`       |
+| Module       | API                                                                                                                                         | Web                                                              | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers, `applications` table                                                                                                         | `ApplicationsPage` (form + table), `ApplicationPage`, query keys | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages   | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                             | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                     | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                             | `system.ts`       |
+
+**Routes** ([ADR-0049](adr/0049-tanstack-router.md)): the shell owns the web app's pages, in
+`shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
+component, passing the URL's params as props:
+
+| Path                           | Page                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------ |
+| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page |
+| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date        |
+| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                      |
+| anything else                  | the shell's "Page not found", with a link to the applications                              |
+
+The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
+and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules
+link through the design system's `Link` (the router's `createLink`), type-checked against the
+shell's routes; only `shell/`, `design-system/` and `shared/` import the router. Pages load their
+data through TanStack Query: an application's page reads `GET /api/applications/:id` under the
+key `['applications', id]`, so a change in the table (which invalidates `['applications']`)
+refreshes it. A malformed id, a missing one and another user's all show the same "Application
+not found"; a malformed one is never sent.
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
-the web app's components (Button, TextField, TextArea, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
+the web app's components (Button, Link, TextField, TextArea, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
@@ -322,14 +342,14 @@ sequenceDiagram
   participant B as Browser
   participant A as API (Better Auth)
   participant G as GitHub
-  B->>A: POST /api/auth/sign-in/social {provider: github}
+  B->>A: POST /api/auth/sign-in/social {provider: github, callbackURL: the page's path}
   A-->>B: redirect URL (with state + PKCE challenge)
   B->>G: user approves the app
   G-->>B: redirect to /api/auth/callback/github?code=…&state=…
   B->>A: GET callback
   A->>G: exchange code (+ PKCE verifier) for tokens, fetch profile
   A->>A: find or create user; link to an existing account only if both sides verified the email
-  A-->>B: Set-Cookie session (httpOnly, SameSite=Lax), redirect to /
+  A-->>B: Set-Cookie session (httpOnly, SameSite=Lax), redirect to the page's path (/ on failure)
 ```
 
 ### Security properties

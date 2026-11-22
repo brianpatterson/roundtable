@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SnackbarProvider, createSnackbars } from '../../design-system';
+import { createTestRouter, TestRouterProvider, type TestRouter } from '../../shared/testing/router';
 import { ApplicationsTable } from './ApplicationsTable';
 
 // The table calls the real typed client; only the server behind `fetch` is a stand-in, holding a
@@ -113,10 +114,13 @@ const renderTable = async () => {
     defaultOptions: { queries: { retry: false } },
   });
 
+  // The table links each company to its page, so it renders inside a router.
+  router = createTestRouter(<ApplicationsTable />);
+
   const { container } = render(
     <SnackbarProvider snackbars={appSnackbars}>
       <QueryClientProvider client={queryClient}>
-        <ApplicationsTable />
+        <TestRouterProvider router={router} />
       </QueryClientProvider>
     </SnackbarProvider>,
   );
@@ -125,6 +129,9 @@ const renderTable = async () => {
 
   return container;
 };
+
+/** The router the last `renderTable` rendered in. */
+let router: TestRouter;
 
 const deleteButtonFor = (company: string) =>
   within(screen.getByRole('row', { name: new RegExp(company) })).getByRole('button', {
@@ -400,5 +407,22 @@ describe('ApplicationsTable: statuses and the applied date (ADR-0045)', () => {
 
     await waitFor(() => expect(appliedCellOf('Acme')).not.toBe('Not sent'));
     expect(rows[0]?.status).toBe('applied');
+  });
+});
+
+describe('ApplicationsTable: each application’s page', () => {
+  it('links each company name to its application’s page', async () => {
+    await renderTable();
+
+    const acme = screen.getByRole('link', { name: 'Acme' });
+
+    expect(acme.getAttribute('href')).toBe(`/applications/${ACME_ID}`);
+    expect(screen.getByRole('link', { name: 'Globex' }).getAttribute('href')).toBe(
+      `/applications/${GLOBEX_ID}`,
+    );
+
+    await userEvent.click(acme);
+
+    expect(router.state.location.pathname).toBe(`/applications/${ACME_ID}`);
   });
 });
