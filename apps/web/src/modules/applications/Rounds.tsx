@@ -12,6 +12,7 @@ import { api } from '../../shared/api';
 import styles from './Rounds.module.css';
 import { interviewTypeLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
+import { RoundTags } from './RoundTags';
 
 const typeOptions = INTERVIEW_TYPES.map((type) => ({
   value: type,
@@ -86,16 +87,19 @@ export function Rounds({ applicationId }: { applicationId: string }) {
         <ol className={styles.list} aria-label="Rounds">
           {rounds.data.map((round, i) => (
             <li key={round.id} className={styles.round}>
-              <span>
-                {roundName(i + 1)}: {interviewTypeLabel(round.interviewType)}
-              </span>
-              <Button
-                variant="text"
-                aria-label={`Delete ${roundName(i + 1)}`}
-                onClick={() => askToDelete(round, i + 1)}
-              >
-                Delete
-              </Button>
+              <div className={styles.heading}>
+                <span>
+                  {roundName(i + 1)}: {interviewTypeLabel(round.interviewType)}
+                </span>
+                <Button
+                  variant="text"
+                  aria-label={`Delete ${roundName(i + 1)}`}
+                  onClick={() => askToDelete(round, i + 1)}
+                >
+                  Delete
+                </Button>
+              </div>
+              <RoundTags round={round} name={roundName(i + 1)} />
             </li>
           ))}
         </ol>
