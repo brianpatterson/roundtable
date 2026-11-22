@@ -26,9 +26,10 @@
   border-bottom: 1px solid var(--ds-color-outline-variant);
 }
 
-/* The Round's name, with its Delete button beside it. */
+/* The Round's name and when it is, with its buttons beside them. */
 .heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--ds-space-3);
@@ -50,7 +51,23 @@
   list-style: none;
 }
 
-/* The type picker and the Add button on one line, wrapping on narrow screens. */
+.summary {
+  display: flex;
+  flex-direction: column;
+  padding: var(--ds-space-1) 0;
+}
+
+.when {
+  font: var(--ds-type-body-small);
+  color: var(--ds-color-on-surface-variant);
+}
+
+.actions {
+  display: flex;
+  gap: var(--ds-space-1);
+}
+
+/* The type picker, the schedule and the Add button on one line, wrapping on narrow screens. */
 .add {
   display: flex;
   flex-wrap: wrap;

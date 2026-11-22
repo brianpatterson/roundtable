@@ -83,6 +83,27 @@ describe('the web client', () => {
     );
   });
 
+  it('schedules a Round, sending its start as an instant', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const startsAt = new Date('2026-11-25T15:30:00Z');
+
+    const round = await api.createRound(application.id, {
+      interviewType: 'coding',
+      startsAt,
+      durationMinutes: 60,
+    });
+
+    expect(round).toMatchObject({ startsAt, durationMinutes: 60, dueOn: null });
+
+    const due = await api.scheduleRound(application.id, round.id, { dueOn: '2026-11-28' });
+
+    expect(due).toMatchObject({ startsAt: null, durationMinutes: null, dueOn: '2026-11-28' });
+    expect(await api.listRounds(application.id)).toEqual([due]);
+    await expect(
+      api.scheduleRound(application.id, round.id, { durationMinutes: 30 }),
+    ).rejects.toThrow('A duration needs a start time');
+  });
+
   it('reads the public auth config without a session', async () => {
     expect(await clientFor().authConfig()).toEqual({ providers: [] });
   });

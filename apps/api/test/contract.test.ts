@@ -107,7 +107,72 @@ describe('what the contract accepts', () => {
     ],
     'unknown type': [{ interviewType: 'onsite' }, false],
     'missing type': [{}, false],
+    'a start, as a Date': [
+      { interviewType: 'coding', startsAt: '2026-11-25T15:30:00Z' },
+      { interviewType: 'coding', startsAt: new Date('2026-11-25T15:30:00Z') },
+    ],
+    'a start and a duration': [
+      { interviewType: 'coding', startsAt: '2026-11-25T15:30:00Z', durationMinutes: 480 },
+      { interviewType: 'coding', startsAt: new Date('2026-11-25T15:30:00Z'), durationMinutes: 480 },
+    ],
+    'a due date': [
+      { interviewType: 'take_home', dueOn: '2024-02-29' },
+      { interviewType: 'take_home', dueOn: '2024-02-29' },
+    ],
+    'all null': [
+      { interviewType: 'coding', startsAt: null, durationMinutes: null, dueOn: null },
+      { interviewType: 'coding', startsAt: null, durationMinutes: null, dueOn: null },
+    ],
+    'a start and a due date': [
+      { interviewType: 'coding', startsAt: '2026-11-25T15:30:00Z', dueOn: '2026-11-25' },
+      false,
+    ],
+    'a duration alone': [{ interviewType: 'coding', durationMinutes: 30 }, false],
+    'a duration of 4': [
+      { interviewType: 'coding', startsAt: '2026-11-25T15:30:00Z', durationMinutes: 4 },
+      false,
+    ],
+    'a duration of 481': [
+      { interviewType: 'coding', startsAt: '2026-11-25T15:30:00Z', durationMinutes: 481 },
+      false,
+    ],
+    'a malformed start': [{ interviewType: 'coding', startsAt: 'soon' }, false],
+    'a due date not in the calendar': [{ interviewType: 'coding', dueOn: '2025-02-29' }, false],
+    'a due date as a day/month string': [{ interviewType: 'coding', dueOn: '25/11/2026' }, false],
   } satisfies Record<string, Case>;
+
+  const scheduleCases = {
+    'not scheduled': [{}, {}],
+    'a due date': [{ dueOn: '2026-11-28' }, { dueOn: '2026-11-28' }],
+    'a start and a due date': [{ startsAt: '2026-11-25T15:30:00Z', dueOn: '2026-11-28' }, false],
+    'a duration alone': [{ durationMinutes: 30 }, false],
+    'a duration as text': [{ startsAt: '2026-11-25T15:30:00Z', durationMinutes: '30' }, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(scheduleCases))('schedule: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.RoundSchedule)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
+  // The web app sends what the user typed, so the client must refuse the same schedules first.
+  it('encodes a schedule, and refuses an inconsistent one before it is sent', () => {
+    const encode = Schema.encodeUnknownExit(contract.CreateRound);
+    const startsAt = new Date('2026-11-25T15:30:00Z');
+
+    expect(encode({ interviewType: 'coding', startsAt, durationMinutes: 60 })).toEqual(
+      Exit.succeed({
+        interviewType: 'coding',
+        startsAt: '2026-11-25T15:30:00.000Z',
+        durationMinutes: 60,
+      }),
+    );
+    expect(Exit.isFailure(encode({ interviewType: 'coding', durationMinutes: 60 }))).toBe(true);
+    expect(Exit.isFailure(encode({ interviewType: 'coding', startsAt, dueOn: '2026-11-25' }))).toBe(
+      true,
+    );
+  });
 
   it.each(Object.entries(roundCases))('round: %s', (_name, [input, decoded]) => {
     const exit = Schema.decodeUnknownExit(contract.CreateRound)(input);
@@ -248,6 +313,22 @@ describe('responses from the release before the status rework still decode', () 
     expect(Schema.decodeUnknownSync(contract.Application)(before)).toMatchObject({
       status: 'interviewing',
       appliedAt: null,
+    });
+  });
+
+  it('reads a Round from before scheduling as not scheduled yet', () => {
+    const round = {
+      id: '00000000-0000-4000-8000-000000000002',
+      applicationId: before.id,
+      interviewType: 'coding',
+      createdAt: before.createdAt,
+      updatedAt: before.updatedAt,
+    };
+
+    expect(Schema.decodeUnknownSync(contract.Round)(round)).toMatchObject({
+      startsAt: null,
+      durationMinutes: null,
+      dueOn: null,
     });
   });
 

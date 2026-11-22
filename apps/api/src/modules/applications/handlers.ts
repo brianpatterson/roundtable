@@ -10,6 +10,7 @@ import {
   TooManyTags,
   currentStatus,
   sameTag,
+  type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
 import { applications, rounds } from './schema.js';
@@ -18,6 +19,19 @@ type Row = typeof applications.$inferSelect;
 
 /** A row as the API returns it: a `screening` the previous release wrote reads as interviewing. */
 const toApplication = (row: Row) => ({ ...row, status: currentStatus(row.status) });
+
+/** A whole schedule as columns: what the request leaves out is cleared. */
+const scheduleOf = (schedule: RoundSchedule) => ({
+  startsAt: schedule.startsAt ?? null,
+  durationMinutes: schedule.durationMinutes ?? null,
+  dueOn: schedule.dueOn ?? null,
+});
+
+/**
+ * A Round's date for the list: its start, or the start of its due date's day (UTC: the server
+ * doesn't know the user's time zone). Undated Rounds come last.
+ */
+const roundDate = sql`coalesce(${rounds.startsAt}, ${rounds.dueOn}::timestamp at time zone 'UTC') asc nulls last`;
 
 /**
  * Every query filters on the signed-in user (CurrentUser, from the Authorization middleware).
@@ -196,7 +210,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .select()
             .from(rounds)
             .where(eq(rounds.applicationId, owned.id))
-            .orderBy(asc(rounds.createdAt))
+            .orderBy(roundDate, asc(rounds.createdAt), asc(rounds.id))
             .pipe(Effect.orDie);
         }),
 
@@ -226,7 +240,11 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
                 const [round] = yield* tx
                   .insert(rounds)
-                  .values({ applicationId: application.id, interviewType: payload.interviewType })
+                  .values({
+                    applicationId: application.id,
+                    interviewType: payload.interviewType,
+                    ...scheduleOf(payload),
+                  })
                   .returning();
 
                 // Its first Round moves an applied application to interviewing (GLOSSARY.md). Any
@@ -244,6 +262,22 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .pipe(Effect.orDie);
 
           if (!row) return yield* new ApplicationNotFound();
+
+          return row;
+        }),
+
+      scheduleRound: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const user = yield* CurrentUser;
+
+          const [row] = yield* db
+            .update(rounds)
+            .set(scheduleOf(payload))
+            .where(ownedRound(user.id, params.id, params.roundId))
+            .returning()
+            .pipe(Effect.orDie);
+
+          if (!row) return yield* new RoundNotFound();
 
           return row;
         }),

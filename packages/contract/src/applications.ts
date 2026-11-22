@@ -177,7 +177,77 @@ export const InterviewType = Schema.Literals(INTERVIEW_TYPES);
 
 export type InterviewType = typeof InterviewType.Type;
 
-export const CreateRound = Schema.Struct({ interviewType: InterviewType });
+/** A duration's bounds, in whole minutes: a five-minute call to an eight-hour onsite. */
+export const ROUND_DURATION_MINUTES = { minimum: 5, maximum: 480 } as const;
+
+/** The earliest date a Round can have, and the latest: a date Postgres stores as given. */
+const EARLIEST = '1970-01-01';
+
+const LATEST = '9999-12-31';
+
+/**
+ * When a scheduled Round starts: an instant, an ISO 8601 string on the wire. The web app turns the
+ * user's local date and time into it, and shows it back in their time zone.
+ */
+const StartsAt = Schema.DateFromString.check(
+  Schema.isBetweenDate({
+    minimum: new Date(`${EARLIEST}T00:00:00Z`),
+    maximum: new Date(`${LATEST}T23:59:59Z`),
+  }),
+);
+
+const DurationMinutes = Schema.Int.check(Schema.isBetween(ROUND_DURATION_MINUTES));
+
+/** `2026-11-25`: a real calendar date in Postgres's range, with no time and no time zone. */
+const isCalendarDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < EARLIEST) return false;
+
+  const time = Date.parse(`${value}T00:00:00Z`);
+
+  // `Date.parse` rolls 2026-02-30 over to March, so the date must come back unchanged.
+  return !Number.isNaN(time) && new Date(time).toISOString().startsWith(value);
+};
+
+/** When a take-home is due: a calendar date (`YYYY-MM-DD`), the same wherever the user is. */
+const DueOn = Schema.String.check(
+  Schema.makeFilter((value: string) =>
+    isCalendarDate(value) ? undefined : 'must be a date (YYYY-MM-DD)',
+  ),
+);
+
+/**
+ * A Round's schedule (GLOSSARY.md): a start, with a duration when the company gave one; a due date
+ * (a take-home); or neither, not scheduled yet. Null and absent mean the same: not set.
+ */
+const scheduleFields = {
+  startsAt: Schema.optional(Schema.NullOr(StartsAt)),
+  durationMinutes: Schema.optional(Schema.NullOr(DurationMinutes)),
+  dueOn: Schema.optional(Schema.NullOr(DueOn)),
+};
+
+interface ScheduleFields {
+  readonly startsAt?: Date | null | undefined;
+  readonly durationMinutes?: number | null | undefined;
+  readonly dueOn?: string | null | undefined;
+}
+
+/** A start and a due date can't both be set, and a duration needs a start. */
+const isConsistentSchedule = Schema.makeFilter((value: ScheduleFields) => {
+  const starts = value.startsAt !== undefined && value.startsAt !== null;
+
+  if (starts && value.dueOn !== undefined && value.dueOn !== null) {
+    return 'A round has a start time or a due date, not both';
+  }
+
+  const hasDuration = value.durationMinutes !== undefined && value.durationMinutes !== null;
+
+  return hasDuration && !starts ? 'A duration needs a start time' : undefined;
+});
+
+export const CreateRound = Schema.Struct({
+  interviewType: InterviewType,
+  ...scheduleFields,
+}).check(isConsistentSchedule);
 
 export type CreateRound = typeof CreateRound.Type;
 
@@ -213,6 +283,18 @@ export type RoundTag = typeof RoundTag.Type;
 /** Whether two Tags are the same one: case and surrounding spaces don't count. */
 export const sameTag = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/**
+ * A Round's whole schedule, replacing the one it had: what isn't given is cleared, so `{}` makes
+ * it not scheduled yet.
+ */
+export const RoundSchedule = Schema.Struct(scheduleFields).check(isConsistentSchedule);
+
+export type RoundSchedule = typeof RoundSchedule.Type;
+
+/** A schedule field in a response. A server from before the schedule leaves it out: null. */
+const ResponseField = <S extends Schema.Top>(schema: S) =>
+  Schema.NullOr(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null)));
+
 /** A Round as the API returns it: one interview within an Application. */
 export const Round = Schema.Struct({
   id: Schema.String,
@@ -223,6 +305,12 @@ export const Round = Schema.Struct({
    * leaves them out, which reads as none.
    */
   tags: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
+  /** When it starts, if it's scheduled. */
+  startsAt: ResponseField(Schema.DateFromString),
+  /** How long it lasts, in minutes: only with a start, and only when the company said. */
+  durationMinutes: ResponseField(Schema.Int),
+  /** When it's due (a take-home), as `YYYY-MM-DD`. Never set with a start. */
+  dueOn: ResponseField(Schema.String),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 });
@@ -273,7 +361,8 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       success: HttpApiSchema.NoContent,
       error: ApplicationNotFound,
     }),
-    // An application's Rounds, in the order they were added.
+    // An application's Rounds: dated ones first, in date order, then the rest in the order they
+    // were added.
     HttpApiEndpoint.get('listRounds', '/:id/rounds', {
       params: IdParams,
       success: Schema.Array(Round),
@@ -285,6 +374,13 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       payload: CreateRound,
       success: Round.pipe(HttpApiSchema.status(201)),
       error: ApplicationNotFound,
+    }),
+    // Sets, changes or clears a Round's schedule, as a whole.
+    HttpApiEndpoint.put('scheduleRound', '/:id/rounds/:roundId/schedule', {
+      params: RoundParams,
+      payload: RoundSchedule,
+      success: Round,
+      error: RoundNotFound,
     }),
     HttpApiEndpoint.delete('deleteRound', '/:id/rounds/:roundId', {
       params: RoundParams,

@@ -34,10 +34,12 @@ mark, the code is what's true.
   for applications made as that persona. Not to be confused with the user's account.
 - **Prep** _(planned)_: what the user does to get ready for one Round: notes, and **prep tasks** ("redo the LRU
   cache problem"), each of which can name the Skill it practices.
-- **Round**: one interview within an Application, of one Interview type, listed in the order it
-  was added. An onsite of four back-to-back interviews is four Rounds on the same day, not one.
-  _(Planned:)_ it has a scheduled time (a start and a duration), a due date (a take-home), or
-  neither yet (the company named the step but hasn't booked it).
+- **Round**: one interview within an Application, of one Interview type. An onsite of four
+  back-to-back interviews is four Rounds on the same day, not one. It has a scheduled time (a
+  start, and a duration when the company gave one), a due date (a take-home), or neither yet (the
+  company named the step but hasn't booked it). Listed with dated Rounds first, in date order (a
+  scheduled Round by its start, a take-home by its due date), then the rest in the order they were
+  added.
 - **Self-rating** _(planned)_: the user's own score for a Round, given right after it, with a note on what
   went wrong. Immediate and per Round, where the Outcome is late and coarse.
 - **Session expiry**: the moment the API answers `Unauthorized` for a user the web app still
