@@ -241,13 +241,13 @@ erDiagram
   GitHub, say), which is how account linking works.
 - `application_status` is a Postgres enum: `saved → applied → interviewing → offer → accepted`,
   plus the terminal states `rejected` and `withdrawn`. Transitions aren't enforced
-  ([ADR-0006](adr/0006-status-enum-and-dates.md)). `saved` is a posting not yet sent; requests
-  can't set it until the next release, so a rollback never meets one it can't send. The enum
+  ([ADR-0006](adr/0006-status-enum-and-dates.md)). `saved` is a posting not yet sent. The enum
   still holds `screening`, folded into `interviewing`: no request sets it, the API reads a stored
   one as `interviewing`, and a later release drops it
   ([ADR-0045](adr/0045-saved-status-and-applied-date.md)).
 - `applied_at` is when the application was sent, set by the server from Postgres's clock: on
-  insert by its default, and on a status change if it was still null. Rows from before it was
+  insert by its default (null for a `saved` one), and on a status change if it was still null.
+  Moving back to `saved` clears it. Rows from before it was
   added were backfilled from `created_at` (ADR-0045).
 - Index `applications_user_id_updated_at_idx (user_id, updated_at DESC)` serves the only list
   query: one user's applications, newest first.

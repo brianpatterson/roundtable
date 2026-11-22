@@ -35,6 +35,15 @@ describe('the web client', () => {
     expect(updated.appliedAt).toEqual(created.appliedAt);
     expect(await api.listApplications()).toEqual([updated]);
 
+    const saved = await api.createApplication({
+      company: 'Globex',
+      jobTitle: 'SWE',
+      status: 'saved',
+    });
+
+    expect(saved).toMatchObject({ status: 'saved', appliedAt: null });
+
+    await api.deleteApplication(saved.id);
     await api.deleteApplication(created.id);
     expect(await api.listApplications()).toEqual([]);
   });

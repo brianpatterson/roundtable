@@ -15,8 +15,10 @@
   }
 }
 
-/* Lines the button up with the inputs, below their labels. */
+/* Lines the buttons up with the inputs, below their labels. */
 .form > .submit {
+  display: flex;
+  gap: var(--ds-space-2);
   flex: 0 0 auto;
   padding-top: 20px;
 }
