@@ -1,6 +1,6 @@
 # 0025. Build labeled tickets with Claude Code in GitHub Actions, gated by the owner
 
-- **Status:** Accepted, amended by [ADR-0048](0048-claude-mentions-on-pull-requests-only.md)
+- **Status:** Accepted, amended by [0048](0048-claude-mentions-on-pull-requests-only.md)
 - **Date:** 2026-11-16
 
 ## Context

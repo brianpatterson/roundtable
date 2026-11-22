@@ -1,6 +1,6 @@
 # 0047. Dispatch ready tickets in dependency order, one at a time, once their blockers are deployed
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [0048](0048-claude-mentions-on-pull-requests-only.md)
 - **Date:** 2026-11-21
 
 ## Context

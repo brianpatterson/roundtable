@@ -1,6 +1,6 @@
 # 0041. Let the implementer read the user's report, fetched by the workflow with a token the agent never sees
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [0048](0048-claude-mentions-on-pull-requests-only.md)
 - **Date:** 2026-11-20
 
 ## Context

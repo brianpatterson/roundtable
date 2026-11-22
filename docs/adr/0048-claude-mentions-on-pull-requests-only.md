@@ -33,6 +33,11 @@ Option 3. The implement job runs only for the owner's `@claude` on a pull reques
 does nothing; label the issue `ready` instead. A user report's issue is never worked on in tag mode,
 so its report is fetched only by `build`.
 
+This amends [ADR-0025](0025-software-factory-implementer.md) (the two ways the implementer starts),
+[ADR-0047](0047-factory-dispatcher.md) (its last decision bullet: an `@claude` comment no longer
+starts the implementer outside the queue) and [ADR-0041](0041-factory-reads-user-reports.md) (the
+report is fetched in the `build` job, not the implement job).
+
 ## Consequences
 
 - Every build of a ticket goes through the dispatcher's checks, and the build's strict check of
