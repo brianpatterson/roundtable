@@ -1,0 +1,54 @@
+# The factory's dispatcher (ADR-0047): decides which `ready` ticket the implementer builds next.
+# A ticket waits until every issue blocking it is merged and deployed, and one ticket is in flight
+# at a time (labeled `building` until what closed it is deployed). This workflow sweeps: it
+# releases tickets whose work is deployed, sends back a ticket someone else edited after the
+# owner's `ready` label, hands a ticket whose blocker was closed without being merged to a human,
+# and tells the owner when a waiting ticket can start. The Factory workflow's gate makes the same
+# decision the moment the owner labels a ticket. The rules live in .github/factory/dispatch.sh,
+# pinned by test-dispatch.sh in CI. No agent runs here.
+name: Dispatcher
+
+on:
+  # A blocker that closes may unblock a ticket, or, closed without being merged, need a human.
+  issues:
+    types: [closed]
+  # What was waiting on a merge can start once it's deployed.
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+    branches: [main]
+  # A backstop for an event that was missed or a gate that GitHub dropped.
+  schedule:
+    - cron: '15,45 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print what it would do and change nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Shared with the Factory workflow's gate, so two decisions never read the same in-flight state.
+concurrency:
+  group: factory-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # compares commits with what's deployed
+      issues: write # labels and comments
+      actions: read # finds the latest successful Deploy
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/factory
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: .github/factory/dispatch.sh
