@@ -56,7 +56,8 @@ each module is what a future service or microfrontend would become.
   weekly and opens `architecture` issues ([ADR-0031](docs/adr/0031-weekly-architecture-review.md)); don't edit those skills, update them from upstream.
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
-  [ADR-0033](docs/adr/0033-review-every-pull-request.md)).
+  [ADR-0033](docs/adr/0033-review-every-pull-request.md)). `.github/factory/post-review.sh` edits its one comment on each
+  re-review and posts a short new one when it asks for changes, so Auto-fix sees it ([ADR-0046](docs/adr/0046-review-posts-new-comment-on-changes.md)).
   `.github/workflows/mutation.yml`: Stryker on the web app and the API, nightly on main, advisory;
   not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
   `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the nightly security

@@ -61,6 +61,9 @@ jobs:
       # When the sweeper reruns CI or hands a stuck factory pull request to a human (ADR-0040).
       - name: Sweeper decisions
         run: .github/factory/test-sweep-prs.sh
+      # What the reviewer posts, and when a re-review adds a comment Auto-fix can see (ADR-0046).
+      - name: Review comments
+        run: .github/factory/test-post-review.sh
       - name: User report hand-off
         run: .github/factory/test-report-handoff.sh
       - name: Schema and migrations are in sync
