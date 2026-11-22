@@ -344,6 +344,14 @@ echo '[{"number":47}]' >"$work/ready.json"
 expect "a sweep starts the mutation ticket" "$(DRY_RUN=true run)" "#47: start"
 echo '[{"number":49}]' >"$work/ready.json"
 expect "and ignores the other workflow-labeled issue" "$(DRY_RUN=true run)" "#49: ignore"
+# The owner's tickets start before the nightly run's, even one labeled later (ADR-0052): #47's
+# label is from 10:00, #20's from 12:00.
+expect "a mutation ticket is marked nightly" "$(run --state 47 | jq -c .ready.nightly)" true
+expect "an owner's ticket isn't" "$(run --state 20 | jq -c .ready.nightly)" false
+echo '[{"number":47},{"number":20}]' >"$work/ready.json"
+output=$(DRY_RUN=true run)
+expect "the owner's ticket starts first" "$output" "#20: start"
+expect "and the mutation ticket queues behind it" "$output" "#47: queue"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

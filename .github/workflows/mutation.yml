@@ -148,9 +148,9 @@ jobs:
           path: api-mutation-report/
           retention-days: 14
 
-  # The factory's next mutation ticket (ADR-0051): the file with the most mutants no test detects,
-  # as a `mutation` issue this job labels `ready`, so the dispatcher builds it without waiting for
-  # the owner. One at a time, so nothing is filed while one is open. Only from main: anywhere else
+  # The factory's mutation tickets (ADR-0051, ADR-0052): for the files with the most mutants no test
+  # detects, `mutation` issues this job labels `ready`, so the dispatcher builds them without waiting
+  # for the owner, after the owner's own tickets. It tops up to five open, one per file. Only from main: anywhere else
   # (a pull request that changes this file, a manual run on a branch) it prints the ticket instead.
   file:
     needs: [web, api]

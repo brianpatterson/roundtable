@@ -64,8 +64,8 @@ each module is what a future service or microfrontend would become.
   re-review and posts a short new one when it asks for changes, so Auto-fix sees it ([ADR-0046](docs/adr/0046-review-posts-new-comment-on-changes.md)).
   `.github/workflows/mutation.yml`: Stryker on the web app and the API, nightly on main, advisory;
   not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
-  It then files one tests-only `mutation` ticket at a time through `.github/factory/file-mutation-issue.sh`,
-  labeled `ready` by the workflow, which the dispatcher accepts on that kind of ticket only ([ADR-0051](docs/adr/0051-nightly-mutation-tickets.md)).
+  It then tops up to five open tests-only `mutation` tickets, one per file, through `.github/factory/file-mutation-issue.sh`,
+  labeled `ready` by the workflow, which the dispatcher accepts on that kind of ticket only and builds after the owner's ([ADR-0051](docs/adr/0051-nightly-mutation-tickets.md), [ADR-0052](docs/adr/0052-more-mutation-tickets-behind-the-owners.md)).
   `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the nightly security
   auditor (skipped when main hasn't changed), which runs throwaway tests and files private draft advisories ([ADR-0036](docs/adr/0036-weekly-security-audit.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
