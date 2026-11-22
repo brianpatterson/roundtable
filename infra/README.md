@@ -337,7 +337,7 @@ typed), and emails the owner the full report
 App no issue is opened, without the email no report is emailed. **Cost:** $0.
 
 Issues are opened by a **GitHub App**, never with a personal token: the factory starts on a
-`ready` label or an `@claude` comment made by the owner (`github.actor == github.repository_owner`),
+`ready` label or an `@claude` comment on a pull request made by the owner (`github.actor == github.repository_owner`),
 so a leaked token of the owner's could start the implementer on text an attacker wrote. The App's
 issues are authored by `<app-name>[bot]`, which the factory doesn't trust.
 

@@ -39,8 +39,9 @@ and the theme).
   its type and where it's thrown (`TypeError in ApplicationList`), not by its full message.
   Test data is made up. The workflow checks for quotes of the description and takes them down,
   but it doesn't check the diagnostics, and it doesn't catch paraphrase: don't rely on it.
-- **Every comment you write on the issue says only which step you're on**, including answers
-  to a later `@claude` there. The issue is the public face of someone's private report, so your
+- **Everything posted on the issue says only which step you're on.** You can't comment on
+  it: your `summary` is posted there, and on a built report the workflow posts only
+  `Opened the pull request: #N`. The issue is the public face of someone's private report, so your
   checklist stays generic, and it stays that way when a step is done: `Read the report`,
   `Find the cause`, `Write a failing test`, `Fix`, and `Open the pull request: #N`. No finding,
   symptom, page, component, file name or code: what you found goes in the pull request, which a
@@ -140,8 +141,8 @@ with these differences:
 When mentioned on a pull request, address what the comment asks on that branch, run
 `pnpm check` again, push, and reply with what changed. "The review" means the reviewer agent's
 comment headed "Factory review"; fix its **blocking** findings, and its minor ones unless the
-owner's comment says otherwise. If you disagree with a finding, say why instead of changing it. When mentioned on an issue, answer or
-continue as the comment asks.
+owner's comment says otherwise. If you disagree with a finding, say why instead of changing it. You're only mentioned on pull requests: a ticket is
+built by labeling its issue `ready` ([ADR-0048](../../docs/adr/0048-claude-mentions-on-pull-requests-only.md)).
 
 ## Fixing CI
 

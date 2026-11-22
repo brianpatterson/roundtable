@@ -492,13 +492,13 @@ pre-upgrade branch fails to migrate.
 Every Monday, the Architecture review workflow runs Matt Pocock's `improve-codebase-architecture`
 skill (vendored in `.github/factory/skills/`) unattended over recently changed code, uploads its
 HTML report, and opens an `architecture` issue for each Strong candidate; the owner labels it
-`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets once its gate allows ([ADR-0025](adr/0025-software-factory-implementer.md)). `Dispatcher`: on issue close, after each deploy and every 30 minutes, starts the next `ready` ticket in dependency order ([ADR-0047](adr/0047-factory-dispatcher.md)). `Factory sweeper`: every 30 minutes, reruns a cancelled CI on a factory pull request once and labels any other stuck one `needs-human` with the reason ([ADR-0040](adr/0040-factory-sweeper.md)). `Security audit`: nightly when main changed ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)), an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)). `Rework`: the implementer again, when the reviewer asks for changes on a factory PR ([ADR-0037](adr/0037-software-factory-rework.md)) |
+`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets through the dispatcher's `workflow_dispatch` (`verify`, then `build`), and on the owner's `@claude` on a pull request ([ADR-0025](adr/0025-software-factory-implementer.md), [ADR-0047](adr/0047-factory-dispatcher.md), [ADR-0048](adr/0048-claude-mentions-on-pull-requests-only.md)). `Dispatcher`: on issue close, after each deploy and every 30 minutes, starts the next `ready` ticket in dependency order ([ADR-0047](adr/0047-factory-dispatcher.md)). `Factory sweeper`: every 30 minutes, reruns a cancelled CI on a factory pull request once and labels any other stuck one `needs-human` with the reason ([ADR-0040](adr/0040-factory-sweeper.md)). `Security audit`: nightly when main changed ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)), an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)). `Rework`: the implementer again, when the reviewer asks for changes on a factory PR ([ADR-0037](adr/0037-software-factory-rework.md)) |
 | Production | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md)) |
 
 ### Software factory
 
 Tickets are GitHub issues written from the feature or bug form. When the owner labels one
-`ready` (or mentions `@claude` on an issue or pull request), the Factory workflow runs Claude Code
+`ready` (or mentions `@claude` on a pull request), the Factory workflow runs Claude Code
 in a GitHub Actions runner with Postgres, under `.github/factory/implementer.md` and `CLAUDE.md`.
 It builds the ticket on a branch until `pnpm check` passes and opens a pull request as the Claude
 GitHub App, so the usual CI runs on it; a human reviews and merges. Its token lives in the
@@ -518,7 +518,8 @@ ticket, and as the Dispatcher workflow when an issue closes, a deploy finishes, 
 minutes. Both start a ticket the same way, through the Factory workflow's `workflow_dispatch`: a
 `verify` job with no secrets checks the same rules again, then `build` runs the implementer in
 agent mode, with the ticket as a file it re-checks for edits after writing, and its answer posted
-by the workflow. Only an owner's `@claude` comment runs the implementer in tag mode, directly.
+by the workflow. Only an owner's `@claude` comment on a pull request runs the implementer in tag
+mode, directly ([ADR-0048](adr/0048-claude-mentions-on-pull-requests-only.md)).
 
 Once CI passes on a new commit of any pull request from this repository except Dependabot's
 (unless someone else, such as the CI fixer, has pushed to it)

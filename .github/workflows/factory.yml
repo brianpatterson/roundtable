@@ -1,5 +1,5 @@
 # The software factory's implementer (ADR-0025): a `ready` label on an issue, or an `@claude`
-# comment from the repository owner on an issue or pull request, runs Claude Code on a branch.
+# comment from the repository owner on a pull request (ADR-0048), runs Claude Code on a branch.
 # It builds the ticket to `pnpm check`'s bar and opens a pull request; a human always merges.
 #
 # When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`),
@@ -8,7 +8,8 @@
 # A `ready` ticket is started by the dispatcher (ADR-0047) through `workflow_dispatch`: by the
 # `gate` job when the owner labels it, or by a sweep once its blockers are deployed. `verify` checks
 # the dispatcher's rules again with no secrets, then `build` runs the agent on the ticket, after
-# checking once more that nobody else edited it. An `@claude` comment runs `implement` directly.
+# checking once more that nobody else edited it. An `@claude` comment on a pull request runs
+# `implement` directly.
 #
 # Only `issues`, `issue_comment` (pull request conversation comments included), `workflow_run` and
 # `workflow_dispatch` trigger it. The first three always run this file and the agent's instructions
@@ -41,7 +42,8 @@ permissions:
 # GitHub keeps one pending run per group (ADR-0037).
 concurrency:
   # A dispatched build gets its own group: GitHub keeps one pending run per group, so in the
-  # issue's group, anyone's comment on the ticket could replace it while it waited.
+  # issue's group, anyone's comment on the ticket could replace it while it waited. Nothing else
+  # builds on a ticket's issue: `@claude` only runs on pull requests (ADR-0048).
   group: factory-${{ github.event_name == 'workflow_dispatch' && format('dispatched-{0}', inputs.issue) || github.event.issue.number || format('run-{0}', github.run_id) }}
   cancel-in-progress: false
 
@@ -81,12 +83,14 @@ jobs:
         run: .github/factory/dispatch.sh --gate "$ISSUE"
 
   implement:
-    # The owner mentioning @claude on an issue or pull request: the owner asking directly, outside
-    # the dispatcher's queue. Strangers can comment on a public repo, so only the owner's mention
-    # counts. A `ready` label goes through the gate and `build` instead (ADR-0047).
+    # The owner mentioning @claude on a pull request: a follow-up on work that exists ("resolve the
+    # conflict", "address the review"), outside the dispatcher's queue. Strangers can comment on a
+    # public repo, so only the owner's mention counts. Not on issues: a ticket is built by labeling
+    # it `ready`, through the gate and `build`, so nothing races a ticket's build (ADR-0048).
     if: >-
       github.actor == github.repository_owner &&
-      github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: factory
@@ -119,29 +123,11 @@ jobs:
           persist-credentials: false
       # Copied out of the workspace before the agent switches branches, so the instructions it
       # runs under are main's, whatever a branch contains.
-      - name: Load the implementer's instructions and the secret guard from main
+      - name: Load the implementer's instructions and the guards from main
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
-            .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
-            .github/factory/takedown-report-quotes.sh "$RUNNER_TEMP/"
-          mkdir -p "$RUNNER_TEMP/user-report"
-      # A user report's own words and what the user's browser saw (ADR-0041), for issues the report
-      # App opened. Fetched in this step alone, so the token never reaches the agent: the agent
-      # gets the report as a file in user-report/, and a note in its instructions.
-      - name: Fetch the user's report
-        id: report
-        if: >-
-          !github.event.issue.pull_request &&
-          github.event.issue.user.login == 'roundtable-user-reports[bot]' &&
-          contains(github.event.issue.labels.*.name, 'user-report')
-        env:
-          TITLE: ${{ github.event.issue.title }}
-          TOKEN: ${{ secrets.FACTORY_REPORTS_TOKEN }}
-          REPORTS_URL: https://roundtableapp.us/api/factory/reports
-          OUT: ${{ runner.temp }}/user-report
-          GUARD: ${{ runner.temp }}/report-guard/description.txt
-          PROMPT: ${{ runner.temp }}/implementer.md
-        run: '"$RUNNER_TEMP/fetch-report.sh"'
+            .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
+            .github/factory/takedown-credentials.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       # No dependency cache here (ADR-0030): this job's caches are saved under main, and what it
@@ -158,7 +144,6 @@ jobs:
       # action's restriction on running a pull request's code.
       - name: Is this the factory's own pull request?
         id: own_pr
-        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
@@ -200,20 +185,14 @@ jobs:
             --max-turns 150
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --add-dir ${{ runner.temp }}/user-report
             --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git --config-env:*),Bash(git --config-env=*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
 
-      # The action hides Claude's messages from the public log, including the one that says why
-      # a run failed (a rejected token, an unknown model). Show only that final message.
+      # The guards after every agent run live in .github/factory/ and were copied from main above:
+      # the workspace may be on the pull request's branch by now, and a branch must not change them.
       - name: Explain a failed run
         if: always() && steps.claude.outcome == 'failure'
-        run: |
-          file="$RUNNER_TEMP/claude-execution-output.json"
-          [ -f "$file" ] || { echo "::error::The agent failed before writing its output."; exit 0; }
-          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
-          echo "::error::The agent failed: $reason"
-          printf '### The agent failed\n\n~~~\n%s\n~~~\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+        run: '"$RUNNER_TEMP/explain-failure.sh" agent'
 
       # Lists what the agent was refused, and flags the run for a human if it reached for
       # credentials or the factory's own rules (ADR-0029).
@@ -226,14 +205,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
-        run: |
-          gh issue edit "$NUMBER" -R "$GITHUB_REPOSITORY" --add-label needs-human
-          gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
-          exit 1
+        run: '"$RUNNER_TEMP/flag-suspicious.sh"'
 
-      # The agent posts its own comments and pull request description, so they're checked after
-      # the fact (ADR-0029): anything that looks like a credential is taken down, and the run fails
-      # so the owner rotates it.
+      # The pull request this ran on, and any the agent opened from its branch (ADR-0029).
       - name: Take down anything that looks like a credential
         if: always()
         env:
@@ -241,32 +215,8 @@ jobs:
           NUMBER: ${{ github.event.issue.number }}
           BRANCH: ${{ steps.claude.outputs.branch_name }}
         run: |
-          leaked=0
-          for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/comments" --paginate --jq '.[] | select(.user.login == "claude[bot]") | .id'); do
-            if ! gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$id"
-              leaked=1
-            fi
-          done
-          for pr in $( { [ -n "$BRANCH" ] && gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'; } || true) $(gh pr view "$NUMBER" --json number --jq .number 2>/dev/null || true); do
-            if ! gh pr view "$pr" --json body --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
-              gh pr edit "$pr" --body "The description was removed because it matched a credential pattern (ADR-0029)."
-              leaked=1
-            fi
-          done
-          [ "$leaked" = 0 ] || { echo "::error::The agent published something that looks like a credential. It was taken down; rotate the credential."; exit 1; }
-
-      # A user report is private (ADR-0041), and everything the agent publishes is public: delete or
-      # replace what quotes it, and hand what can't be taken back to a human. Tested in
-      # test-report-handoff.sh.
-      - name: Take down anything that quotes the user's report
-        if: always() && steps.report.outputs.fetched == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NUMBER: ${{ github.event.issue.number }}
-          BRANCH: ${{ steps.claude.outputs.branch_name }}
-          DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
-        run: '"$RUNNER_TEMP/takedown-report-quotes.sh"'
+          PRS="$NUMBER $( { [ -n "$BRANCH" ] && gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'; } || true)" \
+            "$RUNNER_TEMP/takedown-credentials.sh"
 
   # A ticket the dispatcher started (ADR-0047), from a sweep or from the gate when the owner labeled it. Its rules are checked again here, in a job with no
   # secrets, before anything runs: whoever dispatched this, only a ticket the owner labeled `ready`,
@@ -334,7 +284,8 @@ jobs:
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
             .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
-            .github/factory/takedown-report-quotes.sh "$RUNNER_TEMP/"
+            .github/factory/takedown-report-quotes.sh .github/factory/explain-failure.sh \
+            .github/factory/flag-suspicious.sh .github/factory/takedown-credentials.sh "$RUNNER_TEMP/"
           mkdir -p "$RUNNER_TEMP/user-report"
       # The ticket as the label path's agent sees it: the title, the description, and comments from
       # the owner and from github-actions[bot] (the reviewer, the dispatcher); nobody else's.
@@ -423,12 +374,7 @@ jobs:
 
       - name: Explain a failed run
         if: always() && steps.claude.outcome == 'failure'
-        run: |
-          file="$RUNNER_TEMP/claude-execution-output.json"
-          [ -f "$file" ] || { echo "::error::The agent failed before writing its output."; exit 0; }
-          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
-          echo "::error::The agent failed: $reason"
-          printf '### The agent failed\n\n~~~\n%s\n~~~\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+        run: '"$RUNNER_TEMP/explain-failure.sh" agent'
 
       # As in implement (ADR-0029).
       - name: Report denied tool calls
@@ -439,10 +385,8 @@ jobs:
         if: always() && steps.denials.outputs.suspicious == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label needs-human
-          gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
-          exit 1
+          NUMBER: ${{ env.ISSUE }}
+        run: '"$RUNNER_TEMP/flag-suspicious.sh"'
 
       # Deterministic, as in implement: what the agent left, whatever it reported. It names its
       # branch; one outside claude/issue-<n>- isn't trusted.
@@ -450,7 +394,10 @@ jobs:
       # back to the owner instead of holding the queue. Not for a ticket the load step refused.
       # What the agent published, found without trusting what it says: every pull request the
       # Claude App opened since this run started, every branch for this ticket, and the branch it
-      # names. The checks and takedowns below cover all of them.
+      # names. The checks and takedowns below cover all of them. Deliberately strict: the factory
+      # builds one ticket at a time and `@claude` works on existing pull requests, so another
+      # pull request opened in this window is suspicious, even from another ticket's branch name,
+      # which a misled agent could borrow.
       - name: Find what the agent published
         id: published
         if: always() && steps.ticket.outputs.refused != 'true'
@@ -470,9 +417,11 @@ jobs:
             echo "prs=$(jq -r '[.[].number] | join(" ")' <<<"$opened")"
           } >>"$GITHUB_OUTPUT"
 
+      # Not after a suspicious run: that ticket keeps `building`, holding the queue, until a human
+      # has looked (ADR-0047). The takedowns below still run.
       - name: Check the result
         id: result
-        if: always() && steps.ticket.outputs.refused != 'true'
+        if: always() && steps.ticket.outputs.refused != 'true' && steps.denials.outputs.suspicious != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}
@@ -529,27 +478,26 @@ jobs:
             gh pr create --base main --head "$branch" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
           fi
 
-          # Built: what the agent would have said in its closing comment, after the same guards.
+          # Built: what the agent would have said in its closing comment, after the same guards. On a
+          # user report, only the step: the issue is the public face of a private report (ADR-0041),
+          # and what was found belongs in the pull request.
           pr=$(gh pr list --head "$branch" --state all --json number --jq '.[0].number')
+          [ "$REPORT" != true ] || summary="Opened the pull request: #$pr"
           gh issue comment "$ISSUE" --body "$(printf '%s\n\n<sub>Pull request #%s, from [this run](%s). ADR-0047.</sub>\n' \
             "$summary" "$pr" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
 
-      # As in implement (ADR-0029): it can't comment, but it writes the pull request description.
+      # Every pull request found above, and any from the branches found (ADR-0029). The agent can't
+      # comment, but it writes pull request descriptions.
       - name: Take down anything that looks like a credential
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          PRS: ${{ steps.published.outputs.prs }}
+          NUMBER: ${{ env.ISSUE }}
           HEADS: ${{ steps.published.outputs.heads }}
+          OPENED: ${{ steps.published.outputs.prs }}
         run: |
-          leaked=0
-          for pr in $PRS $(for head in $HEADS; do gh pr list --head "$head" --state all --json number --jq '.[].number'; done | sort -u); do
-            if ! gh pr view "$pr" --json body --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
-              gh pr edit "$pr" --body "The description was removed because it matched a credential pattern (ADR-0029)."
-              leaked=1
-            fi
-          done
-          [ "$leaked" = 0 ] || { echo "::error::The agent published something that looks like a credential. It was taken down; rotate the credential."; exit 1; }
+          PRS="$OPENED $(for head in $HEADS; do gh pr list --head "$head" --state all --json number --jq '.[].number'; done)" \
+            "$RUNNER_TEMP/takedown-credentials.sh"
 
       # As in implement (ADR-0041).
       - name: Take down anything that quotes the user's report
@@ -682,7 +630,9 @@ jobs:
           persist-credentials: false
       - name: Load the implementer's instructions and the secret guard from main
         if: steps.current.outputs.stale != 'true'
-        run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
+        run: |
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+            .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -732,11 +682,7 @@ jobs:
 
       - name: Explain a failed run
         if: always() && steps.claude.outcome == 'failure' && steps.current.outputs.stale != 'true'
-        run: |
-          file="$RUNNER_TEMP/claude-execution-output.json"
-          [ -f "$file" ] || { echo "::error::The fixer failed before writing its output."; exit 0; }
-          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
-          echo "::error::The fixer failed: $reason"
+        run: '"$RUNNER_TEMP/explain-failure.sh" fixer'
 
       # Lists what the agent was refused, and flags the run for a human if it reached for
       # credentials or the factory's own rules (ADR-0029).
@@ -749,10 +695,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ env.PR }}
-        run: |
-          gh issue edit "$NUMBER" -R "$GITHUB_REPOSITORY" --add-label needs-human
-          gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
-          exit 1
+        run: '"$RUNNER_TEMP/flag-suspicious.sh"'
 
       # Deterministic: what the fixer pushed, and one marked comment per attempt (select-fix counts
       # them). Runs even when the agent failed, so a failed attempt still counts.
