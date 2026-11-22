@@ -3,7 +3,7 @@
 # at a time (labeled `building` until what closed it is deployed). This workflow sweeps: it
 # releases tickets whose work is deployed, sends back a ticket someone else edited after the
 # owner's `ready` label, hands a ticket whose blocker was closed without being merged to a human,
-# and tells the owner when a waiting ticket can start. The Factory workflow's gate makes the same
+# and starts the next ticket that may start, through the Factory workflow's `workflow_dispatch`. The Factory workflow's gate makes the same
 # decision the moment the owner labels a ticket. The rules live in .github/factory/dispatch.sh,
 # pinned by test-dispatch.sh in CI. No agent runs here.
 name: Dispatcher
@@ -42,7 +42,7 @@ jobs:
     permissions:
       contents: read # compares commits with what's deployed
       issues: write # labels and comments
-      actions: read # finds the latest successful Deploy
+      actions: write # finds the latest successful Deploy, and starts the implementer (workflow_dispatch)
     steps:
       - uses: actions/checkout@v7
         with:

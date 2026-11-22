@@ -7,10 +7,12 @@
 #
 #   dispatch.sh --decide        read one ticket's state as JSON on stdin, print the decision (tests)
 #   dispatch.sh --state ISSUE   print the state decide would get for ISSUE (read-only, for debugging)
-#   dispatch.sh --gate ISSUE    the owner just labeled ISSUE `ready`: decide for it alone, and write
-#                               start=true to $GITHUB_OUTPUT if the implementer should build it now
+#   dispatch.sh --gate ISSUE    the owner just labeled ISSUE `ready`: decide for it alone, start it
+#                               if it may start, and always say what happened
+#   dispatch.sh --verify ISSUE  in a run the dispatcher started for ISSUE: check the same rules again
+#                               before the agent runs, and write ok=true to $GITHUB_OUTPUT if they hold
 #   dispatch.sh                 sweep: release tickets whose work is deployed, then decide for every
-#                               `ready` ticket, oldest label first
+#                               `ready` ticket, oldest label first, and start the first that may start
 #
 # Holds no secrets and runs no agent. DRY_RUN=true prints what it would do and changes nothing.
 # GH overrides the gh binary (tests).
@@ -27,7 +29,9 @@ GH=${GH:-gh}
 # hand, as not planned or done elsewhere). `held` is the label a ticket waits on the owner under;
 # `needs-info` stops holding it once the owner labels it `ready` again after it (`answered`), and
 # a start then removes it. `edited_after_ready` counts title and description edits by anyone but
-# the owner since the `ready` label.
+# the owner since the owner's approval began: the first `ready` label the owner added after the
+# workflow last removed it. Removing and re-adding it themselves doesn't restart the approval, so an
+# edit made in between still counts.
 # Prints {action: ignore | ok | release | unlabel | human | stuck | wait | queue | start, reason}.
 # shellcheck disable=SC2016 # backticks are Markdown
 decide='
@@ -87,10 +91,11 @@ query='query($owner: String!, $name: String!, $number: Int!) {
       state
       labels(first: 50) { nodes { name } }
       userContentEdits(last: 20) { nodes { editedAt editor { login } } }
-      timelineItems(itemTypes: [LABELED_EVENT, RENAMED_TITLE_EVENT, CLOSED_EVENT], last: 100) {
+      timelineItems(itemTypes: [LABELED_EVENT, UNLABELED_EVENT, RENAMED_TITLE_EVENT, CLOSED_EVENT], last: 100) {
         nodes {
           __typename
           ... on LabeledEvent { createdAt label { name } actor { login } }
+          ... on UnlabeledEvent { createdAt label { name } actor { login } }
           ... on RenamedTitleEvent { createdAt actor { login } }
           ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } }
         }
@@ -101,7 +106,7 @@ query='query($owner: String!, $name: String!, $number: Int!) {
           number
           state
           timelineItems(itemTypes: [CLOSED_EVENT], last: 1) {
-            nodes { ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } }
+            nodes { __typename ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } }
           }
         }
       }
@@ -113,10 +118,14 @@ query='query($owner: String!, $name: String!, $number: Int!) {
 # merge commit of the pull request that closed it, or the commit itself.
 gather() {
   local raw state
-  raw=$("$GH" api graphql -F owner="$owner" -F name="${repo#*/}" -F number="$1" -f query="$query")
+  raw=$("$GH" api graphql -F owner="$owner" -F name="${repo#*/}" -F number="$1" -f query="$query") || return 1
+  [ -n "$raw" ] || return 1
   state=$(jq -c --arg owner "$owner" --argjson now "$now" '
     def age($t): (($now - ($t | fromdateiso8601)) / 60 | floor);
-    def sha: [.nodes[] | .closer? // empty | if .__typename == "PullRequest" then (if .merged then .mergeCommit.oid else empty end) else .oid end] | last // "";
+    # What closed it the last time: a reopened issue closed by hand has no closer, even if a pull
+    # request closed it before.
+    def sha: ([.nodes[] | select(.__typename == "ClosedEvent")] | last | .closer) as $c
+      | if $c == null then "" elif $c.__typename == "PullRequest" then (if $c.merged then $c.mergeCommit.oid else "" end) else $c.oid end;
     .data.repository.issue as $i
     | [$i.labels.nodes[].name] as $labels
     | [$i.timelineItems.nodes[] | select(.__typename == "LabeledEvent")] as $labeled
@@ -124,19 +133,26 @@ gather() {
     | ([$labeled[] | select(.label.name == "building")] | last) as $building
     | ([$labeled[] | select(.label.name == "needs-info")] | last) as $info
     | ($info != null and $ready != null and $ready.createdAt > $info.createdAt) as $answered
+    # When the approval began: walk the `ready` events in order, restarting after the workflow removes it.
+    | (reduce ($i.timelineItems.nodes[] | select((.__typename == "LabeledEvent" or .__typename == "UnlabeledEvent") and .label.name == "ready")) as $e
+        (null;
+         if $e.__typename == "UnlabeledEvent" and ($e.actor.login // "") != $owner then null
+         elif $e.__typename == "LabeledEvent" and . == null and ($e.actor.login // "") == $owner then $e.createdAt
+         else . end)) as $since
     | {number: $i.number, open: ($i.state == "OPEN"), sha: ($i.timelineItems | sha),
        ready: (if ($labels | index("ready")) != null and $ready != null
                then {by_owner: ($ready.actor.login == $owner), at: $ready.createdAt, age: age($ready.createdAt)} else null end),
-       edited_after_ready: ($ready != null and (
-         any($i.userContentEdits.nodes[]; .editedAt > $ready.createdAt and (.editor.login // "") != $owner) or
-         any($i.timelineItems.nodes[]; .__typename == "RenamedTitleEvent" and .createdAt > $ready.createdAt and (.actor.login // "") != $owner))),
+       edited_after_ready: ($ready != null and (($since // $ready.createdAt) as $from |
+         any($i.userContentEdits.nodes[]; .editedAt > $from and (.editor.login // "") != $owner) or
+         any($i.timelineItems.nodes[]; .__typename == "RenamedTitleEvent" and .createdAt > $from and (.actor.login // "") != $owner))),
        held: (if ($labels | index("needs-human")) != null then "needs-human"
               elif ($labels | index("needs-info")) != null and ($answered | not) then "needs-info" else null end),
        answered: (($labels | index("needs-info")) != null and $answered),
        building: (if ($labels | index("building")) != null
                   then {age: (if $building != null then age($building.createdAt) else 0 end), has_pr: ($i.closedByPullRequestsReferences.nodes | length > 0)} else null end),
        blockers: [$i.blockedBy.nodes[] | {number, open: (.state == "OPEN"), sha: (.timelineItems | sha)}]}
-  ' <<<"$raw")
+  ' <<<"$raw") || return 1
+  [ -n "$state" ] || return 1
 
   local closed=null
   if [ "$(jq -r .open <<<"$state")" = false ]; then
@@ -177,6 +193,7 @@ act() { # act <mode> <issue> <decision JSON> <state JSON>
   local always=
   [ "$1" != gate ] || always=always
   case "$action" in
+    ok) [ "$1" != gate ] || say "$2" "The factory is already building this, so there's nothing to start. ADR-0047." always ;;
     ignore)
       # Only the gate answers an ignore: the owner just added the label and should see why nothing ran.
       [ "$1" != gate ] || say "$2" "The factory didn't start this: $reason. ADR-0047." always
@@ -196,17 +213,20 @@ act() { # act <mode> <issue> <decision JSON> <state JSON>
       ;;
     wait | queue) say "$2" "The factory will build this later: $reason. It says here when it starts. ADR-0047." $always ;;
     start)
-      if [ "$1" = gate ]; then
-        if [ "$(jq -r .answered <<<"$4")" = true ]; then
-          "$GH" issue edit "$2" -R "$repo" --add-label building --remove-label needs-info >/dev/null
-        else
-          "$GH" issue edit "$2" -R "$repo" --add-label building >/dev/null
-        fi
-        [ -z "${GITHUB_OUTPUT:-}" ] || echo "start=true" >>"$GITHUB_OUTPUT"
+      local edit=(--add-label building)
+      [ "$(jq -r .answered <<<"$4")" != true ] || edit+=(--remove-label needs-info)
+      # act runs as an `if` condition in the sweep, where `set -e` is off: fail explicitly.
+      "$GH" issue edit "$2" -R "$repo" "${edit[@]}" >/dev/null || return 1
+      # The gate starts it the same way as the sweep: the dispatched build re-checks the ticket
+      # after loading it, which the tag-mode job can't.
+      if "$GH" workflow run factory.yml -R "$repo" --ref main -f issue="$2"; then
+        # Started, so in flight, even if the comment doesn't make it.
+        say "$2" "The factory started building this: nothing blocks it any more. ADR-0047." always || true
       else
-        # Starting it from here needs the implementer to accept a dispatch (ADR-0047's second
-        # step). Until then, hand the start to the owner, once.
-        say "$2" "Nothing blocks this any more and nothing else is in flight. Reread it, then remove \`ready\` and add it again to have the factory build it now. ADR-0047."
+        # Not started, so not in flight: the next sweep tries again.
+        "$GH" issue edit "$2" -R "$repo" --remove-label building >/dev/null
+        echo "::warning::Couldn't start the implementer for #$2; the next sweep tries again."
+        return 1
       fi
       ;;
   esac
@@ -217,11 +237,22 @@ if [ "${1:-}" = --state ]; then
   exit 0
 fi
 
+# A run the dispatcher started reads the queue without changing it: the sweep owns the queue.
+[ "${1:-}" != --verify ] || DRY_RUN=true
+
 # Tickets in flight: labeled `building`, open or merged but not yet deployed. Releases the rest.
 in_flight='[]'
+failed=0
 while read -r number; do
   [ -n "$number" ] || continue
-  state=$(gather "$number" | jq -c '.others_building = []')
+  # One that can't be read stays in flight: better a stalled queue than two builds at once.
+  if ! state=$(gather "$number"); then
+    echo "::warning::Couldn't read #$number; it counts as in flight."
+    in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
+    failed=1
+    continue
+  fi
+  state=$(jq -c '.others_building = []' <<<"$state")
   decision=$(jq -c "$decide" <<<"$state")
   case "$(jq -r .action <<<"$decision")" in
     # Closed and deployed, or open with no pull request long after it started (handed to a human,
@@ -234,23 +265,56 @@ while read -r number; do
   esac
 done < <("$GH" issue list -R "$repo" --label building --state all --limit 100 --json number --jq '.[].number')
 
+# The dispatcher labeled ISSUE `building` and started this run. Everything else must still hold, as
+# if it were deciding now; if not, release it and say why, and the next sweep decides again.
+if [ "${1:-}" = --verify ]; then
+  number=$2
+  state=$(gather "$number") || { echo "::error::Couldn't read #$number."; exit 1; }
+  decision=$(jq -c --argjson f "$in_flight" --argjson n "$number" \
+    '(.building != null) as $marked | (.building = null | .others_building = ($f - [$n]) | '"$decide"') + {marked: $marked}' <<<"$state")
+  action=$(jq -r .action <<<"$decision")
+  reason=$(jq -r .reason <<<"$decision")
+  if [ "$(jq -r .marked <<<"$decision")" = true ] && [ "$action" = start ]; then
+    echo "#$number: verified ($reason)"
+    [ -z "${GITHUB_OUTPUT:-}" ] || echo "ok=true" >>"$GITHUB_OUTPUT"
+    exit 0
+  fi
+  [ "$(jq -r .marked <<<"$decision")" = true ] || reason="the dispatcher didn't mark it \`building\`"
+  echo "#$number: refused ($reason)"
+  unset DRY_RUN
+  "$GH" issue edit "$number" -R "$repo" --remove-label building >/dev/null || true
+  say "$number" "The factory didn't build this after all: $reason. ADR-0047." always
+  exit 0
+fi
+
 if [ "${1:-}" = --gate ]; then
   number=$2
-  state=$(gather "$number" | jq -c --argjson f "$in_flight" --argjson n "$number" '.others_building = ($f - [$n])')
+  state=$(gather "$number") || { echo "::error::Couldn't read #$number."; exit 1; }
+  state=$(jq -c --argjson f "$in_flight" --argjson n "$number" '.others_building = ($f - [$n])' <<<"$state")
   act gate "$number" "$(jq -c "$decide" <<<"$state")" "$state"
   exit 0
 fi
 
-# Every ready ticket, oldest `ready` label first; once one may start, the rest queue behind it.
+# Every ready ticket, oldest `ready` label first; the first that may start is started, and the rest
+# queue behind it.
 states=()
 while read -r number; do
   [ -n "$number" ] || continue
-  states+=("$(gather "$number")")
+  # One that can't be read is skipped this time; the rest are still decided.
+  if state=$(gather "$number"); then
+    states+=("$state")
+  else
+    echo "::warning::Couldn't read #$number; carrying on with the rest."
+    failed=1
+  fi
 done < <("$GH" issue list -R "$repo" --label ready --state open --limit 100 --json number --jq '.[].number')
-[ "${#states[@]}" -gt 0 ] || exit 0
+[ "${#states[@]}" -gt 0 ] || exit "$failed"
 while read -r state; do
   number=$(jq -r .number <<<"$state")
   decision=$(jq -c --argjson f "$in_flight" '.others_building = ($f - [.number])' <<<"$state" | jq -c "$decide")
-  act sweep "$number" "$decision" "$state"
-  [ "$(jq -r .action <<<"$decision")" != start ] || in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
+  if act sweep "$number" "$decision" "$state" && [ "$(jq -r .action <<<"$decision")" = start ]; then
+    in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
+  fi
 done < <(printf '%s\n' "${states[@]}" | jq -sc 'sort_by(.ready.at // "") | .[]')
+# A ticket that couldn't be read turns the run red, so it gets noticed.
+exit "$failed"

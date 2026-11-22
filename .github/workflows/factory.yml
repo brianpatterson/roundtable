@@ -5,10 +5,16 @@
 # When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`),
 # the same agent fixes it: up to two attempts, then it stops and asks for a human (ADR-0028).
 #
-# Only `issues`, `issue_comment` (pull request conversation comments included) and `workflow_run`
-# trigger it. All three always run this file and the agent's instructions from `main`, never from
-# a branch, and the `factory` environment, which holds the Claude token, only admits `main`. A
-# branch can't change what the agent is told or reach the token.
+# A `ready` ticket is started by the dispatcher (ADR-0047) through `workflow_dispatch`: by the
+# `gate` job when the owner labels it, or by a sweep once its blockers are deployed. `verify` checks
+# the dispatcher's rules again with no secrets, then `build` runs the agent on the ticket, after
+# checking once more that nobody else edited it. An `@claude` comment runs `implement` directly.
+#
+# Only `issues`, `issue_comment` (pull request conversation comments included), `workflow_run` and
+# `workflow_dispatch` trigger it. The first three always run this file and the agent's instructions
+# from `main`, never from a branch; a dispatch can name a branch, but the `factory` environment,
+# which holds the Claude token, only admits `main`. A branch can't change what the agent is told or
+# reach the token.
 name: Factory
 
 on:
@@ -19,6 +25,12 @@ on:
   workflow_run:
     workflows: [CI, Dependency review, CodeQL]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: The ready ticket to build (the dispatcher starts these; ADR-0047)
+        type: number
+        required: true
 
 permissions:
   contents: read
@@ -28,7 +40,9 @@ permissions:
 # select-fix, and holding the group for them would let one replace a pending fix or rework, since
 # GitHub keeps one pending run per group (ADR-0037).
 concurrency:
-  group: factory-${{ github.event.issue.number || format('run-{0}', github.run_id) }}
+  # A dispatched build gets its own group: GitHub keeps one pending run per group, so in the
+  # issue's group, anyone's comment on the ticket could replace it while it waited.
+  group: factory-${{ github.event_name == 'workflow_dispatch' && format('dispatched-{0}', inputs.issue) || github.event.issue.number || format('run-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -37,8 +51,11 @@ jobs:
   # one ticket at a time. Holds no secrets and runs no agent. Shares its group with the Dispatcher
   # workflow, so two decisions never read the same in-flight state. GitHub keeps one pending run per
   # group and cancels the others, silently skipping that label's build. The dispatcher's next sweep
-  # (within 30 minutes) decides every `ready` ticket again: for now it asks the owner to relabel a
-  # ticket that can start; once it starts tickets itself (ADR-0047's step 2), it just starts it.
+  # (within 30 minutes) decides every `ready` ticket again, and starts it then.
+  #
+  # A ticket it lets through is started the way the sweep starts one, through workflow_dispatch:
+  # `build` re-checks the ticket after loading it, so an edit made after this decision never
+  # reaches the agent. The tag-mode `implement` job reads the issue itself, too late to check.
   gate:
     if: >-
       github.actor == github.repository_owner &&
@@ -51,9 +68,7 @@ jobs:
     permissions:
       contents: read # compares commits with what's deployed
       issues: write # labels and comments
-      actions: read # finds the latest successful Deploy
-    outputs:
-      start: ${{ steps.gate.outputs.start }}
+      actions: write # finds the latest successful Deploy, and starts the build (workflow_dispatch)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,16 +81,12 @@ jobs:
         run: .github/factory/dispatch.sh --gate "$ISSUE"
 
   implement:
-    needs: gate
-    # Only the owner starts it: by labeling, or by mentioning @claude. Strangers can open issues
-    # on a public repo, so the label is the owner's sign-off that the ticket is safe to build. A
-    # label builds only once the gate says so; an @claude comment is the owner asking directly, and
-    # skips the gate. `always()` because the gate is skipped for comments.
+    # The owner mentioning @claude on an issue or pull request: the owner asking directly, outside
+    # the dispatcher's queue. Strangers can comment on a public repo, so only the owner's mention
+    # counts. A `ready` label goes through the gate and `build` instead (ADR-0047).
     if: >-
-      always() && github.actor == github.repository_owner && (
-        (github.event_name == 'issues' && github.event.label.name == 'ready' && needs.gate.outputs.start == 'true') ||
-        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
-      )
+      github.actor == github.repository_owner &&
+      github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: factory
@@ -172,7 +183,6 @@ jobs:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          label_trigger: ready
           trigger_phrase: '@claude'
           # Only the owner's comments, and the reviewer's (posted by github-actions[bot], ADR-0026),
           # reach the agent; anyone else's text in the thread is dropped.
@@ -221,41 +231,6 @@ jobs:
           gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
           exit 1
 
-      # Deterministic checks on what the agent left, whatever it reported.
-      - name: Check the result
-        if: always() && github.event_name == 'issues'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ steps.claude.outputs.branch_name }}
-          ISSUE: ${{ github.event.issue.number }}
-        run: |
-          # Releases the ticket from `building` too, so the next one can start (ADR-0047).
-          needs_info() {
-            gh issue edit "$ISSUE" --remove-label ready --remove-label building --add-label needs-info
-            exit 0
-          }
-
-          # Asked through the API, not git: the action rewires the checkout's credentials.
-          # No branch, or nothing committed: the agent stopped to ask, or failed. Its comment says which.
-          [ -n "$BRANCH" ] || needs_info
-          compare=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$BRANCH" 2>/dev/null) || needs_info
-          [ "$(echo "$compare" | jq .ahead_by)" -gt 0 ] || needs_info
-
-          # The agent never changes its own rules or CI.
-          if echo "$compare" | jq -r '.files[].filename' | grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-            gh issue comment "$ISSUE" --body "The factory's branch \`$BRANCH\` changes \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the implementer may not touch. Don't merge it."
-            echo "::error::$BRANCH changes protected paths"
-            exit 1
-          fi
-
-          # The agent opens the pull request with the Claude App's token, so CI runs on it. If it
-          # didn't, open one here; a PR opened with this job's token starts no workflows, so CI
-          # waits until a human closes and reopens it.
-          if [ "$(gh pr list --head "$BRANCH" --state all --json number --jq length)" = 0 ]; then
-            body=$(printf 'Closes #%s\n\nThe implementer pushed this branch but did not open the pull request. **CI has not run: close and reopen this PR to start it.**' "$ISSUE")
-            gh pr create --base main --head "$BRANCH" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
-          fi
-
       # The agent posts its own comments and pull request description, so they're checked after
       # the fact (ADR-0029): anything that looks like a credential is taken down, and the run fails
       # so the owner rotates it.
@@ -292,6 +267,305 @@ jobs:
           BRANCH: ${{ steps.claude.outputs.branch_name }}
           DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
         run: '"$RUNNER_TEMP/takedown-report-quotes.sh"'
+
+  # A ticket the dispatcher started (ADR-0047), from a sweep or from the gate when the owner labeled it. Its rules are checked again here, in a job with no
+  # secrets, before anything runs: whoever dispatched this, only a ticket the owner labeled `ready`,
+  # unedited since by anyone else, with every blocker deployed, is built. A refused ticket loses
+  # `building` and gets a comment saying why.
+  verify:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # compares commits with what's deployed
+      issues: write # releases a refused ticket
+      actions: read # finds the latest successful Deploy
+    outputs:
+      ok: ${{ steps.verify.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/factory
+      - id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ inputs.issue }}
+        run: .github/factory/dispatch.sh --verify "$ISSUE"
+
+  # The implementer on a dispatched ticket. The Claude action reads an issue itself only on an issue
+  # or comment event, so this runs it in agent mode, like the CI fixer: the ticket reaches the agent
+  # as a file, it can't comment, and what it returns is posted by the deterministic steps after it.
+  build:
+    needs: verify
+    if: needs.verify.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: factory
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read # lets the agent read CI results on its pull requests
+      id-token: write # exchanged for the Claude GitHub App's short-lived token
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
+      ISSUE: ${{ inputs.issue }}
+    steps:
+      # As in implement: no credentials kept, and the instructions copied from main first.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Load the implementer's instructions and the secret guard from main
+        run: |
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+            .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
+            .github/factory/takedown-report-quotes.sh "$RUNNER_TEMP/"
+          mkdir -p "$RUNNER_TEMP/user-report"
+      # The ticket as the label path's agent sees it: the title, the description, and comments from
+      # the owner and from github-actions[bot] (the reviewer, the dispatcher); nobody else's.
+      - name: Load the ticket
+        id: ticket
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE")
+          mkdir -p .factory
+          {
+            jq -r '"# #\(.number): \(.title)\n\n\(.body // "")\n"' <<<"$issue"
+            gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --paginate \
+              --jq ".[] | select(.user.login == \"$GITHUB_REPOSITORY_OWNER\" or .user.login == \"github-actions[bot]\") | \"\n---\n\(.user.login) commented:\n\n\(.body)\n\""
+          } >.factory/ticket.md
+          report=false
+          if jq -e '.user.login == "roundtable-user-reports[bot]" and any(.labels[]; .name == "user-report")' <<<"$issue" >/dev/null; then
+            report=true
+          fi
+          {
+            echo "report=$report"
+            echo "title=$(jq -r .title <<<"$issue" | tr -d '\r\n')"
+          } >>"$GITHUB_OUTPUT"
+
+          # verify ran in another job, before this fetch: check again now that the text is fixed in
+          # the file, so an edit made in between never reaches the agent. Released, not needs-info.
+          # If the ticket can't be read, nothing is known: release it without blaming anyone, and the
+          # next sweep starts it again.
+          if ! state=$(.github/factory/dispatch.sh --state "$ISSUE"); then
+            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label building
+            echo "refused=true" >>"$GITHUB_OUTPUT"
+            echo "::error::Couldn't read #$ISSUE to check it for edits; released for the next sweep."
+            exit 1
+          fi
+          # shellcheck disable=SC2016 # backticks are Markdown
+          if ! jq -e '.edited_after_ready | not' <<<"$state" >/dev/null; then
+            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label building --remove-label ready
+            gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body "$(printf '<!-- factory-dispatch -->\nThe factory stopped before building this: its title or description was edited by someone else after it was approved. Reread it, and label it `ready` again if it should still be built. ADR-0047.')"
+            echo "refused=true" >>"$GITHUB_OUTPUT"
+            exit 1
+          fi
+      # A user report's text, as in implement (ADR-0041).
+      - name: Fetch the user's report
+        id: report
+        if: steps.ticket.outputs.report == 'true'
+        env:
+          TITLE: ${{ steps.ticket.outputs.title }}
+          TOKEN: ${{ secrets.FACTORY_REPORTS_TOKEN }}
+          REPORTS_URL: https://roundtableapp.us/api/factory/reports
+          OUT: ${{ runner.temp }}/user-report
+          GUARD: ${{ runner.temp }}/report-guard/description.txt
+          PROMPT: ${{ runner.temp }}/implementer.md
+        run: '"$RUNNER_TEMP/fetch-report.sh"'
+      - uses: ./.github/actions/isolate-agent
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      # No dependency cache here (ADR-0030), as in implement.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+
+      - name: Implement
+        id: claude
+        uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' # ADR-0029, as in implement
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The dispatcher dispatches with the workflow's token, so the actor is github-actions[bot],
+          # and the action refuses bots it isn't told about; verify has already checked the ticket.
+          allowed_bots: github-actions[bot]
+          prompt: |
+            The dispatcher started you on issue #${{ env.ISSUE }} (ADR-0047). The ticket is in
+            .factory/ticket.md. Follow "Started by the dispatcher" in your instructions and return
+            the structured output.
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 150
+            --permission-mode acceptEdits
+            --append-system-prompt-file ${{ runner.temp }}/implementer.md
+            --add-dir ${{ runner.temp }}/user-report
+            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm install:*),Bash(pnpm add:*),Bash(pnpm remove:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git --config-env:*),Bash(git --config-env=*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
+            --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["built","needs-info"]},"branch":{"type":"string"},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
+
+      - name: Explain a failed run
+        if: always() && steps.claude.outcome == 'failure'
+        run: |
+          file="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$file" ] || { echo "::error::The agent failed before writing its output."; exit 0; }
+          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
+          echo "::error::The agent failed: $reason"
+          printf '### The agent failed\n\n~~~\n%s\n~~~\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+
+      # As in implement (ADR-0029).
+      - name: Report denied tool calls
+        id: denials
+        if: always()
+        run: '"$RUNNER_TEMP/report-denials.sh"'
+      - name: Flag a suspicious run
+        if: always() && steps.denials.outputs.suspicious == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --add-label needs-human
+          gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
+          exit 1
+
+      # Deterministic, as in implement: what the agent left, whatever it reported. It names its
+      # branch; one outside claude/issue-<n>- isn't trusted.
+      # Also when a step before the agent failed (the install, the report fetch): the ticket goes
+      # back to the owner instead of holding the queue. Not for a ticket the load step refused.
+      # What the agent published, found without trusting what it says: every pull request the
+      # Claude App opened since this run started, every branch for this ticket, and the branch it
+      # names. The checks and takedowns below cover all of them.
+      - name: Find what the agent published
+        id: published
+        if: always() && steps.ticket.outputs.refused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          start=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          opened=$(gh pr list --state all --author app/claude --search "created:>=$start" --limit 50 --json number,headRefName)
+          heads=$( {
+            jq -r '.branch // empty' <<<"${RESULT:-{\}}"
+            jq -r '.[].headRefName' <<<"$opened"
+            gh api "repos/$GITHUB_REPOSITORY/branches" --paginate --jq ".[].name | select(startswith(\"claude/issue-$ISSUE-\"))"
+          } | sort -u | tr '\n' ' ')
+          {
+            echo "heads=$heads"
+            echo "prs=$(jq -r '[.[].number] | join(" ")' <<<"$opened")"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Check the result
+        id: result
+        if: always() && steps.ticket.outputs.refused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+          HEADS: ${{ steps.published.outputs.heads }}
+          REPORT: ${{ steps.report.outputs.fetched }}
+          DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
+        run: |
+          outcome=$(jq -r '.outcome // "failed"' <<<"${RESULT:-{\}}")
+          summary=$(jq -r '.summary // "The implementer stopped without a summary; see the run log."' <<<"${RESULT:-{\}}")
+          branch=$(jq -r '.branch // ""' <<<"${RESULT:-{\}}")
+          [[ "$branch" == "claude/issue-$ISSUE-"* ]] || branch=""
+
+          # Anything it published outside this ticket's branches, or that touches the factory's own
+          # rules, goes to a human whatever it reported. The ticket keeps `building`, so nothing
+          # else starts until someone has looked.
+          for head in $HEADS; do
+            reason=""
+            if [[ "$head" != "claude/issue-$ISSUE-"* ]]; then
+              reason="pushed \`$head\`, which isn't one of this ticket's branches"
+            elif gh api "repos/$GITHUB_REPOSITORY/compare/main...$head" --jq '.files[].filename' 2>/dev/null |
+              grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
+              reason="changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\` on \`$head\`, which the implementer may not touch"
+            fi
+            if [ -n "$reason" ]; then
+              gh issue edit "$ISSUE" --add-label needs-human
+              gh issue comment "$ISSUE" --body "The factory's agent $reason. Don't merge anything from this run until a human has looked: [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). ADR-0047."
+              echo "::error::The agent $reason"
+              exit 1
+            fi
+          done
+
+          # Never publish what looks like a credential (ADR-0029), or a user's report (ADR-0041).
+          if ! "$RUNNER_TEMP/guard-secrets.sh" <<<"$summary"; then
+            summary="The implementer's answer was withheld because it matched a credential pattern. See the run, and rotate the credential."
+          elif [ "$REPORT" = true ] && ! "$RUNNER_TEMP/guard-report-text.sh" "$DESCRIPTION" <<<"$summary" >/dev/null; then
+            summary="Stopped: I couldn't reproduce this from the report."
+          fi
+
+          # Stopped or failed: the ticket goes back to the owner and stops holding the queue.
+          # shellcheck disable=SC2016 # backticks are Markdown
+          needs_info() {
+            gh issue edit "$ISSUE" --remove-label ready --remove-label building --add-label needs-info
+            body=$(printf '%s\n\n<sub>[Run](%s). Answer, then label it `ready` again. ADR-0047.</sub>\n' \
+              "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+            gh issue comment "$ISSUE" --body "$body"
+            exit 0
+          }
+          [ "$outcome" = built ] && [ -n "$branch" ] || needs_info
+          compare=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$branch" 2>/dev/null) || needs_info
+          [ "$(echo "$compare" | jq .ahead_by)" -gt 0 ] || needs_info
+
+          if [ "$(gh pr list --head "$branch" --state all --json number --jq length)" = 0 ]; then
+            body=$(printf 'Closes #%s\n\nThe implementer pushed this branch but did not open the pull request. **CI has not run: close and reopen this PR to start it.**' "$ISSUE")
+            gh pr create --base main --head "$branch" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
+          fi
+
+          # Built: what the agent would have said in its closing comment, after the same guards.
+          pr=$(gh pr list --head "$branch" --state all --json number --jq '.[0].number')
+          gh issue comment "$ISSUE" --body "$(printf '%s\n\n<sub>Pull request #%s, from [this run](%s). ADR-0047.</sub>\n' \
+            "$summary" "$pr" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+
+      # As in implement (ADR-0029): it can't comment, but it writes the pull request description.
+      - name: Take down anything that looks like a credential
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRS: ${{ steps.published.outputs.prs }}
+          HEADS: ${{ steps.published.outputs.heads }}
+        run: |
+          leaked=0
+          for pr in $PRS $(for head in $HEADS; do gh pr list --head "$head" --state all --json number --jq '.[].number'; done | sort -u); do
+            if ! gh pr view "$pr" --json body --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
+              gh pr edit "$pr" --body "The description was removed because it matched a credential pattern (ADR-0029)."
+              leaked=1
+            fi
+          done
+          [ "$leaked" = 0 ] || { echo "::error::The agent published something that looks like a credential. It was taken down; rotate the credential."; exit 1; }
+
+      # As in implement (ADR-0041).
+      - name: Take down anything that quotes the user's report
+        if: always() && steps.report.outputs.fetched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ env.ISSUE }}
+          HEADS: ${{ steps.published.outputs.heads }}
+          DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
+        run: |
+          # Once per branch it published; without one, still once for its comments.
+          status=0
+          for head in ${HEADS:-""}; do
+            BRANCH=$head "$RUNNER_TEMP/takedown-report-quotes.sh" || status=1
+          done
+          exit "$status"
 
   # Which failing pull request to fix, if any, and which attempt this is. Holds no secrets.
   select-fix:
