@@ -65,7 +65,7 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the nightly security
   auditor (skipped when main hasn't changed), which runs throwaway tests and files private draft advisories ([ADR-0036](docs/adr/0036-weekly-security-audit.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
 - `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`: the production runtime.
-- `docs/`: `architecture.md` (current state), `adr/` (decisions), `dependencies.md` (dependency register), `roadmap.md` (where this is going).
+- `docs/`: `architecture.md` (current state), `adr/` (decisions), `dependencies.md` (dependency register), `roadmap.md` (where this is going), `agents/` (how the agent skills use this repo).
 
 ## Commands
 
@@ -210,3 +210,19 @@ The API is moving to Effect 4 ([ADR-0022](docs/adr/0022-effect-for-the-api.md), 
   (`test/effect-testing.test.ts`). Tests still hit the real `app_test` database.
 - **`pnpm check:effect` must pass.** Fix findings rather than suppressing them. The only rule
   switched off is `unstableApiUsage`, because ADR-0022 accepted those APIs.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues, written with the headings of `.github/ISSUE_TEMPLATE/`; the factory builds the
+owner's `ready` issues one at a time, once their blockers (native issue dependencies) are deployed. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The skills' roles mapped to the factory's labels (`ready-for-agent` is `ready`, `ready-for-human`
+is `needs-human`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` (in place of `CONTEXT.md`) and `docs/adr/`. See `docs/agents/domain.md`.
