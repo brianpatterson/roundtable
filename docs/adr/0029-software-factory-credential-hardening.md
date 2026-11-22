@@ -1,6 +1,6 @@
 # 0029. Keep the factory's credentials out of what its agents run and publish
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [ADR-0050](0050-factory-adds-no-dependencies.md) (the scrub's sandbox keeps the agent from installing packages)
 - **Date:** 2026-11-17
 
 ## Context

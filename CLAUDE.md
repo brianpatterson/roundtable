@@ -53,6 +53,8 @@ each module is what a future service or microfrontend would become.
   once and labels any other stuck PR `needs-human` with the reason ([ADR-0040](docs/adr/0040-factory-sweeper.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
   publish only through `.github/factory/guard-secrets.sh` ([ADR-0029](docs/adr/0029-software-factory-credential-hardening.md)).
+  That isolation leaves the lockfile and `node_modules/.bin` read-only, so agents never add a package:
+  they stop and name it, and a human adds it ([ADR-0050](docs/adr/0050-factory-adds-no-dependencies.md)).
   Agent jobs keep no dependency cache: theirs would be saved under main ([ADR-0030](docs/adr/0030-factory-code-scanning-findings.md)).
   `.github/workflows/architecture.yml` runs the vendored architecture skills in `.github/factory/skills/`
   weekly and opens `architecture` issues ([ADR-0031](docs/adr/0031-weekly-architecture-review.md)); don't edit those skills, update them from upstream.
