@@ -264,12 +264,14 @@ export const ApplicationsLive = HttpApiBuilder.group(
       addTag: ({ params, payload }) => {
         const hasIt = (tags: readonly string[]) => tags.some((tag) => sameTag(tag, payload.tag));
 
-        // One it has already, ignoring case and spaces, stays as it is; so does a full Round.
+        // One it has already, ignoring case and spaces, stays as it is; so does a full Round,
+        // which comes back without the Tag.
         return changeTags(params, (tags) =>
           hasIt(tags) || tags.length >= MAX_TAGS ? tags : [...tags, payload.tag],
         ).pipe(
-          Effect.flatMap((round) =>
-            hasIt(round.tags) ? Effect.succeed(round) : Effect.fail(new TooManyTags()),
+          Effect.filterOrFail(
+            (round) => hasIt(round.tags),
+            () => new TooManyTags(),
           ),
         );
       },

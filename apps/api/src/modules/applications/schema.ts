@@ -43,7 +43,10 @@ export const rounds = pgTable(
     // Its Tags (GLOSSARY.md), in the order they were added: trimmed, at most 10, and none the same
     // as another ignoring case. The handlers keep those rules (ADR-0054). Defaulted, so the release
     // before it still inserts Rounds.
-    tags: text().array().notNull().default(sql`'{}'::text[]`),
+    tags: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     ...timestamps,
   },
   // Every query reads one application's Rounds in the order they were added.

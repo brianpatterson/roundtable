@@ -118,7 +118,7 @@ describe('what the contract accepts', () => {
 
   const tagCases = {
     plain: [{ tag: 'React' }, { tag: 'React' }],
-    'trimmed': [{ tag: '  live debugging ' }, { tag: 'live debugging' }],
+    trimmed: [{ tag: '  live debugging ' }, { tag: 'live debugging' }],
     '40 characters once trimmed': [{ tag: ` ${'x'.repeat(40)} ` }, { tag: 'x'.repeat(40) }],
     '41 characters': [{ tag: 'x'.repeat(41) }, false],
     blank: [{ tag: '   ' }, false],
@@ -135,7 +135,7 @@ describe('what the contract accepts', () => {
   });
 
   it('reads a Round from a server before Tags as having none', () => {
-    const round = Schema.decodeUnknownSync(contract.Round)({
+    const round = Schema.decodeSync(contract.Round)({
       id: 'r',
       applicationId: 'a',
       interviewType: 'coding',

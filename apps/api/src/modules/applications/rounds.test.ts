@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { Schema } from 'effect';
-import { Application, INTERVIEW_TYPES, MAX_TAGS, Round } from '@roundtable/contract';
+import {
+  Application,
+  INTERVIEW_TYPES,
+  MAX_TAGS,
+  Round,
+  RoundNotFound,
+  TooManyTags,
+} from '@roundtable/contract';
 import { setupTestApp, signUp, type Json } from '#test/helpers';
 import { rounds } from './schema.js';
 
@@ -208,7 +215,10 @@ describe('Tags on a Round', () => {
     const res = await addTag(round, '  live debugging ');
 
     expect(res.statusCode).toBe(200);
-    expect(res.json<RoundJson>()).toMatchObject({ id: round.id, tags: ['React', 'live debugging'] });
+    expect(res.json<RoundJson>()).toMatchObject({
+      id: round.id,
+      tags: ['React', 'live debugging'],
+    });
     expect(() => Schema.decodeUnknownSync(Round)(res.json())).not.toThrow();
     expect(await tagsListed(round)).toEqual(['React', 'live debugging']);
   });
@@ -283,7 +293,7 @@ describe('Tags on a Round', () => {
     const res = await addTag(round, 'one more');
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ _tag: 'TooManyTags' });
+    expect(Schema.decodeUnknownSync(TooManyTags)(res.json())).toBeInstanceOf(TooManyTags);
     expect((await addTag(round, 'TAG 3')).statusCode).toBe(200);
     expect(await tagsListed(round)).toEqual(ten);
 
@@ -354,7 +364,7 @@ describe('another user’s Rounds', () => {
     const removed = await removeTag(theirRound, 'React', mine);
 
     expect([added.statusCode, removed.statusCode]).toEqual([404, 404]);
-    expect(added.json()).toEqual({ _tag: 'RoundNotFound' });
+    expect(Schema.decodeUnknownSync(RoundNotFound)(added.json())).toBeInstanceOf(RoundNotFound);
     expect(await tagsListed(theirRound)).toEqual(['React']);
   });
 

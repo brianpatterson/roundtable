@@ -198,9 +198,7 @@ export const Tag = Schema.String.pipe(
 
         if (length === 0) return 'must not be blank';
 
-        return length > MAX_TAG_LENGTH
-          ? `must be at most ${MAX_TAG_LENGTH} characters`
-          : undefined;
+        return length > MAX_TAG_LENGTH ? `must be at most ${MAX_TAG_LENGTH} characters` : undefined;
       }),
     ),
     new SchemaTransformation.Transformation(SchemaGetter.trim(), SchemaGetter.trim()),

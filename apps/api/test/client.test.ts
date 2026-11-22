@@ -1,12 +1,7 @@
 // The web app's typed client (packages/shared/src/client.ts) against the real server: the same
 // code the browser runs, with fetch pointed at the app in-process instead of the network.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  ApplicationNotFound,
-  MAX_TAGS,
-  Unauthorized,
-  isApplicationId,
-} from '@roundtable/contract';
+import { ApplicationNotFound, MAX_TAGS, Unauthorized, isApplicationId } from '@roundtable/contract';
 import { ApiError, makeApiClient } from '@roundtable/contract/client';
 import { setupTestApp, signUp } from './helpers.js';
 
