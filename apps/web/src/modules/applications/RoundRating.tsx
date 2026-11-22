@@ -38,7 +38,8 @@ export function RoundRating({ round, name }: { round: Round; name: string }) {
 
   const save = useMutation({
     mutationFn: (rating: Rating) => api.rateRound(round.applicationId, round.id, rating),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: roundsQueryKey(round.applicationId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: roundsQueryKey(round.applicationId) }),
   });
 
   const rated = round.selfRating !== null || round.ratingNote !== null;
@@ -61,9 +62,7 @@ export function RoundRating({ round, name }: { round: Round; name: string }) {
     <div role="group" aria-label={`${name} self-rating`} className={styles.rating}>
       <div className={styles.ratingLine}>
         <span>
-          {round.selfRating === null
-            ? 'Not rated yet'
-            : `Self-rating: ${round.selfRating} of 5`}
+          {round.selfRating === null ? 'Not rated yet' : `Self-rating: ${round.selfRating} of 5`}
         </span>
         <Button
           variant="text"
@@ -88,14 +87,21 @@ export function RoundRating({ round, name }: { round: Round; name: string }) {
             </Button>
             <Button
               disabled={save.isPending || tooLong}
-              onClick={() => save.mutate(ratingOf(choice, note), { onSuccess: () => setOpen(false) })}
+              onClick={() =>
+                save.mutate(ratingOf(choice, note), { onSuccess: () => setOpen(false) })
+              }
             >
               Save
             </Button>
           </>
         }
       >
-        <Select label="Self-rating" options={ratingOptions} value={choice} onValueChange={setChoice} />
+        <Select
+          label="Self-rating"
+          options={ratingOptions}
+          value={choice}
+          onValueChange={setChoice}
+        />
         <TextArea
           label="What went wrong"
           description={`Optional, up to ${MAX_RATING_NOTE} characters.`}

@@ -574,7 +574,10 @@ describe('rating a Round', () => {
 
     const noteAlone = await request('PUT', ratingOf(round), { ratingNote: 'Nerves' });
 
-    expect(ratingIn(noteAlone.json<RoundJson>())).toEqual({ selfRating: null, ratingNote: 'Nerves' });
+    expect(ratingIn(noteAlone.json<RoundJson>())).toEqual({
+      selfRating: null,
+      ratingNote: 'Nerves',
+    });
   });
 
   it('changes and clears the rating and the note, replacing them as a whole', async () => {

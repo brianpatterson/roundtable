@@ -105,12 +105,12 @@ flowchart TB
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
 component, passing the URL's params as props:
 
-| Path                           | Page                                                                                                       |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page                 |
+| Path                           | Page                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                   |
 | `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Self-ratings and Tags |
-| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                      |
-| anything else                  | the shell's "Page not found", with a link to the applications                                              |
+| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                        |
+| anything else                  | the shell's "Page not found", with a link to the applications                                                                |
 
 The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
 and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules

@@ -415,7 +415,7 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       success: Round,
       error: RoundNotFound,
     }),
-    HttpApiEndpoint.delete('deleteRound','/:id/rounds/:roundId', {
+    HttpApiEndpoint.delete('deleteRound', '/:id/rounds/:roundId', {
       params: RoundParams,
       success: HttpApiSchema.NoContent,
       error: RoundNotFound,

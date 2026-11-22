@@ -168,7 +168,10 @@ describe('what the contract accepts', () => {
       { selfRating: 5, ratingNote: 'Ran out of time' },
     ],
     'a note alone': [{ ratingNote: 'Nerves' }, { ratingNote: 'Nerves' }],
-    'a note of 2000 characters': [{ ratingNote: 'x'.repeat(2000) }, { ratingNote: 'x'.repeat(2000) }],
+    'a note of 2000 characters': [
+      { ratingNote: 'x'.repeat(2000) },
+      { ratingNote: 'x'.repeat(2000) },
+    ],
     'a rating of 0': [{ selfRating: 0 }, false],
     'a rating of 6': [{ selfRating: 6 }, false],
     'a fractional rating': [{ selfRating: 3.5 }, false],

@@ -950,7 +950,10 @@ describe('a Round’s Self-rating', () => {
     await renderPage();
     await listed();
 
-    expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 2 of 5', note: 'Ran out of time' });
+    expect(ratingShown('Coding 1')).toEqual({
+      line: 'Self-rating: 2 of 5',
+      note: 'Ran out of time',
+    });
     expect(ratingShown('Behavioral 1')).toEqual({ line: 'Not rated yet', note: null });
     expect(ratingShown('System design 1')).toEqual({ line: 'Self-rating: 5 of 5', note: null });
     expect(screen.getByRole('button', { name: 'Edit rating of Coding 1' })).toBeDefined();
@@ -1081,7 +1084,9 @@ describe('a Round’s Self-rating', () => {
     await userEvent.clear(noteField(dialog));
     await saveRating(dialog);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate Coding 1' })).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Rate Coding 1' })).toBeDefined(),
+    );
     expect(ratingShown('Coding 1')).toEqual({ line: 'Not rated yet', note: null });
     expect(ratings).toEqual([{}]);
   });
@@ -1109,7 +1114,9 @@ describe('a Round’s Self-rating', () => {
 
     fireEvent.change(noteField(dialog), { target: { value: 'x'.repeat(2001) } });
 
-    expect(within(dialog).getByText('The note is 2001 characters; it can be at most 2000.')).toBeDefined();
+    expect(
+      within(dialog).getByText('The note is 2001 characters; it can be at most 2000.'),
+    ).toBeDefined();
     expect(noteField(dialog).getAttribute('aria-invalid')).toBe('true');
     expect(save.disabled).toBe(true);
 
