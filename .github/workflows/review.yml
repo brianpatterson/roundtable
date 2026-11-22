@@ -167,7 +167,7 @@ jobs:
 
       # One review comment per pull request, updated in place on every new commit, plus a short new
       # comment when a re-review asks for changes, which Auto-fix can see (ADR-0046). The script
-      # sets the verdict from the blocking findings, not the reviewer (ADR-0052).
+      # sets the verdict from the blocking findings, not the reviewer (ADR-0053).
       - name: Post the review
         id: post
         if: steps.claude.outputs.structured_output != ''
@@ -180,7 +180,7 @@ jobs:
           "$RUNNER_TEMP/post-review.sh"
 
       # What the Rework workflow reads to decide whether to run (ADR-0037): the pull request, the
-      # commit, the verdict and the number of minor findings (ADR-0052), all checked above. The review's text stays in the comment.
+      # commit, the verdict and the number of minor findings (ADR-0053), all checked above. The review's text stays in the comment.
       - name: Record the verdict
         if: steps.post.outputs.verdict != ''
         env:

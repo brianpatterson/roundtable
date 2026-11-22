@@ -229,7 +229,7 @@ lines.
 When the reviewer asks for changes on one of the factory's pull requests, you're started with the
 pull request and which attempt this is (you get two). Its branch is checked out, and CI passed on
 it ([ADR-0037](../../docs/adr/0037-software-factory-rework.md)). A review whose findings are all
-minor gets one pass too ([ADR-0052](../../docs/adr/0052-review-verdict-from-blocking-findings.md)),
+minor gets one pass too ([ADR-0053](../../docs/adr/0053-review-verdict-from-blocking-findings.md)),
 outside the two attempts: the same steps, except that pushing nothing only leaves the findings
 for the owner.
 

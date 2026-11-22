@@ -1,6 +1,6 @@
 # 0037. Rework factory pull requests when the reviewer asks for changes, twice, then hand over
 
-- **Status:** Accepted, amended by [ADR-0052](0052-review-verdict-from-blocking-findings.md)
+- **Status:** Accepted, amended by [ADR-0053](0053-review-verdict-from-blocking-findings.md)
 - **Date:** 2026-11-19
 
 ## Context

@@ -3,7 +3,7 @@
 # pushes. CI and the reviewer then run again on the new commit. Two attempts, then it stops and
 # asks for a human, as the CI fixer does (ADR-0028).
 #
-# A review whose findings are all minor gets one pass too (ADR-0052), which doesn't count against
+# A review whose findings are all minor gets one pass too (ADR-0053), which doesn't count against
 # the two attempts; later minor-only reviews are left for the owner. A blocker's rework fixes the
 # minor findings alongside it.
 #
@@ -208,7 +208,7 @@ jobs:
         id: brief
         run: |
           if [ "$KIND" = minor ]; then
-            brief="The reviewer found no blocking findings on pull request #$PR (branch $BRANCH, commit $SHA), only minor ones: its review is in .factory/review.md. This is the factory's one pass over minor findings (ADR-0052); later minor findings are left for the owner. The branch is checked out. Follow \"Reworking a review\" in your instructions and return the structured output. If no finding is worth changing, push nothing and return needs-human with your reasons: on this pass that only leaves them for the owner."
+            brief="The reviewer found no blocking findings on pull request #$PR (branch $BRANCH, commit $SHA), only minor ones: its review is in .factory/review.md. This is the factory's one pass over minor findings (ADR-0053); later minor findings are left for the owner. The branch is checked out. Follow \"Reworking a review\" in your instructions and return the structured output. If no finding is worth changing, push nothing and return needs-human with your reasons: on this pass that only leaves them for the owner."
           else
             brief="The reviewer asked for changes on pull request #$PR (branch $BRANCH, commit $SHA): its review, and earlier rework replies, are in .factory/review.md. This is rework attempt $ATTEMPT of 2. The branch is checked out. Follow \"Reworking a review\" in your instructions and return the structured output."
           fi
@@ -306,7 +306,7 @@ jobs:
             summary="The rework agent's summary was withheld because it matched a credential pattern. See the run, and rotate the credential."
           fi
 
-          body=$(printf '<!-- factory-rework -->\n%s### %s: %s\n\n%s\n\n<sub>[Run](%s), answering the review of commit %s. ADR-0037, ADR-0052.</sub>\n' \
+          body=$(printf '<!-- factory-rework -->\n%s### %s: %s\n\n%s\n\n<sub>[Run](%s), answering the review of commit %s. ADR-0037, ADR-0053.</sub>\n' \
             "$extra" "$title" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")
           gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
           [ "$outcome" != protected ] || exit 1

@@ -1,4 +1,4 @@
-# 0052. Derive the review's verdict from its blocking findings
+# 0053. Derive the review's verdict from its blocking findings
 
 - **Status:** Accepted
 - **Date:** 2026-11-22

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Posts the factory reviewer's review on a pull request, with a verdict this script derives from its
-# blocking findings (ADR-0026, ADR-0046, ADR-0052).
+# blocking findings (ADR-0026, ADR-0046, ADR-0053).
 #
 # One review comment per pull request, marked `<!-- factory-review -->`, edited in place on every
 # re-review. GitHub sends no event a watcher can see for an edit, so a re-review that asks for
@@ -17,10 +17,10 @@
 #                      (`verdict=ready|changes`, `minor=<number>`), when set
 #   GH                 overrides gh (tests)
 #
-# The reviewer doesn't choose the verdict (ADR-0052): any blocking finding means changes. It counts
+# The reviewer doesn't choose the verdict (ADR-0053): any blocking finding means changes. It counts
 # its blocking findings, and this script also counts the findings the review marks **blocking**
 # (`1. **blocking**:`) and takes the larger, so a miscount can't turn a blocker into "ready".
-# The minor findings (`1. **minor**:`) are counted for Rework's one minor pass (ADR-0052).
+# The minor findings (`1. **minor**:`) are counted for Rework's one minor pass (ADR-0053).
 #
 # The caller has already passed RESULT through guard-secrets.sh.
 set -euo pipefail

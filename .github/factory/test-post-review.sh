@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks what the reviewer posts (ADR-0026, ADR-0046, ADR-0052), against a stand-in gh that answers from
+# Checks what the reviewer posts (ADR-0026, ADR-0046, ADR-0053), against a stand-in gh that answers from
 # canned comments and logs every call that changes something. Run from anywhere:
 # .github/factory/test-post-review.sh
 set -euo pipefail
@@ -99,7 +99,7 @@ has "issues/comments/10" || fail "the workflow's own review is the one edited"
 # and rework.yml all find the review with startswith("<!-- factory-review -->").
 case "$(nudge abc)" in "<!-- factory-review -->"*) fail "the short comment's marker starts like the review's" ;; esac
 
-# The verdict follows the blocking findings (ADR-0052), whatever the count says.
+# The verdict follows the blocking findings (ADR-0053), whatever the count says.
 result() { jq -n --argjson b "$1" --arg r "$2" '{blocking: $b, review: $r}'; }
 findings=$'**Findings**\n1. **minor**: `a.ts:1` could be clearer.\n2. **minor**: `b.ts:2` too.'
 blocker=$'**Findings**\n1. **minor**: `a.ts:1` could be clearer.\n2. **blocking**: A01 `b.ts:2` leaks rows.'

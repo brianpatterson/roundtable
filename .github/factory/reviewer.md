@@ -120,7 +120,7 @@ the change touches and "nothing found" or the findings' numbers for each.
 Return the structured output: `blocking` is the number of **blocking** findings, and `review` is
 Markdown for the pull request. A blocking finding is one that must be fixed before the owner
 merges; anything that can wait is minor. You don't choose the verdict: any blocking finding makes
-it "changes needed" and starts a rework, none makes it "ready" (ADR-0052). The script that posts
+it "changes needed" and starts a rework, none makes it "ready" (ADR-0053). The script that posts
 your review also counts the findings marked **blocking** and uses the larger number, so a count
 lower than your markers can't make the review ready. The review:
 

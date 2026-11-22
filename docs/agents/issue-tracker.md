@@ -27,7 +27,8 @@ that has been deployed. So:
   open pull request that closes it) in its waiting comment on the dependent ticket.
 - When publishing a set of tickets, apply **no** label unless the user asks: `ready` is the owner's
   sign-off that a ticket is safe to build, and only the owner's label counts. (The one exception:
-  the nightly mutation run labels its own tests-only `mutation` tickets, [ADR-0051](../adr/0051-nightly-mutation-tickets.md).)
+  the nightly mutation run labels its own tests-only `mutation` tickets, which the factory builds after
+  yours, [ADR-0051](../adr/0051-nightly-mutation-tickets.md), [ADR-0052](../adr/0052-more-mutation-tickets-behind-the-owners.md).)
 - Once a ticket is labeled, don't edit its title or description; an edit by anyone but the owner
   removes `ready` until the owner rereads it.
 

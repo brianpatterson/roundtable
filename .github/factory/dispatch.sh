@@ -23,7 +23,7 @@ set -euo pipefail
 GH=${GH:-gh}
 
 # The decision, from a state gather() builds (ages in minutes):
-#   {open, closed: null | deployed | merged | unmerged, ready: null | {approved, age},
+#   {open, closed: null | deployed | merged | unmerged, ready: null | {approved, nightly, at, age},
 #    edited_after_ready, held: null | needs-human | needs-info, answered, building: null | {age, has_pr},
 #    blockers: [{number, open, closed, active, held}], others_building: [number]}
 # `closed` is what closed an issue: a pull request or commit whose merge commit the latest
@@ -35,7 +35,8 @@ GH=${GH:-gh}
 # workflow last removed it. Removing and re-adding it themselves doesn't restart the approval, so an
 # edit made in between still counts. `approved` means the label is the owner's, or the workflow's
 # on a `mutation` ticket the workflow opened (ADR-0051); there, the approval is the workflow's
-# label, and anyone else's edit still sends the ticket back. A blocker is `active` when it's labeled `ready` or `building`,
+# label, and anyone else's edit still sends the ticket back. `nightly` marks that workflow-approved
+# kind: the sweep starts the owner's tickets first and nightly ones only after them (ADR-0052). A blocker is `active` when it's labeled `ready` or `building`,
 # or an open pull request closes it, and `held` (needs-human | needs-info | null) when it waits on
 # the owner. An open blocker that is neither (a tracking issue opened after its pull request merged,
 # or a ticket nobody labeled) would be waited on forever, so the wait names it, and names a held one
@@ -161,7 +162,8 @@ gather() {
          else . end)) as $since
     | {number: $i.number, open: ($i.state == "OPEN"), sha: ($i.timelineItems | sha),
        ready: (if ($labels | index("ready")) != null and $ready != null
-               then {approved: ($ready.actor.login | approver), at: $ready.createdAt, age: age($ready.createdAt)} else null end),
+               then {approved: ($ready.actor.login | approver),
+                     nightly: ($nightly and ($ready.actor.login // "") == "github-actions"), at: $ready.createdAt, age: age($ready.createdAt)} else null end),
        edited_after_ready: ($ready != null and (($since // $ready.createdAt) as $from |
          any($i.userContentEdits.nodes[]; .editedAt > $from and (.editor.login // "") != $owner) or
          any($i.timelineItems.nodes[]; .__typename == "RenamedTitleEvent" and .createdAt > $from and (.actor.login // "") != $owner))),
@@ -320,8 +322,8 @@ if [ "${1:-}" = --gate ]; then
   exit 0
 fi
 
-# Every ready ticket, oldest `ready` label first; the first that may start is started, and the rest
-# queue behind it.
+# Every ready ticket: the owner's first, then the nightly mutation run's (ADR-0052), each oldest
+# `ready` label first. The first that may start is started, and the rest queue behind it.
 states=()
 while read -r number; do
   [ -n "$number" ] || continue
@@ -340,6 +342,6 @@ while read -r state; do
   if act sweep "$number" "$decision" "$state" && [ "$(jq -r .action <<<"$decision")" = start ]; then
     in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
   fi
-done < <(printf '%s\n' "${states[@]}" | jq -sc 'sort_by(.ready.at // "") | .[]')
+done < <(printf '%s\n' "${states[@]}" | jq -sc 'sort_by(.ready.nightly // false, .ready.at // "") | .[]')
 # A ticket that couldn't be read turns the run red, so it gets noticed.
 exit "$failed"
