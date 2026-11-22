@@ -83,3 +83,9 @@ setup-token`), stored in a `factory` GitHub Environment that admits only `main`.
 - **2026-11-17:** the turn cap is 150, not 60. The first feature ticket (#53) took 70 turns and
   was marked failed after it had already opened its pull request. The 60-minute job timeout
   stays the real limit.
+- **2026-11-22:** the turn cap is 250. #132 took 179 turns in 25 minutes, opened its pull
+  request (#149) and answered, but the action fails any run over `--max-turns` and then drops its
+  structured output, so the issue said "stopped without a summary". Every agent job's failure step
+  (`explain-failure.sh`) now recovers a finished agent's answer from the run's output and gives the
+  reason for a real failure, for the summary. The implementer also merges `main` before it pushes:
+  #149 conflicted with an ADR number merged meanwhile, and a conflicting pull request gets no CI.
