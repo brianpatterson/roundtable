@@ -182,9 +182,10 @@ jobs:
           restrict_untrusted_prs: ${{ steps.own_pr.outputs.own == 'true' && 'false' || 'true' }}
           # The job's 60-minute timeout is the real limit. 60 turns was too few: #53, a feature with a
           # new component and its tests, took 70 and was marked failed after it had opened its PR.
+          # 150 was too: #132, an API, contract and web change with an ADR, took 179 in 25 minutes.
           claude_args: >-
             --model claude-opus-5-5
-            --max-turns 150
+            --max-turns 250
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
             --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:mutation),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
@@ -193,6 +194,7 @@ jobs:
       # The guards after every agent run live in .github/factory/ and were copied from main above:
       # the workspace may be on the pull request's branch by now, and a branch must not change them.
       - name: Explain a failed run
+        id: failure
         if: always() && steps.claude.outcome == 'failure'
         run: '"$RUNNER_TEMP/explain-failure.sh" agent'
 
@@ -364,9 +366,10 @@ jobs:
             The dispatcher started you on issue #${{ env.ISSUE }} (ADR-0047). The ticket is in
             .factory/ticket.md. Follow "Started by the dispatcher" in your instructions and return
             the structured output.
+          # As in implement: the timeout is the real limit.
           claude_args: >-
             --model claude-opus-5-5
-            --max-turns 150
+            --max-turns 250
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
             --add-dir ${{ runner.temp }}/user-report
@@ -375,6 +378,7 @@ jobs:
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["built","needs-info"]},"branch":{"type":"string"},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
       - name: Explain a failed run
+        id: failure
         if: always() && steps.claude.outcome == 'failure'
         run: '"$RUNNER_TEMP/explain-failure.sh" agent'
 
@@ -405,7 +409,7 @@ jobs:
         if: always() && steps.ticket.outputs.refused != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RESULT: ${{ steps.claude.outputs.structured_output }}
+          RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
         run: |
           start=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
           opened=$(gh pr list --state all --author app/claude --search "created:>=$start" --limit 50 --json number,headRefName)
@@ -426,13 +430,14 @@ jobs:
         if: always() && steps.ticket.outputs.refused != 'true' && steps.denials.outputs.suspicious != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RESULT: ${{ steps.claude.outputs.structured_output }}
+          RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
+          REASON: ${{ steps.failure.outputs.reason }}
           HEADS: ${{ steps.published.outputs.heads }}
           REPORT: ${{ steps.report.outputs.fetched }}
           DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
         run: |
           outcome=$(jq -r '.outcome // "failed"' <<<"${RESULT:-{\}}")
-          summary=$(jq -r '.summary // "The implementer stopped without a summary; see the run log."' <<<"${RESULT:-{\}}")
+          summary=$(jq -r --arg why "${REASON:-}" '.summary // ("The implementer stopped without a summary" + (if $why == "" then "" else ": " + $why end) + ". See the run log.")' <<<"${RESULT:-{\}}")
           branch=$(jq -r '.branch // ""' <<<"${RESULT:-{\}}")
           [[ "$branch" == "claude/issue-$ISSUE-"* ]] || branch=""
 
@@ -683,6 +688,7 @@ jobs:
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","reran","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
       - name: Explain a failed run
+        id: failure
         if: always() && steps.claude.outcome == 'failure' && steps.current.outputs.stale != 'true'
         run: '"$RUNNER_TEMP/explain-failure.sh" fixer'
 
@@ -705,10 +711,11 @@ jobs:
         if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RESULT: ${{ steps.claude.outputs.structured_output }}
+          RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
+          REASON: ${{ steps.failure.outputs.reason }}
         run: |
           outcome=$(jq -r '.outcome // "failed"' <<<"${RESULT:-{\}}")
-          summary=$(jq -r '.summary // "The fixer stopped without a summary; see the run log."' <<<"${RESULT:-{\}}")
+          summary=$(jq -r --arg why "${REASON:-}" '.summary // ("The fixer stopped without a summary" + (if $why == "" then "" else ": " + $why end) + ". See the run log.")' <<<"${RESULT:-{\}}")
 
           # The fixer never changes its own rules or CI, whatever the pull request itself touches.
           if gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...$BRANCH" --jq '.files[].filename' 2>/dev/null |

@@ -114,6 +114,12 @@ in the run's report.
   because it can download and run a package.
 - **Output:** don't pipe through `grep`, `head`, `tail` or `sed`. They're refused, and the whole
   command with them. You see the full output anyway; read files with your Read and Grep tools.
+- **Files:** change and delete them with your Edit and Write tools, or `git rm` and `git mv`, never
+  `sed -i`, `rm`, `echo >` or a script: those are refused.
+- **Waiting:** don't wait for CI or anything else with `sleep`, a loop or Monitor: they're refused.
+  Push, finish, and return: a failed CI run starts the fixer by itself.
+- **Turns:** a run has a turn cap, and a refused call spends one. Run each allowlisted command on its
+  own, and check a long command once rather than in pieces.
 
 ## The pull request
 
@@ -122,12 +128,18 @@ Write the description to `.factory/pr-body.md` (git-ignored) from
 acceptance criterion), and the docs checklist, honestly ticked. The first line must be
 `Closes #<issue number>`.
 
+Before you push, bring in what landed on `main` while you worked: `git fetch origin main`, then
+`git merge origin/main`, resolve any conflict, and run `pnpm check` again if anything came in. A
+pull request that conflicts with `main` gets no CI at all, and an ADR numbered from where you
+started can collide with one merged since (#149's ADR-0052 did): number a new ADR after the
+highest in `docs/adr/` once you've merged.
+
 Push your branch with `git push origin <branch>` (a branch you created has no upstream, and the
 allowlist refuses most other forms of `git push`, such as `--set-upstream`), then open the pull request yourself:
 `gh pr create --base main --title "<conventional subject>" --body-file .factory/pr-body.md --label factory`.
 Add `--draft` if `pnpm check` still fails. CI runs on it either way, and a human reviews and
-merges; you never merge the pull request. Merge `main` into your branch (`git merge origin/main`)
-only when the owner asks you to resolve a conflict.
+merges; you never merge the pull request. After it's open, merge `main` into your branch again only
+when the owner asks you to resolve a conflict.
 
 ## Started by the dispatcher
 

@@ -58,6 +58,44 @@ output=$(RUNNER_TEMP=$work GITHUB_STEP_SUMMARY=$work/summary "$here/explain-fail
 case "$output" in *"The fixer failed: model not found"*) ;; *) fail "the failure names who failed and why: [$output]" ;; esac
 grep -q "model not found" "$work/summary" || fail "the reason goes in the step summary"
 
+# The reason is also an output, for the summary the workflow posts; a failure leaves no result.
+: >"$work/out"
+RUNNER_TEMP=$work GITHUB_STEP_SUMMARY=$work/summary GITHUB_OUTPUT=$work/out "$here/explain-failure.sh" agent >/dev/null
+grep -qx "reason=model not found" "$work/out" || fail "the reason is an output: [$(cat "$work/out")]"
+! grep -q "^result=" "$work/out" || fail "a failure recovers no answer"
+
+# Over the turn cap: the agent answered (#132), and the action dropped its structured_output.
+# The answer is recovered whether the CLI put it in structured_output or in result as JSON text.
+for last in \
+  '{"type":"result","subtype":"success","num_turns":179,"structured_output":{"outcome":"built","branch":"claude/issue-1-x","summary":"Opened #2.\nDone."}}' \
+  '{"type":"result","subtype":"success","num_turns":179,"result":"{\"outcome\":\"built\",\"branch\":\"claude/issue-1-x\",\"summary\":\"Opened #2.\\nDone.\"}"}'; do
+  echo "[{\"type\":\"system\"},$last]" >"$work/claude-execution-output.json"
+  : >"$work/out"
+  output=$(RUNNER_TEMP=$work GITHUB_STEP_SUMMARY=$work/summary GITHUB_OUTPUT=$work/out "$here/explain-failure.sh" agent)
+  result=$(sed -n 's/^result=//p' "$work/out")
+  [ "$(jq -r .branch <<<"$result" 2>/dev/null)" = claude/issue-1-x ] || fail "an answer over the turn cap is recovered: [$result]"
+  [ "$(grep -c . "$work/out")" = 2 ] || fail "a multi-line summary stays on one output line: [$(cat "$work/out")]"
+  grep -q "^reason=.*179 turns" "$work/out" || fail "the reason names the turns"
+  case "$output" in *"::warning::"*) ;; *) fail "a recovered run is a warning, not an error: [$output]" ;; esac
+done
+
+# Out of turns before answering, or an answer that isn't an object: nothing to recover.
+for last in \
+  '{"type":"result","subtype":"error_max_turns","num_turns":150,"errors":["Reached maximum number of turns (150)"]}' \
+  '{"type":"result","subtype":"success","result":"Done, no JSON."}'; do
+  echo "[$last]" >"$work/claude-execution-output.json"
+  : >"$work/out"
+  RUNNER_TEMP=$work GITHUB_STEP_SUMMARY=$work/summary GITHUB_OUTPUT=$work/out "$here/explain-failure.sh" agent >/dev/null
+  ! grep -q "^result=" "$work/out" || fail "nothing is recovered from $last"
+  grep -q "^reason=." "$work/out" || fail "a reason is given for $last"
+done
+grep -q "maximum number of turns" "$work/summary" || fail "running out of turns says so"
+
+rm "$work/claude-execution-output.json"
+: >"$work/out"
+RUNNER_TEMP=$work GITHUB_OUTPUT=$work/out "$here/explain-failure.sh" agent >/dev/null
+grep -qx "reason=it failed before writing its output" "$work/out" || fail "no output file still gives a reason"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."
   exit 1
