@@ -494,9 +494,13 @@ describe('Tags on a Round', () => {
     stored = [round(1, 'coding')];
     await renderPage();
     await listed();
+    const server = vi.fn(fakeServer);
+
+    vi.stubGlobal('fetch', server);
     await addTag('Coding 1', '   ');
 
-    expect(await within(tagsGroup('Coding 1')).findByText(/must not be blank/)).toBeDefined();
+    expect(await within(tagsGroup('Coding 1')).findByText('Enter a tag.')).toBeDefined();
+    expect(server.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
     expect(tagField('Coding 1').getAttribute('aria-invalid')).toBe('true');
     expect(tagsShown('Coding 1')).toEqual([]);
   });
@@ -505,12 +509,15 @@ describe('Tags on a Round', () => {
     stored = [round(1, 'coding')];
     await renderPage();
     await listed();
-    await addTag('Coding 1', 'x'.repeat(41));
+    await addTag('Coding 1', `  ${'x'.repeat(40)}  `);
+    await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['x'.repeat(40)]));
+
+    await addTag('Coding 1', 'y'.repeat(41));
 
     expect(
-      await within(tagsGroup('Coding 1')).findByText(/must be at most 40 characters/),
+      await within(tagsGroup('Coding 1')).findByText('A tag can be at most 40 characters.'),
     ).toBeDefined();
-    expect(tagsShown('Coding 1')).toEqual([]);
+    expect(tagsShown('Coding 1')).toEqual(['x'.repeat(40)]);
   });
 
   it('says why an eleventh Tag isn’t added, keeping what was typed', async () => {
@@ -533,10 +540,10 @@ describe('Tags on a Round', () => {
     await renderPage();
     await listed();
     await addTag('Coding 1', ' ');
-    await within(tagsGroup('Coding 1')).findByText(/must not be blank/);
+    await within(tagsGroup('Coding 1')).findByText('Enter a tag.');
     await userEvent.type(tagField('Coding 1'), 'R');
 
-    expect(within(tagsGroup('Coding 1')).queryByText(/must not be blank/)).toBeNull();
+    expect(within(tagsGroup('Coding 1')).queryByText('Enter a tag.')).toBeNull();
   });
 
   it('says why a Tag couldn’t be removed', async () => {
@@ -553,6 +560,24 @@ describe('Tags on a Round', () => {
       'Something went wrong. Please try again.',
     );
     expect(tagsShown('Coding 1')).toEqual(['React']);
+  });
+
+  it('clears a failed removal’s message once the user types and adds a Tag', async () => {
+    stored = [round(1, 'coding', { tags: ['React'] })];
+    await renderPage();
+    await listed();
+
+    failWrites = 500;
+    await userEvent.click(
+      within(tagsGroup('Coding 1')).getByRole('button', { name: 'Remove React' }),
+    );
+    await within(tagsGroup('Coding 1')).findByRole('alert');
+
+    failWrites = undefined;
+    await addTag('Coding 1', 'SQL');
+
+    await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['React', 'SQL']));
+    expect(within(tagsGroup('Coding 1')).queryByRole('alert')).toBeNull();
   });
 });
 

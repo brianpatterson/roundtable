@@ -1,35 +1,47 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { Round } from '@roundtable/contract';
+import { MAX_TAG_LENGTH, type Round } from '@roundtable/contract';
 import { Alert, Button, Chip, TextField } from '../../design-system';
 import { api } from '../../shared/api';
 import { roundsQueryKey } from './queries';
 import styles from './Rounds.module.css';
 
+/** Why a Tag can't be added before it's sent, in plain words: blank or too long. */
+function tagProblem(value: string) {
+  const length = value.trim().length;
+
+  if (length === 0) return 'Enter a tag.';
+
+  return length > MAX_TAG_LENGTH ? `A tag can be at most ${MAX_TAG_LENGTH} characters.` : undefined;
+}
+
 /**
- * A Round's Tags (GLOSSARY.md), with a field to add one. The API keeps one Tag that differs from
- * another only in case or surrounding spaces, and says why it refuses one: blank, too long, or one
- * too many. The message shows under the field until the user types again.
+ * A Round's Tags (GLOSSARY.md), with a field to add one. A blank or too-long Tag is refused here;
+ * the API keeps one Tag that differs from another only in case or surrounding spaces, and refuses
+ * one too many. A message shows until the user types again, or a Tag is added.
  */
 export function RoundTags({ round, name }: { round: Round; name: string }) {
   const queryClient = useQueryClient();
   const [tag, setTag] = useState('');
+  const [problem, setProblem] = useState<string>();
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: roundsQueryKey(round.applicationId) });
+
+  const remove = useMutation({
+    mutationFn: (value: string) => api.removeTag(round.applicationId, round.id, value),
+    onSuccess: refresh,
+  });
 
   const add = useMutation({
     mutationFn: (value: string) => api.addTag(round.applicationId, round.id, value),
     onSuccess: () => {
       setTag('');
+      // A removal that failed before is no longer what the user is looking at.
+      remove.reset();
 
       return refresh();
     },
-  });
-
-  const remove = useMutation({
-    mutationFn: (value: string) => api.removeTag(round.applicationId, round.id, value),
-    onSuccess: refresh,
   });
 
   return (
@@ -52,15 +64,22 @@ export function RoundTags({ round, name }: { round: Round; name: string }) {
         className={styles.add}
         onSubmit={(e) => {
           e.preventDefault();
-          add.mutate(tag);
+
+          const why = tagProblem(tag);
+
+          setProblem(why);
+
+          if (!why) add.mutate(tag);
         }}
       >
         <TextField
           label="Tag"
           value={tag}
-          error={add.error?.message}
+          error={problem ?? add.error?.message}
           onChange={(e) => {
+            setProblem(undefined);
             add.reset();
+            remove.reset();
             setTag(e.target.value);
           }}
         />
