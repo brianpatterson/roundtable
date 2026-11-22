@@ -84,7 +84,7 @@ esac
 # not a `ready` label: the wait says what it is held on, even if it still has `ready`.
 reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false,"held":"needs-human"},{"number":4,"open":true,"closed":null,"active":true,"held":"needs-info"}]')" | jq -r .reason)
 # shellcheck disable=SC2016 # backticks are Markdown
-case "$reason" in *'#3 (`needs-human`), #4 (`needs-info`) waits on you'*) ;; *)
+case "$reason" in *'Waiting on you: #3 (`needs-human`), #4 (`needs-info`). Settle each first'*) ;; *)
   echo "FAIL: the reason names held blockers with their label: got [$reason]"
   failures=$((failures + 1))
   ;;
@@ -234,7 +234,7 @@ esac
 
 output=$(DRY_RUN=true run --gate 27)
 # shellcheck disable=SC2016 # backticks are Markdown
-expect "a blocker held for a human is named with its label" "$output" '#7 (`needs-human`) waits on you'
+expect "a blocker held for a human is named with its label" "$output" 'Waiting on you: #7 (`needs-human`).'
 
 # Relabeling `ready` after answering `needs-info` starts it again, and clears `needs-info`.
 : >"$work/writes"

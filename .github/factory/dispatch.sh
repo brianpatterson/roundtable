@@ -60,7 +60,7 @@ decide='
     [.blockers[] | select(.open and (.held // null) != null)] as $held
     | [.blockers[] | select(.open and .active == false and (.held // null) == null) | .number] as $idle
     | out("wait"; "it is blocked by \([.blockers[] | select(.open or .closed == "merged") | .number] | refs), until each is merged and deployed"
-        + (if $held == [] then "" else ". \($held | map("#\(.number) (`\(.held)`)") | join(", ")) waits on you: settle that first" end)
+        + (if $held == [] then "" else ". Waiting on you: \($held | map("#\(.number) (`\(.held)`)") | join(", ")). Settle each first" end)
         + (if $idle == [] then "" else ". Nothing will finish \($idle | refs): no `ready` label and no open pull request that closes it. Label each `ready`, or, if its work is already merged, remove the dependency and then close the issue" end))
   elif (.others_building | length) > 0 then
     out("queue"; "the factory builds one ticket at a time, and \(.others_building | refs) is in flight until it is deployed")
