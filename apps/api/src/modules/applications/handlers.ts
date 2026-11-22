@@ -10,6 +10,7 @@ import {
   TooManyTags,
   currentStatus,
   sameTag,
+  type RoundRating,
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
@@ -25,6 +26,12 @@ const scheduleOf = (schedule: RoundSchedule) => ({
   startsAt: schedule.startsAt ?? null,
   durationMinutes: schedule.durationMinutes ?? null,
   dueOn: schedule.dueOn ?? null,
+});
+
+/** A whole Self-rating as columns: what the request leaves out is cleared, and so is a blank note. */
+const ratingOf = (rating: RoundRating) => ({
+  selfRating: rating.selfRating ?? null,
+  ratingNote: rating.ratingNote?.trim() ? rating.ratingNote : null,
 });
 
 /**
@@ -273,6 +280,22 @@ export const ApplicationsLive = HttpApiBuilder.group(
           const [row] = yield* db
             .update(rounds)
             .set(scheduleOf(payload))
+            .where(ownedRound(user.id, params.id, params.roundId))
+            .returning()
+            .pipe(Effect.orDie);
+
+          if (!row) return yield* new RoundNotFound();
+
+          return row;
+        }),
+
+      rateRound: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const user = yield* CurrentUser;
+
+          const [row] = yield* db
+            .update(rounds)
+            .set(ratingOf(payload))
             .where(ownedRound(user.id, params.id, params.roundId))
             .returning()
             .pipe(Effect.orDie);

@@ -156,6 +156,33 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const ratingCases = {
+    'nothing (clears it)': [{}, {}],
+    'nulls (clears it)': [
+      { selfRating: null, ratingNote: null },
+      { selfRating: null, ratingNote: null },
+    ],
+    'a rating of 1': [{ selfRating: 1 }, { selfRating: 1 }],
+    'a rating of 5 with a note': [
+      { selfRating: 5, ratingNote: 'Ran out of time' },
+      { selfRating: 5, ratingNote: 'Ran out of time' },
+    ],
+    'a note alone': [{ ratingNote: 'Nerves' }, { ratingNote: 'Nerves' }],
+    'a note of 2000 characters': [{ ratingNote: 'x'.repeat(2000) }, { ratingNote: 'x'.repeat(2000) }],
+    'a rating of 0': [{ selfRating: 0 }, false],
+    'a rating of 6': [{ selfRating: 6 }, false],
+    'a fractional rating': [{ selfRating: 3.5 }, false],
+    'a rating as text': [{ selfRating: '3' }, false],
+    'a note of 2001 characters': [{ ratingNote: 'x'.repeat(2001) }, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(ratingCases))('rating: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.RoundRating)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
   // The web app sends what the user typed, so the client must refuse the same schedules first.
   it('encodes a schedule, and refuses an inconsistent one before it is sent', () => {
     const encode = Schema.encodeUnknownExit(contract.CreateRound);
@@ -329,6 +356,8 @@ describe('responses from the release before the status rework still decode', () 
       startsAt: null,
       durationMinutes: null,
       dueOn: null,
+      selfRating: null,
+      ratingNote: null,
     });
   });
 

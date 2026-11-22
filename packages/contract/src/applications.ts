@@ -291,7 +291,29 @@ export const RoundSchedule = Schema.Struct(scheduleFields).check(isConsistentSch
 
 export type RoundSchedule = typeof RoundSchedule.Type;
 
-/** A schedule field in a response. A server from before the schedule leaves it out: null. */
+/** A Self-rating's bounds: 1, it went badly, to 5, it went well. */
+export const SELF_RATING = { minimum: 1, maximum: 5 } as const;
+
+/** The longest note a Self-rating can have, in characters. */
+export const MAX_RATING_NOTE = 2000;
+
+const SelfRating = Schema.Int.check(Schema.isBetween(SELF_RATING));
+
+const RatingNote = Schema.String.check(Schema.isMaxLength(MAX_RATING_NOTE));
+
+/**
+ * A Round's whole Self-rating (GLOSSARY.md), replacing the one it had: a score from 1 to 5 and a
+ * note on what went wrong, each optional. What isn't given is cleared, so `{}` clears both, and a
+ * blank note is no note.
+ */
+export const RoundRating = Schema.Struct({
+  selfRating: Schema.optional(Schema.NullOr(SelfRating)),
+  ratingNote: Schema.optional(Schema.NullOr(RatingNote)),
+});
+
+export type RoundRating = typeof RoundRating.Type;
+
+/** A field in a response. A server from before the field leaves it out: null. */
 const ResponseField = <S extends Schema.Top>(schema: S) =>
   Schema.NullOr(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null)));
 
@@ -311,6 +333,10 @@ export const Round = Schema.Struct({
   durationMinutes: ResponseField(Schema.Int),
   /** When it's due (a take-home), as `YYYY-MM-DD`. Never set with a start. */
   dueOn: ResponseField(Schema.String),
+  /** The user's Self-rating of it, 1 (went badly) to 5 (went well), if they gave one. */
+  selfRating: ResponseField(Schema.Int),
+  /** Their note on what went wrong, if they wrote one. */
+  ratingNote: ResponseField(Schema.String),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 });
@@ -382,7 +408,14 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       success: Round,
       error: RoundNotFound,
     }),
-    HttpApiEndpoint.delete('deleteRound', '/:id/rounds/:roundId', {
+    // Sets, changes or clears a Round's Self-rating and its note, as a whole.
+    HttpApiEndpoint.put('rateRound', '/:id/rounds/:roundId/rating', {
+      params: RoundParams,
+      payload: RoundRating,
+      success: Round,
+      error: RoundNotFound,
+    }),
+    HttpApiEndpoint.delete('deleteRound','/:id/rounds/:roundId', {
       params: RoundParams,
       success: HttpApiSchema.NoContent,
       error: RoundNotFound,

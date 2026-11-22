@@ -520,6 +520,156 @@ describe('scheduling a Round', () => {
   });
 });
 
+const ratingOf = (round: RoundJson) => `${roundsOf(round.applicationId)}/${round.id}/rating`;
+
+/** The Self-rating fields of a Round as the API returns it. */
+const ratingIn = (round: RoundJson) => ({
+  selfRating: round.selfRating,
+  ratingNote: round.ratingNote,
+});
+
+const NOT_RATED = { selfRating: null, ratingNote: null };
+
+describe('rating a Round', () => {
+  it('starts a Round not rated', async () => {
+    const round = await newRound();
+
+    expect(ratingIn(round)).toEqual(NOT_RATED);
+  });
+
+  it('rates a Round from 1 to 5, and lists the rating with it', async () => {
+    const round = await newRound();
+
+    for (const selfRating of [1, 2, 3, 4, 5]) {
+      const res = await request('PUT', ratingOf(round), { selfRating });
+
+      expect(res.statusCode).toBe(200);
+      expect(ratingIn(res.json<RoundJson>())).toEqual({ selfRating, ratingNote: null });
+    }
+
+    const [listed] = (await request('GET', roundsOf(round.applicationId))).json<RoundJson[]>();
+
+    expect(ratingIn(listed ?? round)).toEqual({ selfRating: 5, ratingNote: null });
+  });
+
+  it('saves a note with the rating, up to 2000 characters, or a note alone', async () => {
+    const round = await newRound();
+
+    const both = await request('PUT', ratingOf(round), {
+      selfRating: 2,
+      ratingNote: 'Ran out of time on the second part',
+    });
+
+    expect(ratingIn(both.json<RoundJson>())).toEqual({
+      selfRating: 2,
+      ratingNote: 'Ran out of time on the second part',
+    });
+
+    const longest = await request('PUT', ratingOf(round), {
+      selfRating: 3,
+      ratingNote: 'x'.repeat(2000),
+    });
+
+    expect(longest.json<RoundJson>().ratingNote).toHaveLength(2000);
+
+    const noteAlone = await request('PUT', ratingOf(round), { ratingNote: 'Nerves' });
+
+    expect(ratingIn(noteAlone.json<RoundJson>())).toEqual({ selfRating: null, ratingNote: 'Nerves' });
+  });
+
+  it('changes and clears the rating and the note, replacing them as a whole', async () => {
+    const round = await newRound();
+
+    await request('PUT', ratingOf(round), { selfRating: 2, ratingNote: 'Rushed' });
+
+    const changed = await request('PUT', ratingOf(round), { selfRating: 4, ratingNote: 'Better' });
+
+    expect(ratingIn(changed.json<RoundJson>())).toEqual({ selfRating: 4, ratingNote: 'Better' });
+
+    // What isn't sent is cleared: the note goes, the rating stays as sent.
+    const noteCleared = await request('PUT', ratingOf(round), { selfRating: 4 });
+
+    expect(ratingIn(noteCleared.json<RoundJson>())).toEqual({ selfRating: 4, ratingNote: null });
+
+    const ratingCleared = await request('PUT', ratingOf(round), {
+      selfRating: null,
+      ratingNote: 'Kept',
+    });
+
+    expect(ratingIn(ratingCleared.json<RoundJson>())).toEqual({
+      selfRating: null,
+      ratingNote: 'Kept',
+    });
+
+    const cleared = await request('PUT', ratingOf(round), {});
+
+    expect(cleared.statusCode).toBe(200);
+    expect(ratingIn(cleared.json<RoundJson>())).toEqual(NOT_RATED);
+
+    const [listed] = (await request('GET', roundsOf(round.applicationId))).json<RoundJson[]>();
+
+    expect(listed).toEqual(cleared.json());
+  });
+
+  it('stores a blank note as no note', async () => {
+    const round = await newRound();
+
+    const res = await request('PUT', ratingOf(round), { selfRating: 3, ratingNote: '  \n ' });
+
+    expect(ratingIn(res.json<RoundJson>())).toEqual({ selfRating: 3, ratingNote: null });
+  });
+
+  it.each([
+    ['a rating of 0', { selfRating: 0 }],
+    ['a rating of 6', { selfRating: 6 }],
+    ['a negative rating', { selfRating: -1 }],
+    ['a fractional rating', { selfRating: 2.5 }],
+    ['a rating as text', { selfRating: '3' }],
+    ['a note over 2000 characters', { selfRating: 3, ratingNote: 'x'.repeat(2001) }],
+    ['a note that isn’t text', { ratingNote: 42 }],
+  ])('refuses %s with 400, keeping the old rating', async (_name, rating) => {
+    const round = await newRound();
+
+    await request('PUT', ratingOf(round), { selfRating: 4, ratingNote: 'Fine' });
+
+    const res = await request('PUT', ratingOf(round), rating);
+
+    expect(res.statusCode).toBe(400);
+
+    const [listed] = (await request('GET', roundsOf(round.applicationId))).json<RoundJson[]>();
+
+    expect(ratingIn(listed ?? round)).toEqual({ selfRating: 4, ratingNote: 'Fine' });
+  });
+
+  // The contract keeps these out; the table refuses them too, whatever writes to it.
+  it('refuses a rating outside 1–5 or a longer note in the database itself', async () => {
+    const application = await createApplication();
+    const base = { applicationId: application.id, interviewType: 'coding' as const };
+
+    const insert = (values: Partial<typeof rounds.$inferInsert>) =>
+      t.db.insert(rounds).values({ ...base, ...values });
+
+    await expect(insert({ selfRating: 0 })).rejects.toThrow();
+    await expect(insert({ selfRating: 6 })).rejects.toThrow();
+    await expect(insert({ ratingNote: 'x'.repeat(2001) })).rejects.toThrow();
+    await expect(insert({ selfRating: 5, ratingNote: 'x'.repeat(2000) })).resolves.toBeDefined();
+  });
+
+  it('answers 404 for a missing Round, or one under another of the user’s applications', async () => {
+    const round = await newRound();
+    const other = await createApplication();
+
+    const elsewhere = await request('PUT', ratingOf({ ...round, applicationId: other.id }), {
+      selfRating: 3,
+    });
+
+    const missing = await request('PUT', ratingOf({ ...round, id: MISSING_ID }), { selfRating: 3 });
+
+    expect([elsewhere.statusCode, missing.statusCode]).toEqual([404, 404]);
+    expect((await request('GET', roundsOf(round.applicationId))).json()).toEqual([round]);
+  });
+});
+
 describe('the order Rounds are listed in', () => {
   it('lists dated Rounds by date, a take-home by its due date, then the rest as added', async () => {
     const application = await createApplication();
@@ -601,6 +751,19 @@ describe('another user’s Rounds', () => {
     expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
   });
 
+  it('rates as not found, changing nothing', async () => {
+    const res = await request(
+      'PUT',
+      ratingOf(theirRound),
+      { selfRating: 1, ratingNote: 'Not mine to rate' },
+      mine,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(Schema.decodeUnknownSync(RoundNotFound)(res.json())).toBeInstanceOf(RoundNotFound);
+    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
+  });
+
   it('deletes as not found, deleting nothing', async () => {
     const res = await request('DELETE', `${roundsOf(theirs.id)}/${theirRound.id}`, undefined, mine);
 
@@ -635,8 +798,10 @@ describe('another user’s Rounds', () => {
       await removeTag({ ...theirRound, id: 'abc' }, 'React'),
       await request('PUT', scheduleOf('abc', theirRound.id), {}),
       await request('PUT', scheduleOf(theirs.id, 'abc'), {}),
+      await request('PUT', ratingOf({ ...theirRound, applicationId: 'abc' }), {}),
+      await request('PUT', ratingOf({ ...theirRound, id: 'abc' }), {}),
     ];
 
-    expect(malformed.map((res) => res.statusCode)).toEqual(Array(8).fill(400));
+    expect(malformed.map((res) => res.statusCode)).toEqual(Array(10).fill(400));
   });
 });
