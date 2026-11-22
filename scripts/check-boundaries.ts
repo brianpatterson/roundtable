@@ -31,6 +31,7 @@ function moduleOf(path: string): string | undefined {
 }
 
 const designSystem = 'apps/web/src/design-system/';
+const identity = 'apps/api/src/modules/identity';
 
 function isAssembly(path: string): boolean {
   return (
@@ -54,8 +55,6 @@ function resolve(from: string, specifier: string): string | undefined {
 const importPattern = /(?:import|export)\s+(?:type\s+)?(?:\{([^}]*)\}|[^'"]*?)\s*from\s+'([^']+)'/g;
 
 /** Every API module's table and enum names, by module: what rule 4 protects. */
-const identity = 'apps/api/src/modules/identity';
-
 const tablesByModule = new Map<string, Set<string>>();
 
 for (const dir of readdirSync(join(root, 'apps/api/src/modules'))) {
@@ -103,7 +102,12 @@ for (const file of sources.flatMap(walk)) {
       problems.push(`${where} (platform, shared and design-system never import modules)`);
 
     const tables = toModule ? tablesByModule.get(toModule) : undefined;
-    const imported = names.split(',').map((name) => name.replace(/^\s*type\s+/, '').trim());
+
+    const imported = names
+      .split(',')
+      .map((name) => name.replace(/^\s*type\s+/, '').trim())
+      // `{ sessions as s }` imports `sessions`.
+      .map((name) => name.split(/\s+as\s+/)[0]!);
 
     const isUsersForeignKey = (name: string) =>
       file.endsWith('/schema.ts') && toModule === identity && name === 'users';
@@ -122,7 +126,7 @@ for (const problem of problems) console.error(`✗ ${problem}`);
 
 if (problems.length > 0) {
   console.error(
-    '\nModule boundaries: see docs/adr/0023-modular-monolith-layout.md and 0024-design-system.md',
+    '\nModule boundaries: see docs/adr/0023-modular-monolith-layout.md, 0024-design-system.md and 0044-links-between-modules.md',
   );
   process.exit(1);
 }
