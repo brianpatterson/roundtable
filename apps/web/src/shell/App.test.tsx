@@ -188,7 +188,7 @@ describe('App: session expiry', () => {
     expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
     await userEvent.type(screen.getByLabelText('Company'), 'Globex');
     await userEvent.type(screen.getByLabelText('Job title'), 'Designer');
-    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add as applied' }));
 
     await expectSignInPageWithNotice();
     expectSignedInCacheCleared(queryClient);
@@ -301,7 +301,7 @@ describe('App: session expiry', () => {
     expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
     await userEvent.type(screen.getByLabelText('Company'), 'Globex');
     await userEvent.type(screen.getByLabelText('Job title'), 'Designer');
-    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add as applied' }));
 
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Something went wrong. Please try again.',

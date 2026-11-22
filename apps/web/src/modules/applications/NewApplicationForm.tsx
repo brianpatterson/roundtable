@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { ApplicationStatus } from '@roundtable/contract';
 import { Alert, Button, TextField } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './NewApplicationForm.module.css';
@@ -10,6 +11,9 @@ export function NewApplicationForm() {
   const [company, setCompany] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [jobUrl, setJobUrl] = useState('');
+  // Which button submitted the form. Enter in a field clicks the first one, Add, so it's set either
+  // way; a ref, because the submit event follows the click before React re-renders.
+  const status = useRef<ApplicationStatus>('applied');
 
   const create = useMutation({
     mutationFn: api.createApplication,
@@ -24,7 +28,7 @@ export function NewApplicationForm() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    create.mutate({ company, jobTitle, jobUrl: jobUrl || null });
+    create.mutate({ company, jobTitle, jobUrl: jobUrl || null, status: status.current });
   }
 
   return (
@@ -49,8 +53,20 @@ export function NewApplicationForm() {
         onChange={(e) => setJobUrl(e.target.value)}
       />
       <div className={styles.submit}>
-        <Button type="submit" disabled={create.isPending}>
-          Add
+        <Button
+          type="submit"
+          disabled={create.isPending}
+          onClick={() => (status.current = 'applied')}
+        >
+          Add as applied
+        </Button>
+        <Button
+          type="submit"
+          variant="outlined"
+          disabled={create.isPending}
+          onClick={() => (status.current = 'saved')}
+        >
+          Save for later
         </Button>
       </div>
       {create.isError && <Alert tone="error">{create.error.message}</Alert>}
