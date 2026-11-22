@@ -19,7 +19,7 @@ mark, the code is what's true.
 - **Fork** _(planned)_: an Application's own copy of a Version, tailored for that company (a cover letter
   addressed to them, two reworded bullets). It remembers the Version it came from and never
   changes the Persona's draft.
-- **Interview type** _(planned)_: what a Round tests, from a fixed list (recruiter screen, hiring manager,
+- **Interview type**: what a Round tests, from a fixed list (recruiter screen, hiring manager,
   coding, system design, behavioral, take-home, presentation, other). Fixed so analytics can
   compare like with like; finer detail goes in Tags.
 - **Outcome** (of a Round) _(planned)_: whether the user advanced past it: pending, passed, failed or unknown
@@ -34,10 +34,10 @@ mark, the code is what's true.
   for applications made as that persona. Not to be confused with the user's account.
 - **Prep** _(planned)_: what the user does to get ready for one Round: notes, and **prep tasks** ("redo the LRU
   cache problem"), each of which can name the Skill it practices.
-- **Round** _(planned)_: one interview within an Application, of one Interview type. It has a scheduled time
-  (a start and a duration), a due date (a take-home), or neither yet (the company named the step
-  but hasn't booked it). An onsite of four back-to-back
-  interviews is four Rounds on the same day, not one.
+- **Round**: one interview within an Application, of one Interview type, listed in the order it
+  was added. An onsite of four back-to-back interviews is four Rounds on the same day, not one.
+  _(Planned:)_ it has a scheduled time (a start and a duration), a due date (a take-home), or
+  neither yet (the company named the step but hasn't booked it).
 - **Self-rating** _(planned)_: the user's own score for a Round, given right after it, with a note on what
   went wrong. Immediate and per Round, where the Outcome is late and coarse.
 - **Session expiry**: the moment the API answers `Unauthorized` for a user the web app still
