@@ -64,13 +64,18 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           const [row] = yield* db
             .insert(applications)
-            .values({ ...payload, userId: user.id })
+            .values({
+              ...payload,
+              userId: user.id,
+              // A saved application isn't sent yet. Any other status was sent now: applied_at's
+              // default.
+              ...(payload.status === 'saved' && { appliedAt: null }),
+            })
             .returning()
             .pipe(Effect.orDie);
 
           if (!row) return yield* Effect.die(new Error('insert returned no row'));
 
-          // applied_at defaults to now(): every status a request can set means it was sent.
           return toApplication(row);
         }),
 
@@ -82,10 +87,14 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .update(applications)
             .set({
               ...payload,
-              // Every status a request can set means it was sent: one moving out of `saved` gets
-              // its applied date now, from Postgres's clock; one already sent keeps its date.
+              // Back to saved means not sent. Any other status was sent: one moving out of
+              // `saved` gets its applied date now, from Postgres's clock; one already sent keeps
+              // its date.
               ...(payload.status && {
-                appliedAt: sql`coalesce(${applications.appliedAt}, now())`,
+                appliedAt:
+                  payload.status === 'saved'
+                    ? null
+                    : sql`coalesce(${applications.appliedAt}, now())`,
               }),
             })
             .where(ownedBy(user.id, params.id))

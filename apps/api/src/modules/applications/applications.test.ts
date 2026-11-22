@@ -147,8 +147,8 @@ describe('applications API', () => {
   });
 });
 
-// A request can't set `saved` yet, and only the previous release writes `screening`, so these
-// tests put such rows in the database directly, the way that release (or the next one) would.
+// Only the release before the fold writes `screening`, so these tests put such rows in the
+// database directly, the way that release would.
 describe('applied date and the status rework (ADR-0045)', () => {
   async function storeAs(id: string, values: Partial<typeof applications.$inferInsert>) {
     await t.db.update(applications).set(values).where(eq(applications.id, id));
@@ -162,14 +162,15 @@ describe('applied date and the status rework (ADR-0045)', () => {
     expect(res.json<ApplicationJson>().appliedAt).toBe(created.appliedAt);
   });
 
+  it('saves an application without an applied date', async () => {
+    const { res, json } = await create({ company: 'Acme', jobTitle: 'SWE', status: 'saved' });
+
+    expect(res.statusCode).toBe(201);
+    expect(json).toMatchObject({ status: 'saved', appliedAt: null });
+  });
+
   it('dates an application when it moves from saved to a sent status', async () => {
-    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
-
-    await storeAs(created.id, { status: 'saved', appliedAt: null });
-    const saved = await request('GET', `/api/applications/${created.id}`);
-
-    expect(saved.json<ApplicationJson>()).toMatchObject({ status: 'saved', appliedAt: null });
-
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE', status: 'saved' });
     const res = await request('PATCH', `/api/applications/${created.id}`, { status: 'applied' });
     const sent = res.json<ApplicationJson>();
 
@@ -177,10 +178,15 @@ describe('applied date and the status rework (ADR-0045)', () => {
     expect(sent.appliedAt).toBe(sent.updatedAt);
   });
 
-  it('leaves the applied date alone when only the details change', async () => {
+  it('clears the applied date when a sent application moves back to saved', async () => {
     const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
+    const res = await request('PATCH', `/api/applications/${created.id}`, { status: 'saved' });
 
-    await storeAs(created.id, { status: 'saved', appliedAt: null });
+    expect(res.json<ApplicationJson>()).toMatchObject({ status: 'saved', appliedAt: null });
+  });
+
+  it('leaves the applied date alone when only the details change', async () => {
+    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE', status: 'saved' });
     const res = await request('PATCH', `/api/applications/${created.id}`, { jobTitle: 'Staff' });
 
     expect(res.json<ApplicationJson>()).toMatchObject({ status: 'saved', appliedAt: null });
@@ -198,16 +204,16 @@ describe('applied date and the status rework (ADR-0045)', () => {
     expect(list.json<ApplicationJson[]>().map((a) => a.status)).toEqual(['interviewing']);
   });
 
-  it('refuses screening and saved in request bodies', async () => {
+  it('refuses screening in request bodies', async () => {
     const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
+    const { res } = await create({ company: 'Acme', jobTitle: 'SWE', status: 'screening' });
 
-    for (const status of ['screening', 'saved']) {
-      const { res } = await create({ company: 'Acme', jobTitle: 'SWE', status });
-      const patched = await request('PATCH', `/api/applications/${created.id}`, { status });
+    const patched = await request('PATCH', `/api/applications/${created.id}`, {
+      status: 'screening',
+    });
 
-      expect(res.statusCode, status).toBe(400);
-      expect(patched.statusCode, status).toBe(400);
-    }
+    expect(res.statusCode).toBe(400);
+    expect(patched.statusCode).toBe(400);
   });
 
   it('ignores an applied date in the request: the server sets it', async () => {

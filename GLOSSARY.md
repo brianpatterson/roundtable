@@ -10,10 +10,9 @@ mark, the code is what's true.
   time left and prep progress. The answer to "what should I prepare for next?".
 - **Application**: one job the user is pursuing at one company, from the moment they save the
   posting until it ends (an offer accepted, a rejection, or a withdrawal). An application can
-  exist before it is sent _(planned)_; its **applied date** is when it was sent, not when it was saved.
+  exist before it is sent; its **applied date** is when it was sent, not when it was saved.
   Uses at most one Persona. Its **status** is a coarse stage set by the user: saved, applied,
-  interviewing, offer, accepted, rejected or withdrawn (_planned_: today's code reads saved but
-  can't set it yet, and reads a stored screening as interviewing); Rounds carry the detail within
+  interviewing, offer, accepted, rejected or withdrawn; Rounds carry the detail within
   interviewing. Adding the first Round moves an applied Application to interviewing.
 - **Document** _(planned)_: a resume or a cover letter. A Persona's documents have a **draft** the user edits
   freely and a history of Versions.

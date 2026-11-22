@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
+  APPLICATION_STATUSES,
   ApplicationNotFound,
-  SETTABLE_APPLICATION_STATUSES,
   type Application,
   type ApplicationStatus,
-  type SettableApplicationStatus,
 } from '@roundtable/contract';
 import { ApiError } from '@roundtable/contract/client';
 import { Alert, Button, Dialog, Select } from '../../design-system';
@@ -29,22 +28,10 @@ async function deleteApplication(id: string) {
   }
 }
 
-const statusOption = <Status extends ApplicationStatus>(status: Status) => ({
+const statusOptions = APPLICATION_STATUSES.map((status) => ({
   value: status,
   label: status.charAt(0).toUpperCase() + status.slice(1),
-});
-
-const settableOptions = SETTABLE_APPLICATION_STATUSES.map(statusOption);
-
-const isSettable = (status: ApplicationStatus): status is SettableApplicationStatus =>
-  settableOptions.some((option) => option.value === status);
-
-/**
- * The statuses a row offers. A `saved` row (written by the next release, then rolled back to this
- * one) shows its status too, so the select isn't blank, but can't be picked back (ADR-0045).
- */
-const optionsFor = (status: ApplicationStatus) =>
-  isSettable(status) ? settableOptions : [statusOption(status), ...settableOptions];
+}));
 
 export function ApplicationsTable() {
   const queryClient = useQueryClient();
@@ -55,7 +42,7 @@ export function ApplicationsTable() {
   // again either way, so each row's select shows the status the server has. Each attempt is its
   // own mutation, so two failures in a row show two messages.
   const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: SettableApplicationStatus }) =>
+    mutationFn: ({ id, status }: { id: string; status: ApplicationStatus }) =>
       api.updateApplication(id, { status }),
     meta: { errorSnackbar: true },
     onSettled: invalidate,
@@ -116,11 +103,9 @@ export function ApplicationsTable() {
                   <Select
                     label={`Status for ${a.company}`}
                     hideLabel
-                    options={optionsFor(a.status)}
+                    options={statusOptions}
                     value={a.status}
-                    onValueChange={(status) => {
-                      if (isSettable(status)) updateStatus.mutate({ id: a.id, status });
-                    }}
+                    onValueChange={(status) => updateStatus.mutate({ id: a.id, status })}
                   />
                 </td>
                 <td>{a.appliedAt ? formatDate(a.appliedAt) : 'Not sent'}</td>
