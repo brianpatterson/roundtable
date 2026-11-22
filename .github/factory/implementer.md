@@ -121,7 +121,8 @@ Write the description to `.factory/pr-body.md` (git-ignored) from
 acceptance criterion), and the docs checklist, honestly ticked. The first line must be
 `Closes #<issue number>`.
 
-Push your branch, then open the pull request yourself:
+Push your branch with `git push origin <branch>` (a branch you created has no upstream, and the
+allowlist refuses most other forms of `git push`, such as `--set-upstream`), then open the pull request yourself:
 `gh pr create --base main --title "<conventional subject>" --body-file .factory/pr-body.md --label factory`.
 Add `--draft` if `pnpm check` still fails. CI runs on it either way, and a human reviews and
 merges; you never merge the pull request. Merge `main` into your branch (`git merge origin/main`)
