@@ -252,7 +252,7 @@ describe('scheduling a Round', () => {
     ['a start before 1970', { startsAt: '1969-12-31T23:59:59Z' }],
     ['a due date with a time', { dueOn: '2026-11-25T10:00:00Z' }],
     ['a due date that doesn’t exist', { dueOn: '2026-02-30' }],
-    ['a due date before 1970', { dueOn: '0000-01-01' }],
+    ['a due date before 1970', { dueOn: '1969-12-31' }],
   ])('refuses %s with 400, adding nothing', async (_name, schedule) => {
     const application = await createApplication();
 
@@ -260,6 +260,16 @@ describe('scheduling a Round', () => {
 
     expect(res.statusCode).toBe(400);
     expect((await request('GET', roundsOf(application.id))).json()).toEqual([]);
+  });
+
+  it('accepts the earliest start and due date', async () => {
+    const application = await createApplication();
+
+    const start = await addRoundWith(application.id, { startsAt: '1970-01-01T00:00:00.000Z' });
+    const due = await addRoundWith(application.id, { dueOn: '1970-01-01' });
+
+    expect(start.json<RoundJson>().startsAt).toBe('1970-01-01T00:00:00.000Z');
+    expect(due.json<RoundJson>().dueOn).toBe('1970-01-01');
   });
 
   it('accepts the shortest and longest durations', async () => {
