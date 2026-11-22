@@ -120,13 +120,14 @@ case "$*" in
   "issue list"*"--label building"*) file=building.json ;;
   "api repos/o/r/compare/old...dep"*) echo ahead; exit 0 ;;
   "api repos/o/r/issues/11/comments"*) file=comments-11.json ;;
+  "workflow run"*"issue=$FAIL_DISPATCH") echo "$*" >>"$WORK/writes"; exit 1 ;;
   "api repos/o/r/compare/"*) echo behind; exit 0 ;;
   *) echo "$*" >>"$WORK/writes"; exit 0 ;;
 esac
 jq -rc "$filter" "$WORK/$file"
 GH
 chmod +x "$work/gh"
-run() { WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
+run() { FAIL_DISPATCH=${FAIL_DISPATCH:-none} WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
 expect() { # expect <name> <output> <text it must contain>
   case "$2" in *"$3"*) ;; *)
     echo "FAIL: $1: no [$3] in [$2]"
@@ -203,6 +204,13 @@ if grep -q "issue=20" "$work/writes"; then
   echo "FAIL: the sweep started two tickets at once"
   failures=$((failures + 1))
 fi
+
+# A dispatch that fails takes `building` back off and leaves the ticket out of flight, so the next
+# free ticket starts in the same sweep, and the failed one is tried again next time.
+: >"$work/writes"
+output=$(FAIL_DISPATCH=10 run) || true
+expect "a failed dispatch releases the ticket" "$(cat "$work/writes")" "issue edit 10 -R o/r --remove-label building"
+expect "and the next free ticket starts instead" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=20"
 
 # The dispatched run checks the rules again before its agent runs.
 : >"$work/out"

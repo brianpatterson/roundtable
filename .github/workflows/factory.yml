@@ -39,7 +39,9 @@ permissions:
 # select-fix, and holding the group for them would let one replace a pending fix or rework, since
 # GitHub keeps one pending run per group (ADR-0037).
 concurrency:
-  group: factory-${{ github.event.issue.number || inputs.issue || format('run-{0}', github.run_id) }}
+  # A dispatched build gets its own group: GitHub keeps one pending run per group, so in the
+  # issue's group, anyone's comment on the ticket could replace it while it waited.
+  group: factory-${{ github.event_name == 'workflow_dispatch' && format('dispatched-{0}', inputs.issue) || github.event.issue.number || format('run-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -393,6 +395,16 @@ jobs:
             echo "report=$report"
             echo "title=$(jq -r .title <<<"$issue" | tr -d '\r\n')"
           } >>"$GITHUB_OUTPUT"
+
+          # verify ran in another job, before this fetch: check again now that the text is fixed in
+          # the file, so an edit made in between never reaches the agent. Released, not needs-info.
+          # shellcheck disable=SC2016 # backticks are Markdown
+          if ! .github/factory/dispatch.sh --state "$ISSUE" | jq -e '.edited_after_ready | not' >/dev/null; then
+            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label building --remove-label ready
+            gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body "$(printf '<!-- factory-dispatch -->\nThe factory stopped before building this: its title or description was edited by someone else after it was approved. Reread it, and label it `ready` again if it should still be built. ADR-0047.')"
+            echo "refused=true" >>"$GITHUB_OUTPUT"
+            exit 1
+          fi
       # A user report's text, as in implement (ADR-0041).
       - name: Fetch the user's report
         id: report
@@ -463,9 +475,11 @@ jobs:
 
       # Deterministic, as in implement: what the agent left, whatever it reported. It names its
       # branch; one outside claude/issue-<n>- isn't trusted.
+      # Also when a step before the agent failed (the install, the report fetch): the ticket goes
+      # back to the owner instead of holding the queue. Not for a ticket the load step refused.
       - name: Check the result
         id: result
-        if: always() && steps.claude.outcome != 'skipped'
+        if: always() && steps.ticket.outputs.refused != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}
