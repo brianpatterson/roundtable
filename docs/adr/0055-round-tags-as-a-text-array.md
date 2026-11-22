@@ -1,4 +1,4 @@
-# 0054. Store a Round's Tags as a text array on the Round
+# 0055. Store a Round's Tags as a text array on the Round
 
 - **Status:** Accepted
 - **Date:** 2026-11-22

@@ -294,7 +294,7 @@ erDiagram
   order they were added. `tags` holds the Round's Tags in the order they were added: trimmed,
   1–40 characters, at most 10, none the same as another ignoring case. The handlers keep those
   rules in a transaction holding the Round's row
-  ([ADR-0054](adr/0054-round-tags-as-a-text-array.md)).
+  ([ADR-0055](adr/0055-round-tags-as-a-text-array.md)).
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
