@@ -80,10 +80,26 @@ case "$reason" in *"Nothing will finish"*)
   ;;
 esac
 
+# A blocker held for the owner (the factory handed it over, or it waits on answers) needs the owner,
+# not a `ready` label: the wait says what it is held on, even if it still has `ready`.
+reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false,"held":"needs-human"},{"number":4,"open":true,"closed":null,"active":true,"held":"needs-info"}]')" | jq -r .reason)
+# shellcheck disable=SC2016 # backticks are Markdown
+case "$reason" in *'Waiting on you: #3 (`needs-human`), #4 (`needs-info`). Settle each first'*) ;; *)
+  echo "FAIL: the reason names held blockers with their label: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+case "$reason" in *"Nothing will finish"*)
+  echo "FAIL: a held blocker is told to be labeled ready: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+
 # End to end, against a stand-in gh that answers GraphQL per issue from canned JSON and applies
 # --jq as gh would. The repo is o/r, owned by o; the latest deploy shipped commit "dep".
 #   #10: ready (by o), blocked by #3, which a pull request merged as commit "old", which "dep" includes.
 #   #11: ready (by o), blocked by #4, still open and labeled ready.
+#   #27: ready (by o), blocked by #7, which the factory handed to a human (needs-human).
 #   #26: ready (by o), blocked by #5 (open, unlabeled, no pull request) and #6 (open, a pull request closes it).
 #   #12: ready, but labeled by someone else.
 #   #13: ready (by o), then its description was edited by "stranger".
@@ -100,6 +116,7 @@ issue() { # issue <number> <state> <labels JSON> <timeline nodes JSON> <blockers
 t=2026-11-20T10:00:00Z
 issue 10 OPEN '["ready","enhancement"]' "[$(labeled $t ready o)]" "[{\"number\":3,\"state\":\"CLOSED\",\"timelineItems\":$(closed_by old)}]"
 issue 11 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o)]" '[{"number":4,"state":"OPEN","labels":{"nodes":[{"name":"ready"}]},"timelineItems":{"nodes":[]}}]'
+issue 27 OPEN '["ready"]' "[$(labeled $t ready o)]" '[{"number":7,"state":"OPEN","labels":{"nodes":[{"name":"needs-human"}]},"closedByPullRequestsReferences":{"nodes":[]},"timelineItems":{"nodes":[]}}]'
 issue 26 OPEN '["ready"]' "[$(labeled $t ready o)]" '[{"number":5,"state":"OPEN","labels":{"nodes":[{"name":"enhancement"}]},"closedByPullRequestsReferences":{"nodes":[]},"timelineItems":{"nodes":[]}},{"number":6,"state":"OPEN","labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[{"number":60}]},"timelineItems":{"nodes":[]}}]'
 issue 12 OPEN '["ready"]' "[$(labeled $t ready someone)]" '[]'
 issue 13 OPEN '["ready"]' "[$(labeled $t ready o)]" '[]' '[{"editedAt":"2026-11-20T11:00:00Z","editor":{"login":"stranger"}},{"editedAt":"2026-11-20T09:00:00Z","editor":{"login":"o"}}]'
@@ -121,13 +138,13 @@ issue 23 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 
 issue 24 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 2026-11-20T09:45:00Z ready github-actions),$(labeled $t ready o)]" '[]' "$stranger_edit"
 # #25: building; a pull request closed it, then it was reopened and closed by hand.
 issue 25 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by old)"),{\"__typename\":\"ClosedEvent\",\"closer\":null}]" '[]'
-# Mutation tickets (ADR-0051): #27 the nightly run opened and labeled itself; #28 is the same, then
-# a stranger edited it; #29 is another workflow issue the workflow labeled, without `mutation`; #30
+# Mutation tickets (ADR-0051): #47 the nightly run opened and labeled itself; #48 is the same, then
+# a stranger edited it; #49 is another workflow issue the workflow labeled, without `mutation`; #50
 # is labeled `mutation` and `ready` by the workflow, but someone else opened it.
-issue 27 OPEN '["mutation","ready"]' "[$(labeled $t mutation github-actions),$(labeled $t ready github-actions)]" '[]' '[]' github-actions
-issue 28 OPEN '["mutation","ready"]' "[$(labeled $t ready github-actions)]" '[]' "$(jq -c '.[0].editedAt = "2026-11-20T11:00:00Z"' <<<"$stranger_edit")" github-actions
-issue 29 OPEN '["architecture","ready"]' "[$(labeled $t ready github-actions)]" '[]' '[]' github-actions
-issue 30 OPEN '["mutation","ready"]' "[$(labeled $t ready github-actions)]" '[]' '[]' stranger
+issue 47 OPEN '["mutation","ready"]' "[$(labeled $t mutation github-actions),$(labeled $t ready github-actions)]" '[]' '[]' github-actions
+issue 48 OPEN '["mutation","ready"]' "[$(labeled $t ready github-actions)]" '[]' "$(jq -c '.[0].editedAt = "2026-11-20T11:00:00Z"' <<<"$stranger_edit")" github-actions
+issue 49 OPEN '["architecture","ready"]' "[$(labeled $t ready github-actions)]" '[]' '[]' github-actions
+issue 50 OPEN '["mutation","ready"]' "[$(labeled $t ready github-actions)]" '[]' '[]' stranger
 issue 14 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by new)")]" '[]'
 echo '[{"headSha":"dep"}]' >"$work/deploy.json"
 echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
@@ -222,6 +239,10 @@ case "$output" in *"finish #5, #6"* | *"finish #6"*)
   ;;
 esac
 
+output=$(DRY_RUN=true run --gate 27)
+# shellcheck disable=SC2016 # backticks are Markdown
+expect "a blocker held for a human is named with its label" "$output" 'Waiting on you: #7 (`needs-human`).'
+
 # Relabeling `ready` after answering `needs-info` starts it again, and clears `needs-info`.
 : >"$work/writes"
 : >"$work/out"
@@ -314,15 +335,15 @@ output=$(FAIL_READ=21 run) || true
 expect "an unreadable building ticket stays in flight" "$output" "#10: queue"
 
 # The nightly mutation run's own ticket is approved by its own label; no other workflow label is.
-expect "a mutation ticket the workflow opened and labeled is approved" "$(run --state 27 | jq -c .ready.approved)" true
-expect "and an edit by someone else after that label still counts" "$(run --state 28 | jq -c .edited_after_ready)" true
-expect "the workflow's label on another kind of issue is not approval" "$(run --state 29 | jq -c .ready.approved)" false
-expect "nor on a mutation ticket someone else opened" "$(run --state 30 | jq -c .ready.approved)" false
+expect "a mutation ticket the workflow opened and labeled is approved" "$(run --state 47 | jq -c .ready.approved)" true
+expect "and an edit by someone else after that label still counts" "$(run --state 48 | jq -c .edited_after_ready)" true
+expect "the workflow's label on another kind of issue is not approval" "$(run --state 49 | jq -c .ready.approved)" false
+expect "nor on a mutation ticket someone else opened" "$(run --state 50 | jq -c .ready.approved)" false
 echo '[]' >"$work/building.json"
-echo '[{"number":27}]' >"$work/ready.json"
-expect "a sweep starts the mutation ticket" "$(DRY_RUN=true run)" "#27: start"
-echo '[{"number":29}]' >"$work/ready.json"
-expect "and ignores the other workflow-labeled issue" "$(DRY_RUN=true run)" "#29: ignore"
+echo '[{"number":47}]' >"$work/ready.json"
+expect "a sweep starts the mutation ticket" "$(DRY_RUN=true run)" "#47: start"
+echo '[{"number":49}]' >"$work/ready.json"
+expect "and ignores the other workflow-labeled issue" "$(DRY_RUN=true run)" "#49: ignore"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."
