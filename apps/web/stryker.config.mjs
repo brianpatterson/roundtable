@@ -11,6 +11,7 @@ export default {
     'src/**/*.{ts,tsx}',
     '!src/**/*.test.{ts,tsx}',
     '!src/test-setup.ts',
+    '!src/shared/testing/**',
     '!src/main.tsx',
     '!src/**/index.ts',
   ],

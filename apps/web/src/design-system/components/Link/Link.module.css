@@ -1,0 +1,17 @@
+.link {
+  color: var(--ds-color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--ds-shape-extra-small);
+
+  @media (hover: hover) {
+    &:hover {
+      text-decoration-thickness: 2px;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ds-color-primary);
+    outline-offset: 2px;
+  }
+}
