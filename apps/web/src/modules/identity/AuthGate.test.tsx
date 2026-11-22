@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -76,10 +76,25 @@ function answer(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
     );
   }
 
-  if (pathname === '/api/auth-config') return Promise.resolve(Response.json({ providers: [] }));
+  if (pathname === '/api/auth-config') return Promise.resolve(Response.json({ providers }));
+
+  if (pathname === '/api/auth/sign-in/social') {
+    return new Request(input, init).text().then((body) => {
+      socialSignIns.push(body);
+
+      // No redirect: jsdom can't leave the page.
+      return Response.json({ redirect: false });
+    });
+  }
 
   return Promise.resolve(new Response(null, { status: 404 }));
 }
+
+/** The sign-in providers the server offers. */
+let providers: string[];
+
+/** The JSON body of each social sign-in request. */
+let socialSignIns: string[];
 
 beforeEach(() => {
   firstSession = signedIn;
@@ -87,6 +102,8 @@ beforeEach(() => {
   signOutStatus = 200;
   signOutUnreachable = false;
   signOutAnswered = Promise.resolve();
+  providers = [];
+  socialSignIns = [];
   vi.stubGlobal('fetch', fakeServer());
 });
 
@@ -152,6 +169,27 @@ describe('AuthGate: what it shows', () => {
 
       expect(await screen.findByText('Signed-out extra')).toBeDefined();
       expect(screen.queryByText('Signed in as Ada')).toBeNull();
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
+  it('returns a social sign-in to the page that was opened, and a failed one to the start', async () => {
+    firstSession = null;
+    providers = ['github'];
+    window.history.replaceState(null, '', '/applications/a1');
+
+    try {
+      await renderGate();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Continue with GitHub' }));
+
+      await waitFor(() => expect(socialSignIns).toHaveLength(1));
+      expect(JSON.parse(socialSignIns[0] ?? '')).toMatchObject({
+        provider: 'github',
+        callbackURL: '/applications/a1',
+        errorCallbackURL: '/',
+      });
     } finally {
       window.history.replaceState(null, '', '/');
     }

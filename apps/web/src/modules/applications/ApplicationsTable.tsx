@@ -7,12 +7,11 @@ import {
   type ApplicationStatus,
 } from '@roundtable/contract';
 import { ApiError } from '@roundtable/contract/client';
-import { Alert, Button, Dialog, Select } from '../../design-system';
+import { Alert, Button, Dialog, Link, Select } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './ApplicationsTable.module.css';
+import { appliedLabel, formatDate, statusLabel } from './format';
 import { applicationsQueryKey } from './queries';
-
-const formatDate = (date: Date) => date.toLocaleDateString();
 
 /**
  * Deletes an application. One that is already gone (deleted in another tab) is the outcome the
@@ -30,7 +29,7 @@ async function deleteApplication(id: string) {
 
 const statusOptions = APPLICATION_STATUSES.map((status) => ({
   value: status,
-  label: status.charAt(0).toUpperCase() + status.slice(1),
+  label: statusLabel(status),
 }));
 
 export function ApplicationsTable() {
@@ -89,7 +88,11 @@ export function ApplicationsTable() {
           <tbody>
             {applications.data.map((a) => (
               <tr key={a.id}>
-                <td>{a.company}</td>
+                <td>
+                  <Link to="/applications/$applicationId" params={{ applicationId: a.id }}>
+                    {a.company}
+                  </Link>
+                </td>
                 <td>
                   {a.jobUrl ? (
                     <a href={a.jobUrl} target="_blank" rel="noreferrer">
@@ -108,7 +111,7 @@ export function ApplicationsTable() {
                     onValueChange={(status) => updateStatus.mutate({ id: a.id, status })}
                   />
                 </td>
-                <td>{a.appliedAt ? formatDate(a.appliedAt) : 'Not sent'}</td>
+                <td>{appliedLabel(a.appliedAt)}</td>
                 <td>{formatDate(a.updatedAt)}</td>
                 <td>
                   <Button variant="text" onClick={() => askToDelete(a)}>

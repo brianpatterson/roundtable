@@ -92,7 +92,13 @@ export function SignInPage({ sessionEnded }: { sessionEnded: boolean }) {
                 key={provider}
                 variant="outlined"
                 onClick={() =>
-                  authClient.signIn.social({ provider, callbackURL: '/', errorCallbackURL: '/' })
+                  // Back to the page the user opened (an application's, say) once signed in.
+                  // A failure lands on /?error=…, which this page explains.
+                  authClient.signIn.social({
+                    provider,
+                    callbackURL: window.location.pathname,
+                    errorCallbackURL: '/',
+                  })
                 }
               >
                 Continue with {providerLabels[provider]}
