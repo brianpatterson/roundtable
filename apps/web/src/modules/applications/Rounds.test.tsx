@@ -21,7 +21,12 @@ interface Schedule {
   dueOn: string | null;
 }
 
-interface StoredRound extends Schedule {
+interface Rating {
+  selfRating: number | null;
+  ratingNote: string | null;
+}
+
+interface StoredRound extends Schedule, Rating {
   id: string;
   applicationId: string;
   interviewType: string;
@@ -31,6 +36,8 @@ interface StoredRound extends Schedule {
 }
 
 const NOT_SCHEDULED: Schedule = { startsAt: null, durationMinutes: null, dueOn: null };
+
+const NOT_RATED: Rating = { selfRating: null, ratingNote: null };
 
 let status: string;
 let stored: StoredRound[];
@@ -44,6 +51,9 @@ let added: unknown[];
 
 /** The bodies the page sent to change a Round's schedule. */
 let scheduled: unknown[];
+
+/** The bodies the page sent to rate a Round. */
+let ratings: unknown[];
 
 const roundId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -83,6 +93,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 
     const round = {
       ...NOT_SCHEDULED,
+      ...NOT_RATED,
       ...body,
       id: roundId(nextRound),
       applicationId: ACME_ID,
@@ -148,6 +159,27 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     return Response.json(round);
   }
 
+  if (request.method === 'PUT' && pathname.endsWith('/rating')) {
+    if (failWrites) return new Response(null, { status: failWrites });
+
+    const id = pathname.slice(ROUNDS_PATH.length + 1, -'/rating'.length);
+    const existing = stored.find((r) => r.id === id);
+
+    if (!existing) return notFound('RoundNotFound');
+
+    // SAFETY: the typed client encoded this body with the contract's RoundRating schema.
+    const body = (await request.json()) as Partial<Rating>;
+
+    ratings.push(body);
+
+    // The whole rating is replaced: what isn't sent is cleared.
+    const round = { ...existing, ...NOT_RATED, ...body };
+
+    stored = stored.map((r) => (r.id === id ? round : r));
+
+    return Response.json(round);
+  }
+
   if (request.method === 'DELETE' && pathname.startsWith(`${ROUNDS_PATH}/`)) {
     if (failWrites) return new Response(null, { status: failWrites });
 
@@ -166,14 +198,15 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 const round = (
   n: number,
   interviewType: string,
-  { tags = [], ...schedule }: Partial<Schedule> & { tags?: string[] } = {},
+  { tags = [], ...rest }: Partial<Schedule & Rating> & { tags?: string[] } = {},
 ): StoredRound => ({
   id: roundId(n),
   applicationId: ACME_ID,
   interviewType,
   tags,
   ...NOT_SCHEDULED,
-  ...schedule,
+  ...NOT_RATED,
+  ...rest,
   createdAt: TIMESTAMP,
   updatedAt: TIMESTAMP,
 });
@@ -185,6 +218,7 @@ beforeEach(() => {
   failWrites = undefined;
   added = [];
   scheduled = [];
+  ratings = [];
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -869,5 +903,259 @@ describe('a Round’s schedule', () => {
       'Due Dec 1, 2026',
       'Not scheduled yet',
     ]);
+  });
+});
+
+/** Where a Round's Self-rating is shown, e.g. `ratingGroup('Coding 1')`. */
+const ratingGroup = (name: string) => screen.getByRole('group', { name: `${name} self-rating` });
+
+/** What a Round's Self-rating shows: the rating line, then the note if there is one. */
+const ratingShown = (name: string) => {
+  const group = ratingGroup(name);
+  const line = within(group).getByText(/^(Self-rating: \d of 5|Not rated yet)$/).textContent;
+  const note = within(group).queryByRole('paragraph')?.textContent ?? null;
+
+  return { line, note };
+};
+
+const openRatingDialog = async (name: string, button = `Rate ${name}`) => {
+  await userEvent.click(await screen.findByRole('button', { name: button }));
+  const dialog = await screen.findByRole('alertdialog', { name: `Rate ${name}` });
+
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+  return dialog;
+};
+
+const pickRating = async (dialog: HTMLElement, label: string) => {
+  await userEvent.click(within(dialog).getByRole('combobox', { name: 'Self-rating' }));
+  await userEvent.click(await screen.findByRole('option', { name: label }));
+};
+
+const noteField = (dialog: HTMLElement) =>
+  within(dialog).getByRole<HTMLTextAreaElement>('textbox', { name: 'What went wrong' });
+
+const saveRating = async (dialog: HTMLElement) => {
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+};
+
+describe('a Round’s Self-rating', () => {
+  it('shows a Round as not rated yet, or with its rating and note', async () => {
+    stored = [
+      round(1, 'coding', { selfRating: 2, ratingNote: 'Ran out of time' }),
+      round(2, 'behavioral'),
+      round(3, 'system_design', { selfRating: 5 }),
+    ];
+    await renderPage();
+    await listed();
+
+    expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 2 of 5', note: 'Ran out of time' });
+    expect(ratingShown('Behavioral 1')).toEqual({ line: 'Not rated yet', note: null });
+    expect(ratingShown('System design 1')).toEqual({ line: 'Self-rating: 5 of 5', note: null });
+    expect(screen.getByRole('button', { name: 'Edit rating of Coding 1' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Rate Behavioral 1' })).toBeDefined();
+  });
+
+  it('offers ratings from 1 (went badly) to 5 (went well), or none', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Self-rating' }));
+
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
+
+    expect(options).toEqual(['Not rated', '1 – Went badly', '2', '3', '4', '5 – Went well']);
+  });
+
+  it('rates a Round with a note, and shows them on it', async () => {
+    stored = [round(1, 'coding'), round(2, 'behavioral')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+
+    expect(within(dialog).getByRole('combobox', { name: 'Self-rating' }).textContent).toBe(
+      'Not rated',
+    );
+    await pickRating(dialog, '4');
+    await userEvent.type(noteField(dialog), 'Slow on the{Enter}second part');
+    await saveRating(dialog);
+
+    await waitFor(() =>
+      expect(ratingShown('Coding 1')).toEqual({
+        line: 'Self-rating: 4 of 5',
+        note: 'Slow on the\nsecond part',
+      }),
+    );
+    expect(ratingShown('Behavioral 1')).toEqual({ line: 'Not rated yet', note: null });
+    expect(ratings).toEqual([{ selfRating: 4, ratingNote: 'Slow on the\nsecond part' }]);
+  });
+
+  it('rates a Round without a note', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+
+    await pickRating(dialog, '1 – Went badly');
+    await saveRating(dialog);
+
+    await waitFor(() =>
+      expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 1 of 5', note: null }),
+    );
+    expect(ratings).toEqual([{ selfRating: 1 }]);
+  });
+
+  it('opens the dialog with the rating and note filled in, and changes them', async () => {
+    stored = [round(1, 'coding', { selfRating: 2, ratingNote: 'Nerves' })];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
+
+    expect(within(dialog).getByRole('combobox', { name: 'Self-rating' }).textContent).toBe('2');
+    expect(noteField(dialog).value).toBe('Nerves');
+
+    await pickRating(dialog, '5 – Went well');
+    await userEvent.clear(noteField(dialog));
+    await userEvent.type(noteField(dialog), 'Calmer');
+    await saveRating(dialog);
+
+    await waitFor(() =>
+      expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 5 of 5', note: 'Calmer' }),
+    );
+    expect(ratings).toEqual([{ selfRating: 5, ratingNote: 'Calmer' }]);
+  });
+
+  it('clears the note, keeping the rating', async () => {
+    stored = [round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' })];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
+
+    await userEvent.clear(noteField(dialog));
+    await saveRating(dialog);
+
+    await waitFor(() =>
+      expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 3 of 5', note: null }),
+    );
+    expect(ratings).toEqual([{ selfRating: 3 }]);
+  });
+
+  it('sends a note of only spaces as no note', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+
+    await pickRating(dialog, '3');
+    await userEvent.type(noteField(dialog), '   ');
+    await saveRating(dialog);
+
+    expect(ratings).toEqual([{ selfRating: 3 }]);
+  });
+
+  it('clears the rating, keeping the note', async () => {
+    stored = [round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' })];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
+
+    await pickRating(dialog, 'Not rated');
+    await saveRating(dialog);
+
+    await waitFor(() =>
+      expect(ratingShown('Coding 1')).toEqual({ line: 'Not rated yet', note: 'Nerves' }),
+    );
+    expect(ratings).toEqual([{ ratingNote: 'Nerves' }]);
+  });
+
+  it('clears both, back to not rated', async () => {
+    stored = [round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' })];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
+
+    await pickRating(dialog, 'Not rated');
+    await userEvent.clear(noteField(dialog));
+    await saveRating(dialog);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate Coding 1' })).toBeDefined());
+    expect(ratingShown('Coding 1')).toEqual({ line: 'Not rated yet', note: null });
+    expect(ratings).toEqual([{}]);
+  });
+
+  it('keeps the rating when the user cancels', async () => {
+    stored = [round(1, 'coding', { selfRating: 2 })];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
+
+    await pickRating(dialog, '5 – Went well');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(ratings).toEqual([]);
+    expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 2 of 5', note: null });
+  });
+
+  it('accepts a note of 2000 characters, and says when one is longer, sending nothing', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+    const save = within(dialog).getByRole<HTMLButtonElement>('button', { name: 'Save' });
+
+    fireEvent.change(noteField(dialog), { target: { value: 'x'.repeat(2001) } });
+
+    expect(within(dialog).getByText('The note is 2001 characters; it can be at most 2000.')).toBeDefined();
+    expect(noteField(dialog).getAttribute('aria-invalid')).toBe('true');
+    expect(save.disabled).toBe(true);
+
+    fireEvent.change(noteField(dialog), { target: { value: 'x'.repeat(2000) } });
+
+    expect(within(dialog).queryByText(/it can be at most 2000/)).toBeNull();
+    expect(save.disabled).toBe(false);
+
+    await saveRating(dialog);
+
+    expect(ratings).toEqual([{ ratingNote: 'x'.repeat(2000) }]);
+  });
+
+  it.each([
+    [500, 'Something went wrong. Please try again.'],
+    [404, 'That round no longer exists.'],
+  ])('keeps the dialog open with the error when saving fails (%i)', async (code, message) => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+
+    if (code === 404) stored = [];
+    else failWrites = code;
+
+    await pickRating(dialog, '3');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(message);
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('opens again without the last failure', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    let dialog = await openRatingDialog('Coding 1');
+
+    failWrites = 500;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await within(dialog).findByRole('alert');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    dialog = await openRatingDialog('Coding 1');
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
   });
 });

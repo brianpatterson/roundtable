@@ -20,6 +20,7 @@ import {
 } from './Schedule';
 import { inLocalOrder, interviewTypeLabel, roundNames, scheduleLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
+import { RoundRating } from './RoundRating';
 import { RoundTags } from './RoundTags';
 
 const typeOptions = INTERVIEW_TYPES.map((type) => ({
@@ -174,6 +175,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
                     </Button>
                   </span>
                 </div>
+                <RoundRating round={round} name={name} />
                 <RoundTags round={round} name={name} />
               </li>
             );
