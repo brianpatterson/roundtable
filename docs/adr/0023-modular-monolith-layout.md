@@ -1,6 +1,6 @@
 # 0023. Organize the code by module, as a modular monolith
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [ADR-0044](0044-links-between-modules.md) (any module may reference `users`)
 - **Date:** 2026-11-12
 
 ## Context
