@@ -80,10 +80,26 @@ case "$reason" in *"Nothing will finish"*)
   ;;
 esac
 
+# A blocker held for the owner (the factory handed it over, or it waits on answers) needs the owner,
+# not a `ready` label: the wait says what it is held on, even if it still has `ready`.
+reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false,"held":"needs-human"},{"number":4,"open":true,"closed":null,"active":true,"held":"needs-info"}]')" | jq -r .reason)
+# shellcheck disable=SC2016 # backticks are Markdown
+case "$reason" in *'#3 (`needs-human`), #4 (`needs-info`) waits on you'*) ;; *)
+  echo "FAIL: the reason names held blockers with their label: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+case "$reason" in *"Nothing will finish"*)
+  echo "FAIL: a held blocker is told to be labeled ready: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+
 # End to end, against a stand-in gh that answers GraphQL per issue from canned JSON and applies
 # --jq as gh would. The repo is o/r, owned by o; the latest deploy shipped commit "dep".
 #   #10: ready (by o), blocked by #3, which a pull request merged as commit "old", which "dep" includes.
 #   #11: ready (by o), blocked by #4, still open and labeled ready.
+#   #27: ready (by o), blocked by #7, which the factory handed to a human (needs-human).
 #   #26: ready (by o), blocked by #5 (open, unlabeled, no pull request) and #6 (open, a pull request closes it).
 #   #12: ready, but labeled by someone else.
 #   #13: ready (by o), then its description was edited by "stranger".
@@ -100,6 +116,7 @@ issue() { # issue <number> <state> <labels JSON> <timeline nodes JSON> <blockers
 t=2026-11-20T10:00:00Z
 issue 10 OPEN '["ready","enhancement"]' "[$(labeled $t ready o)]" "[{\"number\":3,\"state\":\"CLOSED\",\"timelineItems\":$(closed_by old)}]"
 issue 11 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o)]" '[{"number":4,"state":"OPEN","labels":{"nodes":[{"name":"ready"}]},"timelineItems":{"nodes":[]}}]'
+issue 27 OPEN '["ready"]' "[$(labeled $t ready o)]" '[{"number":7,"state":"OPEN","labels":{"nodes":[{"name":"needs-human"}]},"closedByPullRequestsReferences":{"nodes":[]},"timelineItems":{"nodes":[]}}]'
 issue 26 OPEN '["ready"]' "[$(labeled $t ready o)]" '[{"number":5,"state":"OPEN","labels":{"nodes":[{"name":"enhancement"}]},"closedByPullRequestsReferences":{"nodes":[]},"timelineItems":{"nodes":[]}},{"number":6,"state":"OPEN","labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[{"number":60}]},"timelineItems":{"nodes":[]}}]'
 issue 12 OPEN '["ready"]' "[$(labeled $t ready someone)]" '[]'
 issue 13 OPEN '["ready"]' "[$(labeled $t ready o)]" '[]' '[{"editedAt":"2026-11-20T11:00:00Z","editor":{"login":"stranger"}},{"editedAt":"2026-11-20T09:00:00Z","editor":{"login":"o"}}]'
@@ -214,6 +231,10 @@ case "$output" in *"finish #5, #6"* | *"finish #6"*)
   failures=$((failures + 1))
   ;;
 esac
+
+output=$(DRY_RUN=true run --gate 27)
+# shellcheck disable=SC2016 # backticks are Markdown
+expect "a blocker held for a human is named with its label" "$output" '#7 (`needs-human`) waits on you'
 
 # Relabeling `ready` after answering `needs-info` starts it again, and clears `needs-info`.
 : >"$work/writes"
