@@ -215,11 +215,13 @@ act() { # act <mode> <issue> <decision JSON> <state JSON>
     start)
       local edit=(--add-label building)
       [ "$(jq -r .answered <<<"$4")" != true ] || edit+=(--remove-label needs-info)
-      "$GH" issue edit "$2" -R "$repo" "${edit[@]}" >/dev/null
+      # act runs as an `if` condition in the sweep, where `set -e` is off: fail explicitly.
+      "$GH" issue edit "$2" -R "$repo" "${edit[@]}" >/dev/null || return 1
       # The gate starts it the same way as the sweep: the dispatched build re-checks the ticket
       # after loading it, which the tag-mode job can't.
       if "$GH" workflow run factory.yml -R "$repo" --ref main -f issue="$2"; then
-        say "$2" "The factory started building this: nothing blocks it any more. ADR-0047." always
+        # Started, so in flight, even if the comment doesn't make it.
+        say "$2" "The factory started building this: nothing blocks it any more. ADR-0047." always || true
       else
         # Not started, so not in flight: the next sweep tries again.
         "$GH" issue edit "$2" -R "$repo" --remove-label building >/dev/null

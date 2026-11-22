@@ -361,8 +361,16 @@ jobs:
 
           # verify ran in another job, before this fetch: check again now that the text is fixed in
           # the file, so an edit made in between never reaches the agent. Released, not needs-info.
+          # If the ticket can't be read, nothing is known: release it without blaming anyone, and the
+          # next sweep starts it again.
+          if ! state=$(.github/factory/dispatch.sh --state "$ISSUE"); then
+            gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label building
+            echo "refused=true" >>"$GITHUB_OUTPUT"
+            echo "::error::Couldn't read #$ISSUE to check it for edits; released for the next sweep."
+            exit 1
+          fi
           # shellcheck disable=SC2016 # backticks are Markdown
-          if ! .github/factory/dispatch.sh --state "$ISSUE" | jq -e '.edited_after_ready | not' >/dev/null; then
+          if ! jq -e '.edited_after_ready | not' <<<"$state" >/dev/null; then
             gh issue edit "$ISSUE" -R "$GITHUB_REPOSITORY" --remove-label building --remove-label ready
             gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body "$(printf '<!-- factory-dispatch -->\nThe factory stopped before building this: its title or description was edited by someone else after it was approved. Reread it, and label it `ready` again if it should still be built. ADR-0047.')"
             echo "refused=true" >>"$GITHUB_OUTPUT"
@@ -440,12 +448,35 @@ jobs:
       # branch; one outside claude/issue-<n>- isn't trusted.
       # Also when a step before the agent failed (the install, the report fetch): the ticket goes
       # back to the owner instead of holding the queue. Not for a ticket the load step refused.
+      # What the agent published, found without trusting what it says: every pull request the
+      # Claude App opened since this run started, every branch for this ticket, and the branch it
+      # names. The checks and takedowns below cover all of them.
+      - name: Find what the agent published
+        id: published
+        if: always() && steps.ticket.outputs.refused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          start=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          opened=$(gh pr list --state all --author app/claude --search "created:>=$start" --limit 50 --json number,headRefName)
+          heads=$( {
+            jq -r '.branch // empty' <<<"${RESULT:-{\}}"
+            jq -r '.[].headRefName' <<<"$opened"
+            gh api "repos/$GITHUB_REPOSITORY/branches" --paginate --jq ".[].name | select(startswith(\"claude/issue-$ISSUE-\"))"
+          } | sort -u | tr '\n' ' ')
+          {
+            echo "heads=$heads"
+            echo "prs=$(jq -r '[.[].number] | join(" ")' <<<"$opened")"
+          } >>"$GITHUB_OUTPUT"
+
       - name: Check the result
         id: result
         if: always() && steps.ticket.outputs.refused != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}
+          HEADS: ${{ steps.published.outputs.heads }}
           REPORT: ${{ steps.report.outputs.fetched }}
           DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
         run: |
@@ -453,7 +484,25 @@ jobs:
           summary=$(jq -r '.summary // "The implementer stopped without a summary; see the run log."' <<<"${RESULT:-{\}}")
           branch=$(jq -r '.branch // ""' <<<"${RESULT:-{\}}")
           [[ "$branch" == "claude/issue-$ISSUE-"* ]] || branch=""
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+          # Anything it published outside this ticket's branches, or that touches the factory's own
+          # rules, goes to a human whatever it reported. The ticket keeps `building`, so nothing
+          # else starts until someone has looked.
+          for head in $HEADS; do
+            reason=""
+            if [[ "$head" != "claude/issue-$ISSUE-"* ]]; then
+              reason="pushed \`$head\`, which isn't one of this ticket's branches"
+            elif gh api "repos/$GITHUB_REPOSITORY/compare/main...$head" --jq '.files[].filename' 2>/dev/null |
+              grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
+              reason="changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\` on \`$head\`, which the implementer may not touch"
+            fi
+            if [ -n "$reason" ]; then
+              gh issue edit "$ISSUE" --add-label needs-human
+              gh issue comment "$ISSUE" --body "The factory's agent $reason. Don't merge anything from this run until a human has looked: [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). ADR-0047."
+              echo "::error::The agent $reason"
+              exit 1
+            fi
+          done
 
           # Never publish what looks like a credential (ADR-0029), or a user's report (ADR-0041).
           if ! "$RUNNER_TEMP/guard-secrets.sh" <<<"$summary"; then
@@ -475,26 +524,26 @@ jobs:
           compare=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$branch" 2>/dev/null) || needs_info
           [ "$(echo "$compare" | jq .ahead_by)" -gt 0 ] || needs_info
 
-          if echo "$compare" | jq -r '.files[].filename' | grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-            gh issue comment "$ISSUE" --body "The factory's branch \`$branch\` changes \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the implementer may not touch. Don't merge it."
-            echo "::error::$branch changes protected paths"
-            exit 1
-          fi
-
           if [ "$(gh pr list --head "$branch" --state all --json number --jq length)" = 0 ]; then
             body=$(printf 'Closes #%s\n\nThe implementer pushed this branch but did not open the pull request. **CI has not run: close and reopen this PR to start it.**' "$ISSUE")
             gh pr create --base main --head "$branch" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
           fi
+
+          # Built: what the agent would have said in its closing comment, after the same guards.
+          pr=$(gh pr list --head "$branch" --state all --json number --jq '.[0].number')
+          gh issue comment "$ISSUE" --body "$(printf '%s\n\n<sub>Pull request #%s, from [this run](%s). ADR-0047.</sub>\n' \
+            "$summary" "$pr" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
 
       # As in implement (ADR-0029): it can't comment, but it writes the pull request description.
       - name: Take down anything that looks like a credential
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ steps.result.outputs.branch }}
+          PRS: ${{ steps.published.outputs.prs }}
+          HEADS: ${{ steps.published.outputs.heads }}
         run: |
           leaked=0
-          for pr in $( { [ -n "$BRANCH" ] && gh pr list --head "$BRANCH" --state all --json number --jq '.[].number'; } || true); do
+          for pr in $PRS $(for head in $HEADS; do gh pr list --head "$head" --state all --json number --jq '.[].number'; done | sort -u); do
             if ! gh pr view "$pr" --json body --jq .body | "$RUNNER_TEMP/guard-secrets.sh"; then
               gh pr edit "$pr" --body "The description was removed because it matched a credential pattern (ADR-0029)."
               leaked=1
@@ -508,9 +557,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ env.ISSUE }}
-          BRANCH: ${{ steps.result.outputs.branch }}
+          HEADS: ${{ steps.published.outputs.heads }}
           DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
-        run: '"$RUNNER_TEMP/takedown-report-quotes.sh"'
+        run: |
+          # Once per branch it published; without one, still once for its comments.
+          status=0
+          for head in ${HEADS:-""}; do
+            BRANCH=$head "$RUNNER_TEMP/takedown-report-quotes.sh" || status=1
+          done
+          exit "$status"
 
   # Which failing pull request to fix, if any, and which attempt this is. Holds no secrets.
   select-fix:

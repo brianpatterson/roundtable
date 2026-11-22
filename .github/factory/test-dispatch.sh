@@ -122,6 +122,7 @@ case "$*" in
   "issue list"*"--label building"*) file=building.json ;;
   "api repos/o/r/compare/old...dep"*) echo ahead; exit 0 ;;
   "api repos/o/r/issues/11/comments"*) file=comments-11.json ;;
+  "issue comment $FAIL_COMMENT "*) echo "$*" >>"$WORK/writes"; exit 1 ;;
   "workflow run"*"issue=$FAIL_DISPATCH") echo "$*" >>"$WORK/writes"; exit 1 ;;
   "api repos/o/r/compare/"*) echo behind; exit 0 ;;
   *) echo "$*" >>"$WORK/writes"; exit 0 ;;
@@ -129,7 +130,7 @@ esac
 jq -rc "$filter" "$WORK/$file"
 GH
 chmod +x "$work/gh"
-run() { FAIL_READ=${FAIL_READ:-none} FAIL_DISPATCH=${FAIL_DISPATCH:-none} WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
+run() { FAIL_COMMENT=${FAIL_COMMENT:-none} FAIL_READ=${FAIL_READ:-none} FAIL_DISPATCH=${FAIL_DISPATCH:-none} WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
 expect() { # expect <name> <output> <text it must contain>
   case "$2" in *"$3"*) ;; *)
     echo "FAIL: $1: no [$3] in [$2]"
@@ -213,6 +214,15 @@ fi
 output=$(FAIL_DISPATCH=10 run) || true
 expect "a failed dispatch releases the ticket" "$(cat "$work/writes")" "issue edit 10 -R o/r --remove-label building"
 expect "and the next free ticket starts instead" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=20"
+
+# A started ticket stays in flight even if the comment saying so fails, so nothing starts beside it.
+: >"$work/writes"
+output=$(FAIL_COMMENT=10 run) || true
+expect "a started ticket whose comment failed" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=10"
+if grep -q "issue=20" "$work/writes"; then
+  echo "FAIL: a failed comment let a second ticket start"
+  failures=$((failures + 1))
+fi
 
 # The dispatched run checks the rules again before its agent runs.
 : >"$work/out"
