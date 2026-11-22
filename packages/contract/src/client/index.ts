@@ -42,6 +42,7 @@ export function makeApiClient(options: ApiClientOptions) {
   return {
     authConfig: () => run((client) => client.identity.authConfig()),
     listApplications: () => run((client) => client.applications.list()),
+    getApplication: (id: string) => run((client) => client.applications.get({ params: { id } })),
     createApplication: (payload: CreateApplication) =>
       run((client) => client.applications.create({ payload })),
     updateApplication: (id: string, payload: UpdateApplication) =>

@@ -145,8 +145,17 @@ export class ApplicationNotFound extends Schema.TaggedError<
   readonly [ErrorReporter.ignore] = true;
 }
 
+/** An application's id: a UUID. */
+const ApplicationId = Schema.String.check(Schema.isUUID());
+
+/**
+ * Whether `value` could be an application's id. The web app checks a URL's id with it, so a
+ * malformed one shows "not found" without asking the server.
+ */
+export const isApplicationId = Schema.is(ApplicationId);
+
 /** A malformed id fails the params schema: 400 (ADR-0022), before any handler runs. */
-const IdParams = { id: Schema.String.check(Schema.isUUID()) };
+const IdParams = { id: ApplicationId };
 
 export class ApplicationsApi extends HttpApiGroup.make('applications')
   .add(

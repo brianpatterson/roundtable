@@ -1,7 +1,7 @@
 // The web app's typed client (packages/shared/src/client.ts) against the real server: the same
 // code the browser runs, with fetch pointed at the app in-process instead of the network.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Unauthorized } from '@roundtable/contract';
+import { ApplicationNotFound, Unauthorized, isApplicationId } from '@roundtable/contract';
 import { ApiError, makeApiClient } from '@roundtable/contract/client';
 import { setupTestApp, signUp } from './helpers.js';
 
@@ -34,6 +34,7 @@ describe('the web client', () => {
     expect(updated.status).toBe('offer');
     expect(updated.appliedAt).toEqual(created.appliedAt);
     expect(await api.listApplications()).toEqual([updated]);
+    expect(await api.getApplication(created.id)).toEqual(updated);
 
     const saved = await api.createApplication({
       company: 'Globex',
@@ -57,6 +58,25 @@ describe('the web client', () => {
 
     await expect(missing).rejects.toThrow(ApiError);
     await expect(missing).rejects.toThrow('That application no longer exists.');
+    await expect(api.getApplication(crypto.randomUUID())).rejects.toHaveProperty(
+      'cause',
+      expect.any(ApplicationNotFound),
+    );
+  });
+
+  it('reads another user’s application as not found', async () => {
+    const theirs = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const mine = clientFor((await signUp(t)).cookie);
+
+    await expect(mine.getApplication(theirs.id)).rejects.toHaveProperty(
+      'cause',
+      expect.any(ApplicationNotFound),
+    );
+  });
+
+  it('tells an application id from a malformed one', () => {
+    expect(isApplicationId(crypto.randomUUID())).toBe(true);
+    expect(isApplicationId('not-an-id')).toBe(false);
   });
 
   it('rejects with the Unauthorized error as the cause when there is no session', async () => {
