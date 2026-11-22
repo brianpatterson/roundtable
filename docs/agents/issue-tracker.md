@@ -34,6 +34,11 @@ testable acceptance criteria:
 - **Bug** (`bug.yml`, label `bug`): Steps to reproduce, Expected, Actual, Sentry issue, Modules
   touched.
 
+The factory never adds, removes or upgrades a package: its sandbox leaves `node_modules` and the
+lockfile read-only ([ADR-0050](../adr/0050-factory-adds-no-dependencies.md)). If a ticket needs a new
+dependency, say so to the user before publishing: a human adds it (with its `docs/dependencies.md`
+row) first, and the ticket uses it. Otherwise the factory stops with `needs-info` and names it.
+
 Add a **Blocked by** section listing blocking issues, and also record each edge as a native
 dependency (below). Use `GLOSSARY.md` terms. Never paste user data into an issue.
 
