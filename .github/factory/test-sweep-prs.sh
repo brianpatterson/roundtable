@@ -53,25 +53,25 @@ case "$reason" in *cancelled*) ;; *)
   ;;
 esac
 
-# The sweeper reads the verdict from the heading review.yml writes, and finds the review of the head
-# commit by the SHA in its footer. If either changes, every reviewed pull request would read as
+# The sweeper reads the verdict from the heading post-review.sh writes, and finds the review of the
+# head commit by the SHA in its footer. If either changes, every reviewed pull request would read as
 # `changes` or unreviewed. Pin them together.
-review_yml="$here/../workflows/review.yml"
-if ! grep -qF "ready) verdict='✅ Ready for you' ;;" "$review_yml" ||
-  ! grep -qF "printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s," "$review_yml" ||
+poster="$here/post-review.sh"
+if ! grep -qF "ready) heading='✅ Ready for you' ;;" "$poster" ||
+  ! grep -qF "printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s," "$poster" ||
   ! grep -qF '<!-- factory-review -->\\n### Factory review: ✅ Ready for you' "$here/sweep-prs.sh"; then
-  echo "FAIL: the review comment review.yml writes and what sweep-prs.sh matches have drifted apart"
+  echo "FAIL: the review comment post-review.sh writes and what sweep-prs.sh matches have drifted apart"
   failures=$((failures + 1))
 fi
 
 # The sweep end to end, against a stand-in gh that answers from canned JSON and applies --jq as
 # gh would. #1's commit lookup fails, which mustn't stop the rest. #2 is green and the reviewer's
-# comment names its head commit, in the footer review.yml writes. #3 is green and its only review
+# comment names its head commit, in the footer post-review.sh writes. #3 is green and its only review
 # is of an older commit, which doesn't count.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 long_ago=$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3H +%Y-%m-%dT%H:%M:%SZ)
-review() { # review <sha>: the comment review.yml posts, verdict ready
+review() { # review <sha>: the comment post-review.sh posts, verdict ready
   printf '<!-- factory-review -->\n### Factory review: %s\n\nLooks right.\n\n<sub>Commit %s, reviewed by the factory'"'"'s reviewer agent (ADR-0026). It never approves; the owner merges.</sub>\n' \
     '✅ Ready for you' "$1"
 }
@@ -109,7 +109,7 @@ expect() { # expect <name> <text the output must contain>
   esac
 }
 expect "a failing pull request is reported and the sweep carries on" "Couldn't sweep #1"
-expect "a review naming the head commit, in review.yml's footer, reads as ready" "#2 bbb: ok"
+expect "a review naming the head commit, in post-review.sh's footer, reads as ready" "#2 bbb: ok"
 expect "a review of an older commit doesn't count" "#3 ccc: human"
 if [ "$status" -eq 0 ]; then
   echo "FAIL: a sweep with a failed pull request exits 0"

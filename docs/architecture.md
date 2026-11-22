@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-20_
+_Last updated: 2026-11-21_
 
 ## 1. What the system does
 
@@ -506,7 +506,7 @@ Once CI passes on a new commit of any pull request from this repository except D
 ([ADR-0033](adr/0033-review-every-pull-request.md)), or when the owner labels one `review`, the
 Review workflow runs a second agent under `.github/factory/reviewer.md`. It reads the change
 (checked out apart from `main`, never run) against its ticket, or its description when it has
-none, and the repo's rules, and a deterministic step posts its verdict as one comment, updated in place. It never
+none, and the repo's rules, and a deterministic step posts its verdict as one comment, updated in place; a re-review that asks for changes also posts a short new comment pointing at it, which the Claude desktop app's Auto-fix can see ([ADR-0046](adr/0046-review-posts-new-comment-on-changes.md)). It never
 approves; the owner merges, and can ask the implementer to address the review
 ([ADR-0026](adr/0026-software-factory-reviewer.md)). On the factory's own pull requests that
 follow-up runs `pnpm check` and the tests before pushing; on anyone else's, the action refuses to
