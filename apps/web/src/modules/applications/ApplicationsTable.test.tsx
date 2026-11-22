@@ -10,12 +10,20 @@ import { ApplicationsTable } from './ApplicationsTable';
 const ACME_ID = '00000000-0000-4000-8000-000000000001';
 const GLOBEX_ID = '00000000-0000-4000-8000-000000000002';
 
-const row = (id: string, company: string, jobTitle: string) => ({
+const APPLIED_AT = '2026-10-30T12:00:00.000Z';
+
+const row = (
+  id: string,
+  company: string,
+  jobTitle: string,
+  appliedAt: string | null = APPLIED_AT,
+) => ({
   id,
   company,
   jobTitle,
   jobUrl: null,
   status: 'applied',
+  appliedAt,
   createdAt: '2026-11-01T00:00:00.000Z',
   updatedAt: '2026-11-02T00:00:00.000Z',
 });
@@ -54,6 +62,8 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     const { status } = (await request.json()) as { status: string };
 
     existing.status = status;
+    // Like the real API: a status change dates an application that wasn't sent yet.
+    existing.appliedAt ??= '2026-11-03T12:00:00.000Z';
 
     return Response.json(existing);
   }
@@ -333,5 +343,61 @@ describe('ApplicationsTable: deleting', () => {
     const reopened = await openDialogFor('Globex');
 
     expect(within(reopened).queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('ApplicationsTable: statuses and the applied date (ADR-0045)', () => {
+  const cellsOf = (company: string) =>
+    within(screen.getByRole('row', { name: new RegExp(company) })).getAllByRole('cell');
+
+  const appliedCellOf = (company: string) => cellsOf(company)[3]?.textContent;
+
+  it('shows when each application was sent, not when it was created', async () => {
+    await renderTable();
+
+    expect(screen.getByRole('columnheader', { name: 'Applied' })).toBeDefined();
+    expect(appliedCellOf('Acme')).toBe(new Date(APPLIED_AT).toLocaleDateString());
+  });
+
+  it('offers neither Screening nor Saved', async () => {
+    await renderTable();
+    await userEvent.click(statusFor('Acme'));
+
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
+
+    expect(options).toEqual([
+      'Applied',
+      'Interviewing',
+      'Offer',
+      'Accepted',
+      'Rejected',
+      'Withdrawn',
+    ]);
+  });
+
+  it('shows a screening row from an older server as Interviewing', async () => {
+    const acme = rows.find((r) => r.id === ACME_ID);
+
+    if (acme) acme.status = 'screening';
+
+    await renderTable();
+
+    expect(statusFor('Acme').textContent).toContain('Interviewing');
+  });
+
+  it('shows a saved row as Saved and Not sent, and dates it once moved to Applied', async () => {
+    const acme = rows.find((r) => r.id === ACME_ID);
+
+    if (acme) Object.assign(acme, { status: 'saved', appliedAt: null });
+
+    await renderTable();
+
+    expect(statusFor('Acme').textContent).toContain('Saved');
+    expect(appliedCellOf('Acme')).toBe('Not sent');
+
+    await changeStatus('Acme', 'Applied');
+
+    await waitFor(() => expect(appliedCellOf('Acme')).not.toBe('Not sent'));
+    expect(rows[0]?.status).toBe('applied');
   });
 });

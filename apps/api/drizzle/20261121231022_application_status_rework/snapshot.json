@@ -1,0 +1,77 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "caa5b9ca-f586-4d29-947a-59eff88c694b",
+  "prevIds": [
+    "d29212d4-d72a-4d47-b8b7-1a8e5d590a0b"
+  ],
+  "footprints": [
+    {
+      "statementType": "alter_enum",
+      "statementTarget": [
+        "enum",
+        "public",
+        "application_status"
+      ],
+      "writes": [
+        "s|enum|public.application_status"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "applications",
+        "applied_at"
+      ],
+      "writes": [
+        "s|col|public.applications.applied_at",
+        "n|col|public.applications.applied_at",
+        "e|col|public.applications.applied_at"
+      ],
+      "reads": [
+        "n|tbl|public.applications",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "applications",
+        "name": "applied_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "alter",
+      "key": "enums\u0000[\"public\",\"application_status\"]",
+      "set": {
+        "values": [
+          "saved",
+          "applied",
+          "screening",
+          "interviewing",
+          "offer",
+          "accepted",
+          "rejected",
+          "withdrawn"
+        ]
+      }
+    }
+  ]
+}

@@ -61,6 +61,12 @@ describe('what the contract accepts', () => {
     'not a url': [{ ...minimal, jobUrl: 'not a url' }, false],
     '2001-char url': [{ ...minimal, jobUrl: `https://e.com/${long(1987)}` }, false],
     'unknown status': [{ ...minimal, status: 'ghosted' }, false],
+    // Folded into interviewing (ADR-0045).
+    'screening status': [{ ...minimal, status: 'screening' }, false],
+    // Readable now, settable from the next release, so a rollback never meets one (ADR-0045).
+    'saved status': [{ ...minimal, status: 'saved' }, false],
+    // The server sets it.
+    'applied date is dropped': [{ ...minimal, appliedAt: '2020-01-01T00:00:00.000Z' }, minimal],
   } satisfies Record<string, Case>;
 
   const updateCases = {
@@ -71,6 +77,8 @@ describe('what the contract accepts', () => {
     'only unknown keys': [{ extra: 1 }, false],
     'empty company': [{ company: '' }, false],
     'data url': [{ jobUrl: 'data:text/html,x' }, false],
+    'screening status': [{ status: 'screening' }, false],
+    'saved status': [{ status: 'saved' }, false],
   } satisfies Record<string, Case>;
 
   const idCases = {
@@ -170,6 +178,33 @@ describe('what the contract accepts', () => {
     );
     expect(Exit.isFailure(encode({ company: '  ', jobTitle: 'SWE' }))).toBe(true);
     expect(Exit.isFailure(encode({ company: long(201), jobTitle: 'SWE' }))).toBe(true);
+  });
+});
+
+// The web app decodes responses with the contract, so it must read what a server one release
+// either side of it sends: a tab left open across a deploy or a rollback (ADR-0014, ADR-0045).
+describe('responses from the release before the status rework still decode', () => {
+  const before = {
+    id: '00000000-0000-4000-8000-000000000001',
+    company: 'Acme',
+    jobTitle: 'SWE',
+    jobUrl: null,
+    status: 'screening',
+    createdAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-02T00:00:00.000Z',
+  };
+
+  it('reads screening as interviewing, and a missing applied date as null', () => {
+    expect(Schema.decodeUnknownSync(contract.Application)(before)).toMatchObject({
+      status: 'interviewing',
+      appliedAt: null,
+    });
+  });
+
+  it('reads a saved application', () => {
+    const saved = { ...before, status: 'saved', appliedAt: null };
+
+    expect(Schema.decodeUnknownSync(contract.Application)(saved).status).toBe('saved');
   });
 });
 

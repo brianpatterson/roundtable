@@ -1,16 +1,16 @@
 // The applications module's contract: job applications and their CRUD endpoints, all behind the
 // identity module's Authorization middleware.
-import { ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effect';
+import { Effect, ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api';
 import { Authorization } from './identity.js';
 
 /**
- * In display order. Also the Postgres enum's values
- * (apps/api/src/modules/applications/schema.ts).
+ * The stages an application can be in, in display order (ADR-0045). `saved` is a posting not yet
+ * sent; every other status means it was sent, on its `appliedAt` date.
  */
 export const APPLICATION_STATUSES = [
+  'saved',
   'applied',
-  'screening',
   'interviewing',
   'offer',
   'accepted',
@@ -22,7 +22,54 @@ export const ApplicationStatus = Schema.Literals(APPLICATION_STATUSES);
 
 export type ApplicationStatus = typeof ApplicationStatus.Type;
 
-export const isApplicationStatus = Schema.is(ApplicationStatus);
+/**
+ * The Postgres enum's values, in its order (apps/api/src/modules/applications/schema.ts).
+ * `screening` was folded into `interviewing` (ADR-0045) but stays in the enum until a later
+ * release drops it: the release before the fold may still write it during a deploy or rollback.
+ */
+export const STORED_APPLICATION_STATUSES = [
+  'saved',
+  'applied',
+  'screening',
+  'interviewing',
+  'offer',
+  'accepted',
+  'rejected',
+  'withdrawn',
+] as const;
+
+export type StoredApplicationStatus = (typeof STORED_APPLICATION_STATUSES)[number];
+
+/** What a stored status means now: `screening` reads as `interviewing`. */
+export const currentStatus = (status: StoredApplicationStatus): ApplicationStatus =>
+  status === 'screening' ? 'interviewing' : status;
+
+/**
+ * The statuses a request can set. `saved` is readable in this release and settable from the next
+ * one: a rollback to the release before it couldn't send a `saved` row in its responses
+ * (ADR-0045). `screening` is no longer offered.
+ */
+export const SETTABLE_APPLICATION_STATUSES = APPLICATION_STATUSES.filter(
+  (status): status is Exclude<ApplicationStatus, 'saved'> => status !== 'saved',
+);
+
+const SettableStatus = Schema.Literals(SETTABLE_APPLICATION_STATUSES);
+
+export type SettableApplicationStatus = typeof SettableStatus.Type;
+
+/**
+ * A status in a response. Decodes a stored `screening` as `interviewing`, so the web app keeps
+ * working against a server from before the fold (a tab left open across a rollback).
+ */
+const ResponseStatus = Schema.Literals(STORED_APPLICATION_STATUSES).pipe(
+  Schema.decodeTo(
+    ApplicationStatus,
+    new SchemaTransformation.Transformation(
+      SchemaGetter.transform<ApplicationStatus, StoredApplicationStatus>(currentStatus),
+      SchemaGetter.passthroughSubtype<StoredApplicationStatus, ApplicationStatus>(),
+    ),
+  ),
+);
 
 const MAX_TEXT = 200;
 
@@ -62,7 +109,7 @@ export const CreateApplication = Schema.Struct({
   company: Text,
   jobTitle: Text,
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
-  status: Schema.optional(ApplicationStatus),
+  status: Schema.optional(SettableStatus),
 });
 
 export type CreateApplication = typeof CreateApplication.Type;
@@ -71,7 +118,7 @@ export const UpdateApplication = Schema.Struct({
   company: Schema.optional(Text),
   jobTitle: Schema.optional(Text),
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
-  status: Schema.optional(ApplicationStatus),
+  status: Schema.optional(SettableStatus),
 }).check(
   Schema.makeFilter((value) =>
     Object.keys(value).length > 0 ? undefined : 'At least one field is required',
@@ -86,7 +133,14 @@ export const Application = Schema.Struct({
   company: Schema.String,
   jobTitle: Schema.String,
   jobUrl: Schema.NullOr(Schema.String),
-  status: ApplicationStatus,
+  status: ResponseStatus,
+  /**
+   * When it was sent: null while `saved`. Set by the server, never by a request (ADR-0045). A
+   * server from before the column leaves it out, which reads as null.
+   */
+  appliedAt: Schema.NullOr(Schema.DateFromString).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 });

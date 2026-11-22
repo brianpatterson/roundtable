@@ -1,6 +1,7 @@
 # 0006. Status as a Postgres enum; creation date as application date
 
-- **Status:** Accepted
+- **Status:** Accepted; the creation date as the application date is superseded by
+  [ADR-0045](0045-saved-status-and-applied-date.md)
 - **Date:** 2026-10-28
 
 ## Context
