@@ -44,7 +44,8 @@ each module is what a future service or microfrontend would become.
   implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
   Tickets come from the forms in `.github/ISSUE_TEMPLATE/`. The same workflow fixes CI failures on
   factory PRs and on PRs labeled `autofix` ([ADR-0028](docs/adr/0028-software-factory-ci-fixer.md)).
-  `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)).
+  `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)),
+  and once on a review whose findings are all minor ([ADR-0052](docs/adr/0052-review-verdict-from-blocking-findings.md)).
   On a user report's issue it first fetches the report with `.github/factory/fetch-report.sh` (a
   token the agent never sees), and `guard-report-text.sh` takes down what quotes it ([ADR-0041](docs/adr/0041-factory-reads-user-reports.md)).
   `.github/factory/dispatch.sh` (the Factory workflow's gate and `.github/workflows/dispatcher.yml`) builds `ready`

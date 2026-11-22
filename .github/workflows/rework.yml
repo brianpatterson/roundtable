@@ -3,6 +3,10 @@
 # pushes. CI and the reviewer then run again on the new commit. Two attempts, then it stops and
 # asks for a human, as the CI fixer does (ADR-0028).
 #
+# A review whose findings are all minor gets one pass too (ADR-0052), which doesn't count against
+# the two attempts; later minor-only reviews are left for the owner. A blocker's rework fixes the
+# minor findings alongside it.
+#
 # Only main's Review workflow finishing starts it (select checks which run), so it always runs
 # this file and the implementer's instructions from `main`, and the `factory` environment, which
 # holds the Claude token, only admits `main`. A branch can't change what the agent is told or
@@ -39,12 +43,14 @@ jobs:
       sha: ${{ steps.pick.outputs.sha }}
       branch: ${{ steps.pick.outputs.branch }}
       attempt: ${{ steps.pick.outputs.attempt }}
+      kind: ${{ steps.pick.outputs.kind }}
     steps:
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.event.workflow_run.id }}
           MARKER: '<!-- factory-rework -->'
+          MINOR_MARKER: '<!-- factory-rework-minor -->'
         run: |
           # The review job records its verdict only once it has posted it (review.yml).
           gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n review-verdict -D "$RUNNER_TEMP/verdict" ||
@@ -53,7 +59,14 @@ jobs:
           pr=$(jq -r '.pr | select(type == "number")' "$record")
           reviewed=$(jq -r '.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' "$record")
           [ -n "$pr" ] && [ -n "$reviewed" ] || { echo "::error::Run $RUN's verdict record is malformed."; exit 1; }
-          [ "$(jq -r .verdict "$record")" = changes ] || { echo "#$pr: the reviewer asked for no changes."; exit 0; }
+          minor=$(jq -r '(.minor | select(type == "number" and . >= 0)) // 0' "$record")
+          case "$(jq -r .verdict "$record")" in
+            changes) kind=changes ;;
+            ready)
+              [ "$minor" -gt 0 ] || { echo "#$pr: ready, with no findings to fix."; exit 0; }
+              kind=minor ;;
+            *) echo "::error::Run $RUN's verdict record is malformed."; exit 1 ;;
+          esac
 
           info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json state,headRefOid,headRefName,isCrossRepository,labels,commits)
           labels=$(jq -c '[.labels[].name]' <<<"$info")
@@ -66,11 +79,21 @@ jobs:
           jq -e 'any(. == "factory")' <<<"$labels" >/dev/null || { echo "#$pr isn't a factory pull request."; exit 0; }
           ! jq -e 'any(. == "needs-human")' <<<"$labels" >/dev/null || { echo "#$pr is waiting for a human."; exit 0; }
 
-          # Attempts since the last commit a human pushed: a push from the owner resets the count.
+          # Reworks since the last commit a human pushed: a push from the owner resets the count.
           since=$(jq -r '[.commits[] | select(all(.authors[]; (.login // "") | test("^(claude|dependabot)") | not)) | .committedDate] | max // "1970-01-01T00:00:00Z"' <<<"$info")
-          attempts=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate \
-            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")) and .created_at > \"$since\")] | length" |
-            jq -s add)
+          reworks=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate \
+            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")) and .created_at > \"$since\") | .body]" |
+            jq -s 'add // []')
+          # The minor pass doesn't count against the two attempts.
+          attempts=$(jq --arg m "$MINOR_MARKER" '[.[] | select(contains($m) | not)] | length' <<<"$reworks")
+
+          # One minor pass per pull request: what later minor-only reviews find is the owner's call.
+          if [ "$kind" = minor ]; then
+            [ "$(jq --arg m "$MINOR_MARKER" '[.[] | select(contains($m))] | length' <<<"$reworks")" -eq 0 ] ||
+              { echo "#$pr: ready; it has had its minor pass, so its minor findings are the owner's."; exit 0; }
+            { echo "pr=$pr"; echo "sha=$reviewed"; echo "branch=$(jq -r .headRefName <<<"$info")"; echo "kind=minor"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ "${attempts:-0}" -ge 2 ]; then
             gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --add-label needs-human
@@ -83,6 +106,7 @@ jobs:
             echo "sha=$reviewed"
             echo "branch=$(jq -r .headRefName <<<"$info")"
             echo "attempt=$(( ${attempts:-0} + 1 ))"
+            echo "kind=changes"
           } >> "$GITHUB_OUTPUT"
 
   rework:
@@ -120,6 +144,8 @@ jobs:
       SHA: ${{ needs.select.outputs.sha }}
       BRANCH: ${{ needs.select.outputs.branch }}
       ATTEMPT: ${{ needs.select.outputs.attempt }}
+      KIND: ${{ needs.select.outputs.kind }}
+      MINOR_MARKER: '<!-- factory-rework-minor -->'
     steps:
       # Waiting for this branch's group can take a while, and the job that held it (a fix or a
       # rework) may have pushed. Then this review is stale: the new commit gets its own runs.
@@ -177,6 +203,17 @@ jobs:
             > .factory/review.md
           grep -q '<!-- factory-review -->' .factory/review.md || { echo "::error::#$PR has no factory review."; exit 1; }
 
+      - name: Brief the agent
+        if: steps.current.outputs.stale != 'true'
+        id: brief
+        run: |
+          if [ "$KIND" = minor ]; then
+            brief="The reviewer found no blocking findings on pull request #$PR (branch $BRANCH, commit $SHA), only minor ones: its review is in .factory/review.md. This is the factory's one pass over minor findings (ADR-0052); later minor findings are left for the owner. The branch is checked out. Follow \"Reworking a review\" in your instructions and return the structured output. If no finding is worth changing, push nothing and return needs-human with your reasons: on this pass that only leaves them for the owner."
+          else
+            brief="The reviewer asked for changes on pull request #$PR (branch $BRANCH, commit $SHA): its review, and earlier rework replies, are in .factory/review.md. This is rework attempt $ATTEMPT of 2. The branch is checked out. Follow \"Reworking a review\" in your instructions and return the structured output."
+          fi
+          { echo 'prompt<<BRIEF'; echo "$brief"; echo BRIEF; } >> "$GITHUB_OUTPUT"
+
       - name: Rework
         if: steps.current.outputs.stale != 'true'
         id: claude
@@ -188,11 +225,7 @@ jobs:
           # The factory's pushes start CI, and so the review, as the Claude App; the action checks
           # the upstream run's actor. select already decided this pull request is the factory's.
           allowed_bots: claude[bot]
-          prompt: |
-            The reviewer asked for changes on pull request #${{ env.PR }} (branch ${{ env.BRANCH }},
-            commit ${{ env.SHA }}): its review, and earlier rework replies, are in .factory/review.md. This is rework attempt
-            ${{ env.ATTEMPT }} of 2. The branch is checked out. Follow "Reworking a review" in your
-            instructions and return the structured output.
+          prompt: ${{ steps.brief.outputs.prompt }}
           claude_args: >-
             --model claude-opus-5-5
             --max-turns 100
@@ -251,17 +284,29 @@ jobs:
             summary="The rework changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
           fi
 
-          case "$outcome" in
-            fixed) head="pushed changes; CI and the reviewer run again" ;;
-            *) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
-          esac
+          # On the minor pass the pull request is already the owner's turn: nothing pushed leaves
+          # the findings for them, without asking for a human.
+          if [ "$KIND" = minor ]; then
+            title='Rework, minor findings' extra="$MINOR_MARKER"$'\n'
+            case "$outcome" in
+              fixed) head="pushed changes; CI and the reviewer run again" ;;
+              protected) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
+              *) head="pushed nothing; the minor findings are yours" ;;
+            esac
+          else
+            title="Rework, attempt $ATTEMPT of 2" extra=
+            case "$outcome" in
+              fixed) head="pushed changes; CI and the reviewer run again" ;;
+              *) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
+            esac
+          fi
 
           # Never publish what looks like a credential (ADR-0029).
           if ! "$RUNNER_TEMP/guard-secrets.sh" <<<"$summary"; then
             summary="The rework agent's summary was withheld because it matched a credential pattern. See the run, and rotate the credential."
           fi
 
-          body=$(printf '<!-- factory-rework -->\n### Rework, attempt %s of 2: %s\n\n%s\n\n<sub>[Run](%s), answering the review of commit %s. ADR-0037.</sub>\n' \
-            "$ATTEMPT" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")
+          body=$(printf '<!-- factory-rework -->\n%s### %s: %s\n\n%s\n\n<sub>[Run](%s), answering the review of commit %s. ADR-0037, ADR-0052.</sub>\n' \
+            "$extra" "$title" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")
           gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
           [ "$outcome" != protected ] || exit 1

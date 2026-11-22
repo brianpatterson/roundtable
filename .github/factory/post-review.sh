@@ -13,12 +13,14 @@
 #   GITHUB_REPOSITORY  owner/name
 #   PR, SHA            the pull request and the commit reviewed
 #   RESULT             the reviewer's structured output: {blocking: <number>, review}
-#   GITHUB_OUTPUT      where the verdict is written (`verdict=ready|changes`), when set
+#   GITHUB_OUTPUT      where the verdict and the number of minor findings are written
+#                      (`verdict=ready|changes`, `minor=<number>`), when set
 #   GH                 overrides gh (tests)
 #
 # The reviewer doesn't choose the verdict (ADR-0052): any blocking finding means changes. It counts
 # its blocking findings, and this script also counts the findings the review marks **blocking**
 # (`1. **blocking**:`) and takes the larger, so a miscount can't turn a blocker into "ready".
+# The minor findings (`1. **minor**:`) are counted for Rework's one minor pass (ADR-0052).
 #
 # The caller has already passed RESULT through guard-secrets.sh.
 set -euo pipefail
@@ -29,7 +31,9 @@ repo=$GITHUB_REPOSITORY
 reported=$(jq -r '.blocking | select(type == "number" and . >= 0 and . == floor)' <<<"$RESULT")
 [ -n "$reported" ] || { echo "::error::The reviewer returned no count of blocking findings." >&2; exit 1; }
 review=$(jq -r '.review | select(type == "string")' <<<"$RESULT")
-marked=$(grep -cE '^[[:space:]]*([0-9]+\.|[-*]) \*\*blocking\*\*' <<<"$review" || true)
+finding() { grep -cE '^[[:space:]]*([0-9]+\.|[-*]) \*\*'"$1"'\*\*' <<<"$review" || true; }
+marked=$(finding blocking)
+minor=$(finding minor)
 blocking=$((reported > marked ? reported : marked))
 
 if [ "$blocking" -gt 0 ]; then
@@ -37,7 +41,7 @@ if [ "$blocking" -gt 0 ]; then
 else
   verdict=ready heading='✅ Ready for you'
 fi
-[ -z "${GITHUB_OUTPUT:-}" ] || echo "verdict=$verdict" >>"$GITHUB_OUTPUT"
+[ -z "${GITHUB_OUTPUT:-}" ] || printf 'verdict=%s\nminor=%s\n' "$verdict" "$minor" >>"$GITHUB_OUTPUT"
 
 marker='<!-- factory-review -->'
 nudge_marker='<!-- factory-review-changes -->'

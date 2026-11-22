@@ -106,21 +106,21 @@ blocker=$'**Findings**\n1. **minor**: `a.ts:1` could be clearer.\n2. **blocking*
 
 post_result counted-ready "$(result 0 "$findings")" "$new"
 has "### Factory review: ✅ Ready for you" || fail "minor findings only are ready: [$calls]"
-[ "$output" = verdict=ready ] || fail "the verdict ready is written to GITHUB_OUTPUT: [$output]"
+[ "$output" = $'verdict=ready\nminor=2' ] || fail "ready and the minor findings' count are written to GITHUB_OUTPUT: [$output]"
 
 post_result counted-changes "$(result 1 "$blocker")" "$new"
 has "### Factory review: ✋ Changes needed" || fail "a blocking finding needs changes"
-[ "$output" = verdict=changes ] || fail "the verdict changes is written to GITHUB_OUTPUT: [$output]"
+[ "$output" = $'verdict=changes\nminor=1' ] || fail "changes and the minor findings' count are written to GITHUB_OUTPUT: [$output]"
 
 post_result undercounted "$(result 0 "$blocker")" "$new"
 has "### Factory review: ✋ Changes needed" || fail "a finding marked blocking needs changes even when the count says 0"
-[ "$output" = verdict=changes ] || fail "an undercount still records changes: [$output]"
+[ "${output%%$'\n'*}" = verdict=changes ] || fail "an undercount still records changes: [$output]"
 
 post_result unmarked "$(result 2 "$findings")" "$new"
-[ "$output" = verdict=changes ] || fail "a blocking count needs changes even without markers: [$output]"
+[ "${output%%$'\n'*}" = verdict=changes ] || fail "a blocking count needs changes even without markers: [$output]"
 
 post_result prose "$(result 0 $'**Findings**\nNone.\n\nNothing here is **blocking** the merge.')" "$new"
-[ "$output" = verdict=ready ] || fail "the word blocking in prose isn't a finding: [$output]"
+[ "$output" = $'verdict=ready\nminor=0' ] || fail "the word blocking in prose isn't a finding, nor a missing list a minor one: [$output]"
 
 CASE="$work/bad" && mkdir -p "$CASE" && echo '[]' >"$CASE/comments.json"
 for bad in '{"verdict":"ready","review":""}' '{"blocking":-1,"review":""}' '{"blocking":1.5,"review":""}' '{"blocking":"1","review":""}'; do

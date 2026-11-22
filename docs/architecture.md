@@ -584,7 +584,10 @@ When the reviewer's verdict on a factory pull request is "changes needed", the R
 restarts the implementer on that branch with only the factory's own review comments: it fixes
 what the review named, or disputes a finding with its reasons, and pushes, so CI and the
 reviewer run again. It too stops after two attempts with `needs-human`, and shares the CI
-fixer's per-branch concurrency group ([ADR-0037](adr/0037-software-factory-rework.md)).
+fixer's per-branch concurrency group ([ADR-0037](adr/0037-software-factory-rework.md)). A
+"ready" review whose findings are all minor gets one such pass per pull request, outside the two
+attempts; later minor-only reviews are left for the owner
+([ADR-0052](adr/0052-review-verdict-from-blocking-findings.md)).
 
 Every agent job scrubs Anthropic credentials and the runner's OIDC tokens from the commands the
 agent runs and isolates them (bubblewrap), allows only named `pnpm` and `git` commands, and checks
