@@ -16,11 +16,11 @@ check() { # check <name> <state JSON> <expected action>
 }
 
 # A ready ticket the owner labeled, nothing blocking it, nothing in flight. Cases change one thing.
-base='{"open":true,"closed":null,"ready":{"by_owner":true,"age":5},"edited_after_ready":false,"held":null,"answered":false,"building":null,"blockers":[],"others_building":[]}'
+base='{"open":true,"closed":null,"ready":{"approved":true,"age":5},"edited_after_ready":false,"held":null,"answered":false,"building":null,"blockers":[],"others_building":[]}'
 with() { jq -c "$1" <<<"$base"; }
 
 check "unblocked, nothing in flight: start" "$base" start
-check "labeled by someone other than the owner: ignore" "$(with '.ready.by_owner = false')" ignore
+check "labeled by someone other than the owner: ignore" "$(with '.ready.approved = false')" ignore
 check "no ready label: ignore" "$(with '.ready = null')" ignore
 check "labeled needs-human: ignore" "$(with '.held = "needs-human"')" ignore
 check "waiting for answers (needs-info): ignore" "$(with '.held = "needs-info"')" ignore
@@ -92,9 +92,9 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 labeled() { printf '{"__typename":"LabeledEvent","createdAt":"%s","label":{"name":"%s"},"actor":{"login":"%s"}}' "$1" "$2" "$3"; }
 closed_by() { printf '{"nodes":[{"__typename":"ClosedEvent","closer":{"__typename":"PullRequest","merged":true,"mergeCommit":{"oid":"%s"}}}]}' "$1"; }
-issue() { # issue <number> <state> <labels JSON> <timeline nodes JSON> <blockers JSON> [edits JSON]
-  jq -n --argjson n "$1" --arg s "$2" --argjson l "$3" --argjson t "$4" --argjson b "$5" --argjson e "${6:-[]}" \
-    '{data:{repository:{issue:{number:$n,state:$s,labels:{nodes:($l|map({name:.}))},userContentEdits:{nodes:$e},
+issue() { # issue <number> <state> <labels JSON> <timeline nodes JSON> <blockers JSON> [edits JSON] [author]
+  jq -n --argjson n "$1" --arg s "$2" --argjson l "$3" --argjson t "$4" --argjson b "$5" --argjson e "${6:-[]}" --arg a "${7:-o}" \
+    '{data:{repository:{issue:{number:$n,state:$s,author:{login:$a},labels:{nodes:($l|map({name:.}))},userContentEdits:{nodes:$e},
       timelineItems:{nodes:$t},closedByPullRequestsReferences:{nodes:[]},blockedBy:{nodes:$b}}}}}' >"$work/issue-$1.json"
 }
 t=2026-11-20T10:00:00Z
@@ -121,6 +121,13 @@ issue 23 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 
 issue 24 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 2026-11-20T09:45:00Z ready github-actions),$(labeled $t ready o)]" '[]' "$stranger_edit"
 # #25: building; a pull request closed it, then it was reopened and closed by hand.
 issue 25 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by old)"),{\"__typename\":\"ClosedEvent\",\"closer\":null}]" '[]'
+# Mutation tickets (ADR-0051): #27 the nightly run opened and labeled itself; #28 is the same, then
+# a stranger edited it; #29 is another workflow issue the workflow labeled, without `mutation`; #30
+# is labeled `mutation` and `ready` by the workflow, but someone else opened it.
+issue 27 OPEN '["mutation","ready"]' "[$(labeled $t mutation github-actions),$(labeled $t ready github-actions)]" '[]' '[]' github-actions
+issue 28 OPEN '["mutation","ready"]' "[$(labeled $t ready github-actions)]" '[]' "$(jq -c '.[0].editedAt = "2026-11-20T11:00:00Z"' <<<"$stranger_edit")" github-actions
+issue 29 OPEN '["architecture","ready"]' "[$(labeled $t ready github-actions)]" '[]' '[]' github-actions
+issue 30 OPEN '["mutation","ready"]' "[$(labeled $t ready github-actions)]" '[]' '[]' stranger
 issue 14 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by new)")]" '[]'
 echo '[{"headSha":"dep"}]' >"$work/deploy.json"
 echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
@@ -305,6 +312,17 @@ echo '[{"number":21}]' >"$work/building.json"
 echo '[{"number":10}]' >"$work/ready.json"
 output=$(FAIL_READ=21 run) || true
 expect "an unreadable building ticket stays in flight" "$output" "#10: queue"
+
+# The nightly mutation run's own ticket is approved by its own label; no other workflow label is.
+expect "a mutation ticket the workflow opened and labeled is approved" "$(run --state 27 | jq -c .ready.approved)" true
+expect "and an edit by someone else after that label still counts" "$(run --state 28 | jq -c .edited_after_ready)" true
+expect "the workflow's label on another kind of issue is not approval" "$(run --state 29 | jq -c .ready.approved)" false
+expect "nor on a mutation ticket someone else opened" "$(run --state 30 | jq -c .ready.approved)" false
+echo '[]' >"$work/building.json"
+echo '[{"number":27}]' >"$work/ready.json"
+expect "a sweep starts the mutation ticket" "$(DRY_RUN=true run)" "#27: start"
+echo '[{"number":29}]' >"$work/ready.json"
+expect "and ignores the other workflow-labeled issue" "$(DRY_RUN=true run)" "#29: ignore"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

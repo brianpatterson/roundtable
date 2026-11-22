@@ -67,6 +67,9 @@ jobs:
       # Which ready ticket the factory builds, and when (ADR-0047).
       - name: Dispatcher decisions
         run: .github/factory/test-dispatch.sh
+      # Which mutation ticket the nightly run files for the factory (ADR-0051).
+      - name: Mutation ticket filing
+        run: .github/factory/test-file-mutation-issue.sh
       # What the reviewer posts, and when a re-review adds a comment Auto-fix can see (ADR-0046).
       - name: Review comments
         run: .github/factory/test-post-review.sh
