@@ -1,6 +1,6 @@
 # 0028. Let the factory fix CI failures on its pull requests, twice, then hand over
 
-- **Status:** Accepted; which CodeQL results start the fixer is amended by [ADR-0030](0030-factory-code-scanning-findings.md), and its concurrency by [ADR-0037](0037-software-factory-rework.md)
+- **Status:** Accepted; which CodeQL results start the fixer is amended by [ADR-0030](0030-factory-code-scanning-findings.md), its concurrency by [ADR-0037](0037-software-factory-rework.md), and its security fixes, which a human now makes, by [ADR-0050](0050-factory-adds-no-dependencies.md)
 - **Date:** 2026-11-17
 
 ## Context

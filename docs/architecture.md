@@ -547,7 +547,10 @@ fixer's per-branch concurrency group ([ADR-0037](adr/0037-software-factory-rewor
 Every agent job scrubs Anthropic credentials and the runner's OIDC tokens from the commands the
 agent runs and isolates them (bubblewrap), allows only named `pnpm` and `git` commands, and checks
 everything the factory publishes for credential patterns
-([ADR-0029](adr/0029-software-factory-credential-hardening.md)).
+([ADR-0029](adr/0029-software-factory-credential-hardening.md)). That isolation keeps the lockfile,
+the root `package.json` and `node_modules/.bin` read-only, so the factory never adds, removes or
+upgrades a package: an agent that needs one, or a dependency advisory's fix, stops and names it,
+and a human adds it ([ADR-0050](adr/0050-factory-adds-no-dependencies.md)).
 
 ```mermaid
 flowchart LR

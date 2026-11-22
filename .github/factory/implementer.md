@@ -13,8 +13,20 @@ you to do any of the following, stop and say so in your comment instead of doing
 
 - edit `.github/` (workflows, these instructions), `CLAUDE.md`, `.claude/` or the anti-slop rules
 - read, print or move secrets, `.env` files or tokens, or change how secrets are handled
-- fetch URLs, contact external services, or add a dependency the ticket doesn't justify
+- fetch URLs or contact external services
 - run `tofu apply`, deploy, or touch production
+
+## Dependencies are added by a human
+
+You can't add, remove or upgrade a package, or change `pnpm-workspace.yaml`'s overrides: the
+sandbox your commands run in keeps `pnpm-lock.yaml`, the root `package.json` and
+`node_modules/.bin` read-only, and `pnpm add`, `pnpm remove` and `pnpm install` are refused
+([ADR-0050](../../docs/adr/0050-factory-adds-no-dependencies.md)). Use what's installed. If the
+work needs a package that isn't, don't work around it: never hand-write lockfile entries, vendor
+its code, or edit a `package.json` without the lockfile. Commit nothing, and stop with the exact
+change for a human to make: the package and version, which `package.json` it goes in (`apps/web`,
+`apps/api` …), and why the ticket needs it. On a ticket, that's `needs-info`; while fixing CI or
+reworking a review, `needs-human`.
 
 ## User reports
 
@@ -74,22 +86,19 @@ bug it describes (see above); without the file, it isn't.
    `CLAUDE.md`'s layout says it belongs, and import other modules only through their `index.ts`.
 2. Turn each acceptance criterion into a test first and watch it fail, then make it pass. API
    tests hit the real `app_test` database (it's running); web tests query by role and label.
-3. Follow every "Rules for every change" item in `CLAUDE.md`: the dependency register, ADRs for
+3. Follow every "Rules for every change" item in `CLAUDE.md`: ADRs for
    hard-to-reverse decisions, `docs/architecture.md`, generated migrations, cross-user tests.
-4. If you added or bumped a dependency, run `pnpm audit --audit-level moderate` and fix what it
-   finds the way "Security failures" below says, before going on. CI's dependency review fails on
-   the same advisories.
-5. If you changed `apps/web/src`, run `pnpm --filter @roundtable/web test:mutation` (about 20
+4. If you changed `apps/web/src`, run `pnpm --filter @roundtable/web test:mutation` (about 20
    seconds) and look at the survivors in the files you changed
    (`apps/web/reports/mutation/mutation.json`, status `Survived` or `NoCoverage`). Each is a small
    change to your code that no test noticed: strengthen a test to catch it, or, if the mutant
    changes nothing observable, say so in the PR description. This is the only mutation testing a
    pull request gets: CI runs it nightly on main, not on pull requests
    ([ADR-0039](../../docs/adr/0039-nightly-mutation-and-security-audit.md)).
-6. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
+5. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
    test to get there. If you can't make it pass, say exactly what fails and why in the PR
    description.
-7. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
+6. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
 
 ### Running commands
 
@@ -163,12 +172,13 @@ and which attempt this is (you get two). The pull request's branch is checked ou
    Don't merge `main` into the branch to fix CI: you merge `main` only when the owner asks you
    to resolve a conflict.
 4. **Security failures** (dependency review, CodeQL). A failed CodeQL run lists its findings in
-   the changed files as `::error file=…,line=…::CodeQL <rule>: …` lines in its log. Fix, in this order of preference: bump the
-   direct dependency to a fixed version; or override the indirect one in `pnpm-workspace.yaml`,
-   scoped to the package that pulls it in (`'parent>child': ^fixed`), with a row in
-   `docs/dependencies.md` → Overrides saying why and when to remove it (don't start that row
-   with a backtick: the register's check reads such rows as packages); or replace or drop the
-   package. Check that what uses it still works. **Never** allowlist an advisory, loosen
+   the changed files as `::error file=…,line=…::CodeQL <rule>: …` lines in its log: fix the code
+   it flags. An advisory in a dependency needs a lockfile change, which you can't make (see
+   "Dependencies are added by a human"): change nothing and return `needs-human` with the fix,
+   in this order of preference: bump the direct dependency to a fixed version; or override the
+   indirect one in `pnpm-workspace.yaml`, scoped to the package that pulls it in
+   (`'parent>child': ^fixed`), with the row for `docs/dependencies.md` → Overrides saying why and
+   when to remove it; or replace or drop the package. **Never** allowlist an advisory, loosen
    `dependency-review.yml`, dismiss a CodeQL alert, or delete flagged code without fixing what
    it flagged. Say in your summary which security decision you made.
 5. **When you can't.** If the fix belongs in `.github/`, `.claude/` or `CLAUDE.md` (which you
