@@ -24,12 +24,16 @@ if [ -n "$open" ]; then
   exit 0
 fi
 
-closed=$("$GH" issue list -R "$repo" --label mutation --state closed --limit 200 --json title,stateReason,body)
+# Every closed mutation ticket, for declined files and mutants already asked for. 1000 is years of
+# tickets at one a night; past it, the oldest would drop out and their files and mutants come back.
+closed=$("$GH" issue list -R "$repo" --label mutation --state closed --limit 1000 --json title,stateReason,body)
 declined=$(jq -c '[.[] | select(.stateReason == "NOT_PLANNED") | .title]' <<<"$closed")
 # Each ticket lists its mutants' keys at the end of its description, as base64 JSON in an HTML
-# comment (a replacement could contain `-->`).
+# comment (a replacement could contain `-->`). A key is the file, mutator and replacement, not the
+# line, so a mutant left alive is still recognized after code above it moves; identical mutants in
+# one file are counted, so asking for one of them doesn't hide the others.
 asked=$(jq -c '[.[] | select(.stateReason != "NOT_PLANNED") | .body // ""
-  | capture("<!-- mutants: (?<k>[A-Za-z0-9+/=]+) -->").k? // "" | (@base64d | fromjson)? // [] | .[]] | unique' <<<"$closed")
+  | capture("<!-- mutants: (?<k>[A-Za-z0-9+/=]+) -->").k? // "" | (@base64d | fromjson)? // [] | .[]]' <<<"$closed")
 
 mutants='[]'
 for pair in "$@"; do
@@ -40,12 +44,13 @@ for pair in "$@"; do
       | select(.status == "Survived" or .status == "NoCoverage")
       | {app: $app, file: $f, line: .location.start.line, status, mutator: .mutatorName,
          replacement: ((.replacement // "") | gsub("\\s+"; " ") | .[0:80])}
-      | .key = "\(.app)/\(.file):\(.line) \(.mutator) \(.replacement)"]' "$report")
+      | .key = "\(.app)/\(.file) \(.mutator) \(.replacement)"]' "$report")
 done
 
 # The file with the most undetected mutants that the owner hasn't declined.
 pick=$(jq -c --argjson declined "$declined" --argjson asked "$asked" '
-  map(select(.key as $k | $asked | index($k) | not))
+  ($asked | group_by(.) | map({key: .[0], value: length}) | from_entries) as $times
+  | group_by(.key) | map(sort_by(.line) | .[($times[.[0].key] // 0):]) | add // []
   | group_by(.app + "/" + .file)
   | map({path: (.[0].app + "/" + .[0].file), mutants: (. | sort_by(.line))})
   | map(select(("Mutation: test `\(.path)`") as $t | $declined | index($t) | not))

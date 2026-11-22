@@ -54,8 +54,10 @@ Option 3.
   most one a night, and the owner's own tickets still interleave in the dispatcher's queue.
   - Closing a ticket as **not planned** stops tickets for that file.
   - A mutant that a finished ticket already listed isn't asked for again. Its pull request left it alive
-    and said why, and asking again would loop. Each ticket keeps its mutants' keys (file, line, mutator,
-    replacement) in a comment at the end of its description.
+    and said why, and asking again would loop. Each ticket keeps its mutants' keys (file, mutator and
+    replacement, without the line, so a mutant is still recognized after code above it moves) in a
+    comment at the end of its description. Identical mutants in one file are counted, so asking for one
+    doesn't hide the others.
 - **Approval.** The dispatcher counts a `ready` label as approval when the owner added it, or when it is
   a `mutation` ticket the workflow token both opened and labeled (`github-actions` in GraphQL). Edits by
   anyone else after that label still send the ticket back, as before. Nobody else can act as that token.

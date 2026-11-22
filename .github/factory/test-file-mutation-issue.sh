@@ -107,6 +107,22 @@ jq -nc --arg b "$keys" '[{title: "Mutation: test `apps/web/src/Page.tsx`", state
 run
 expect "with a.ts already asked for, b.ts is filed" "$(cat "$work/created")" 'Mutation: test `apps/api/src/b.ts`'
 
+# The same, after code above a.ts's mutants moved them down a line: still recognized.
+cp "$work/api.json" "$work/api.orig.json"
+jq -c '.files["src/a.ts"].mutants |= map(.location.start.line += 1)' "$work/api.orig.json" >"$work/api.json"
+run
+expect "an asked mutant whose line moved isn't asked again" "$(cat "$work/created")" 'Mutation: test `apps/api/src/b.ts`'
+
+# Asking for one of two identical mutants (same mutator and replacement) doesn't hide the other.
+jq -c '.files["src/a.ts"].mutants += [.files["src/a.ts"].mutants[0] | .location.start.line = 20]
+  | .files["src/b.ts"].mutants = []' "$work/api.orig.json" >"$work/api.json"
+run
+created=$(cat "$work/created")
+expect "the second of two identical mutants is still filed" "$created" 'Mutation: test `apps/api/src/a.ts`'
+expect "at its own line" "$created" "a.ts:20"
+refute "and the asked one isn't" "$created" "a.ts:3\`"
+cp "$work/api.orig.json" "$work/api.json"
+
 # A long list is cut to LIMIT and says the rest come next.
 echo '[]' >"$work/closed.json"
 LIMIT=2 DRY_RUN=true run
