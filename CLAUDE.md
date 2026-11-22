@@ -44,7 +44,8 @@ each module is what a future service or microfrontend would become.
   implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
   Tickets come from the forms in `.github/ISSUE_TEMPLATE/`. The same workflow fixes CI failures on
   factory PRs and on PRs labeled `autofix` ([ADR-0028](docs/adr/0028-software-factory-ci-fixer.md)).
-  `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)).
+  `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)),
+  and once on a review whose findings are all minor ([ADR-0053](docs/adr/0053-review-verdict-from-blocking-findings.md)).
   On a user report's issue it first fetches the report with `.github/factory/fetch-report.sh` (a
   token the agent never sees), and `guard-report-text.sh` takes down what quotes it ([ADR-0041](docs/adr/0041-factory-reads-user-reports.md)).
   `.github/factory/dispatch.sh` (the Factory workflow's gate and `.github/workflows/dispatcher.yml`) builds `ready`
@@ -60,8 +61,8 @@ each module is what a future service or microfrontend would become.
   weekly and opens `architecture` issues ([ADR-0031](docs/adr/0031-weekly-architecture-review.md)); don't edit those skills, update them from upstream.
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
-  [ADR-0033](docs/adr/0033-review-every-pull-request.md)). `.github/factory/post-review.sh` edits its one comment on each
-  re-review and posts a short new one when it asks for changes, so Auto-fix sees it ([ADR-0046](docs/adr/0046-review-posts-new-comment-on-changes.md)).
+  [ADR-0033](docs/adr/0033-review-every-pull-request.md)). `.github/factory/post-review.sh` sets the verdict from the blocking findings ([ADR-0053](docs/adr/0053-review-verdict-from-blocking-findings.md)),
+  edits its one comment on each re-review and posts a short new one when it asks for changes, so Auto-fix sees it ([ADR-0046](docs/adr/0046-review-posts-new-comment-on-changes.md)).
   `.github/workflows/mutation.yml`: Stryker on the web app and the API, nightly on main, advisory;
   not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
   It then tops up to five open tests-only `mutation` tickets, one per file, through `.github/factory/file-mutation-issue.sh`,

@@ -1,6 +1,6 @@
 # 0026. Review factory pull requests with a second, read-only agent that never approves
 
-- **Status:** Accepted, amended by [ADR-0033](0033-review-every-pull-request.md), [ADR-0037](0037-software-factory-rework.md) and [ADR-0046](0046-review-posts-new-comment-on-changes.md)
+- **Status:** Accepted, amended by [ADR-0033](0033-review-every-pull-request.md), [ADR-0037](0037-software-factory-rework.md), [ADR-0046](0046-review-posts-new-comment-on-changes.md) and [ADR-0053](0053-review-verdict-from-blocking-findings.md)
 - **Date:** 2026-11-17
 
 ## Context

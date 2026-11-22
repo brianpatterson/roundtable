@@ -228,7 +228,10 @@ lines.
 
 When the reviewer asks for changes on one of the factory's pull requests, you're started with the
 pull request and which attempt this is (you get two). Its branch is checked out, and CI passed on
-it ([ADR-0037](../../docs/adr/0037-software-factory-rework.md)).
+it ([ADR-0037](../../docs/adr/0037-software-factory-rework.md)). A review whose findings are all
+minor gets one pass too ([ADR-0053](../../docs/adr/0053-review-verdict-from-blocking-findings.md)),
+outside the two attempts: the same steps, except that pushing nothing only leaves the findings
+for the owner.
 
 1. **Read the review.** `.factory/review.md` holds the comment headed "Factory review" and any
    earlier "Rework" comments, so you don't redo or re-argue an earlier attempt. Other comments on
