@@ -32,13 +32,16 @@ duration without a start or outside 5–480 minutes. The schedule is changed wit
 `PUT /api/applications/:id/rounds/:roundId/schedule`, which replaces it as a whole (what isn't
 sent is cleared), so a partial update can never combine with stored fields into an invalid one.
 The list sorts dated Rounds first by `coalesce(starts_at, due_on at 00:00 UTC)`, then the rest in
-the order they were added.
+the order they were added. The web app, which knows the user's time zone, orders them again the
+same way with a due date at the start of that day in the user's zone.
 
 ## Consequences
 
 - Sorting and the Agenda's "upcoming" query are one expression over one table.
-- A take-home and an interview on the same day sort by UTC midnight, so the take-home usually
-  comes first; for users far east of UTC a morning interview can sort before it. Revisit if the
-  Agenda needs the user's zone on the server.
+- The API's order is only right for users in UTC. West of UTC, an interview in the evening
+  before a take-home's due day is already that day in UTC, so the API puts the take-home first;
+  east of UTC, an interview early on the due day falls on the day before in UTC. The web app
+  orders by the user's own day, so what they see is right; the Agenda will need the same, or
+  the user's zone on the server.
 - A future field of the schedule (a time zone of its own, a location) is a new nullable column and
   a new field of the `PUT` body.

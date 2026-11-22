@@ -18,7 +18,7 @@ import {
   scheduleOf,
   type ScheduleDraft,
 } from './Schedule';
-import { interviewTypeLabel, scheduleLabel } from './format';
+import { inLocalOrder, interviewTypeLabel, scheduleLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
 
 const typeOptions = INTERVIEW_TYPES.map((type) => ({
@@ -54,6 +54,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
   const rounds = useQuery({
     queryKey: roundsQueryKey(applicationId),
     queryFn: () => api.listRounds(applicationId),
+    select: inLocalOrder,
   });
 
   const [interviewType, setInterviewType] = useState<InterviewType>(INTERVIEW_TYPES[0]);

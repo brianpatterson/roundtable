@@ -620,6 +620,25 @@ describe('a Round’s schedule', () => {
     expect(screen.getByRole('alertdialog')).toBe(dialog);
   });
 
+  it('orders a take-home by its due day in the user’s time zone, not by midnight UTC', async () => {
+    // 5 PM on Nov 30 here is 01:00 UTC on Dec 1, after the server's midnight for a take-home due
+    // that day, so the server sends the take-home first.
+    stored = [
+      round(1, 'take_home', { dueOn: '2026-12-01' }),
+      round(2, 'coding', { startsAt: '2026-12-01T01:00:00.000Z' }),
+      round(3, 'behavioral'),
+      round(4, 'presentation', { dueOn: '2026-11-29' }),
+    ];
+    await renderPage();
+
+    expect(await whenListed()).toEqual([
+      'Due Nov 29, 2026',
+      'Nov 30, 2026, 5:00 PM',
+      'Due Dec 1, 2026',
+      'Not scheduled yet',
+    ]);
+  });
+
   it('shows the Rounds in the server’s order, dated or not', async () => {
     stored = [
       round(1, 'coding', { startsAt: '2026-11-25T18:00:00.000Z' }),

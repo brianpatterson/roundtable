@@ -302,7 +302,8 @@ erDiagram
   never a start and a due date together, and a duration (5–480 minutes) only with a start.
   Index `rounds_application_id_created_at_idx` serves the list: one application's Rounds, sorted
   in the query with dated ones first by `coalesce(starts_at, due_on at 00:00 UTC)`, then the
-  undated ones by `created_at` (an application has a handful of Rounds).
+  undated ones by `created_at` (an application has a handful of Rounds). The web app orders them
+  again by the user's own day, which the API can't know.
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
