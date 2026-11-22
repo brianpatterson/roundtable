@@ -78,6 +78,22 @@ export function scheduleLabel({ startsAt, durationMinutes, dueOn }: Round) {
   return dueOn ? `Due ${formatCalendarDate(dueOn)}` : 'Not scheduled yet';
 }
 
+/**
+ * Each Round's name, in the order given: its type and which of that type it is, `Coding 2`. A
+ * name follows the list's order, so rescheduling a Round can rename the others of its type.
+ */
+export const roundNames = (rounds: readonly Round[]) => {
+  const counts = new Map<InterviewType, number>();
+
+  return rounds.map(({ interviewType }) => {
+    const count = (counts.get(interviewType) ?? 0) + 1;
+
+    counts.set(interviewType, count);
+
+    return `${interviewTypeLabel(interviewType)} ${count}`;
+  });
+};
+
 /** When it was sent, or "Not sent" while it's saved (ADR-0045). */
 export const appliedLabel = (appliedAt: Date | null) =>
   appliedAt ? formatDate(appliedAt) : 'Not sent';

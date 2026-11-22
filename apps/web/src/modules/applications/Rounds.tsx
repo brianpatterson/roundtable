@@ -18,7 +18,7 @@ import {
   scheduleOf,
   type ScheduleDraft,
 } from './Schedule';
-import { inLocalOrder, interviewTypeLabel, scheduleLabel } from './format';
+import { inLocalOrder, interviewTypeLabel, roundNames, scheduleLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
 
 const typeOptions = INTERVIEW_TYPES.map((type) => ({
@@ -26,12 +26,11 @@ const typeOptions = INTERVIEW_TYPES.map((type) => ({
   label: interviewTypeLabel(type),
 }));
 
-/**
- * A Round as the page names it: its type and when it is. Not its place in the list, which changes
- * when another Round is rescheduled, and with the user's time zone.
- */
-const roundName = (round: Round) =>
-  `${interviewTypeLabel(round.interviewType)} (${scheduleLabel(round)})`;
+/** A Round with the name the list gives it (`Coding 2`), for a dialog about it. */
+interface NamedRound {
+  round: Round;
+  name: string;
+}
 
 /**
  * Deletes a Round. One that is already gone (deleted in another tab) is the outcome the user asked
@@ -82,14 +81,14 @@ export function Rounds({ applicationId }: { applicationId: string }) {
     queryClient.invalidateQueries({ queryKey: roundsQueryKey(applicationId) });
 
   // The Round being deleted stays set while the dialog closes, so its text doesn't vanish mid-fade.
-  const [toDelete, setToDelete] = useState<Round>();
+  const [toDelete, setToDelete] = useState<NamedRound>();
   const [confirming, setConfirming] = useState(false);
 
   const remove = useMutation({ mutationFn: deleteRound, onSuccess: refreshRounds });
 
-  const askToDelete = (round: Round) => {
+  const askToDelete = (named: NamedRound) => {
     remove.reset();
-    setToDelete(round);
+    setToDelete(named);
     setConfirming(true);
   };
 
@@ -99,7 +98,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
   };
 
   // The same for the Round whose schedule is being edited.
-  const [toEdit, setToEdit] = useState<Round>();
+  const [toEdit, setToEdit] = useState<NamedRound>();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ScheduleDraft>(EMPTY_SCHEDULE);
   const [editError, setEditError] = useState<string>();
@@ -110,11 +109,11 @@ export function Rounds({ applicationId }: { applicationId: string }) {
     onSuccess: refreshRounds,
   });
 
-  const askToEdit = (round: Round) => {
+  const askToEdit = (named: NamedRound) => {
     reschedule.reset();
     setEditError(undefined);
-    setToEdit(round);
-    setDraft(draftOf(round));
+    setToEdit(named);
+    setDraft(draftOf(named.round));
     setEditing(true);
   };
 
@@ -129,13 +128,15 @@ export function Rounds({ applicationId }: { applicationId: string }) {
 
     if (result.ok && toEdit) {
       reschedule.mutate(
-        { round: toEdit, when: result.schedule },
+        { round: toEdit.round, when: result.schedule },
         { onSuccess: () => setEditing(false) },
       );
     }
   };
 
   const editMessage = editError ?? reschedule.error?.message;
+
+  const names = rounds.data ? roundNames(rounds.data) : [];
 
   return (
     <section className={styles.rounds} aria-labelledby={headingId}>
@@ -145,30 +146,34 @@ export function Rounds({ applicationId }: { applicationId: string }) {
       {rounds.data?.length === 0 && <p>No rounds yet.</p>}
       {rounds.data && rounds.data.length > 0 && (
         <ol className={styles.list} aria-label="Rounds">
-          {rounds.data.map((round) => (
-            <li key={round.id} className={styles.round}>
-              <span className={styles.summary}>
-                <span>{interviewTypeLabel(round.interviewType)}</span>
-                <span className={styles.when}>{scheduleLabel(round)}</span>
-              </span>
-              <span className={styles.actions}>
-                <Button
-                  variant="text"
-                  aria-label={`Edit schedule of ${roundName(round)}`}
-                  onClick={() => askToEdit(round)}
-                >
-                  Edit schedule
-                </Button>
-                <Button
-                  variant="text"
-                  aria-label={`Delete ${roundName(round)}`}
-                  onClick={() => askToDelete(round)}
-                >
-                  Delete
-                </Button>
-              </span>
-            </li>
-          ))}
+          {rounds.data.map((round, i) => {
+            const name = names[i] ?? '';
+
+            return (
+              <li key={round.id} className={styles.round}>
+                <span className={styles.summary}>
+                  <span>{name}</span>
+                  <span className={styles.when}>{scheduleLabel(round)}</span>
+                </span>
+                <span className={styles.actions}>
+                  <Button
+                    variant="text"
+                    aria-label={`Edit schedule of ${name}`}
+                    onClick={() => askToEdit({ round, name })}
+                  >
+                    Edit schedule
+                  </Button>
+                  <Button
+                    variant="text"
+                    aria-label={`Delete ${name}`}
+                    onClick={() => askToDelete({ round, name })}
+                  >
+                    Delete
+                  </Button>
+                </span>
+              </li>
+            );
+          })}
         </ol>
       )}
       <form
@@ -202,10 +207,8 @@ export function Rounds({ applicationId }: { applicationId: string }) {
         onOpenChange={(open) => {
           if (!open) closeEditor();
         }}
-        title="Schedule round"
-        description={
-          toEdit && <>{roundName(toEdit)}: when it happens, when it’s due, or not scheduled yet.</>
-        }
+        title={toEdit ? `Schedule ${toEdit.name}` : 'Schedule'}
+        description="When it happens, when it’s due, or not scheduled yet."
         actions={
           <>
             <Button variant="text" disabled={reschedule.isPending} onClick={closeEditor}>
@@ -226,7 +229,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
           if (!open) closeDialog();
         }}
         title="Delete round?"
-        description={toDelete && <>{roundName(toDelete)} will be deleted. You can’t undo this.</>}
+        description={toDelete && <>{toDelete.name} will be deleted. You can’t undo this.</>}
         actions={
           <>
             <Button variant="text" disabled={remove.isPending} onClick={closeDialog}>
@@ -236,7 +239,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
               disabled={remove.isPending}
               onClick={() => {
                 if (toDelete) {
-                  remove.mutate(toDelete, { onSuccess: () => setConfirming(false) });
+                  remove.mutate(toDelete.round, { onSuccess: () => setConfirming(false) });
                 }
               }}
             >
