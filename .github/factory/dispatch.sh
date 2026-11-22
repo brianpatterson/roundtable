@@ -20,12 +20,15 @@ GH=${GH:-gh}
 
 # The decision, from a state gather() builds (ages in minutes):
 #   {open, closed: null | deployed | merged | unmerged, ready: null | {by_owner, age},
-#    edited_after_ready, held, building: null | {age, has_pr},
+#    edited_after_ready, held: null | needs-human | needs-info, answered, building: null | {age, has_pr},
 #    blockers: [{number, open, closed}], others_building: [number]}
 # `closed` is what closed an issue: a pull request or commit whose merge commit the latest
 # successful deploy includes (deployed) or doesn't yet (merged), or nothing (unmerged: closed by
-# hand, as not planned or done elsewhere). `held` is a needs-human or needs-info label.
-# Prints {action: ignore | ok | release | unlabel | human | wait | queue | start, reason}.
+# hand, as not planned or done elsewhere). `held` is the label a ticket waits on the owner under;
+# `needs-info` stops holding it once the owner labels it `ready` again after it (`answered`), and
+# a start then removes it. `edited_after_ready` counts title and description edits by anyone but
+# the owner since the `ready` label.
+# Prints {action: ignore | ok | release | unlabel | human | stuck | wait | queue | start, reason}.
 # shellcheck disable=SC2016 # backticks are Markdown
 decide='
   def out($a; $r): {action: $a, reason: $r};
@@ -34,13 +37,14 @@ decide='
     if .building == null then out("ignore"; "closed")
     elif .closed == "merged" then out("ok"; "merged, and in flight until it is deployed")
     else out("release"; "closed, and nothing of it is left to deploy") end
-  elif .held then out("ignore"; "waiting for the owner")
+  elif .held == "needs-human" then out("ignore"; "it is labeled `needs-human`. Remove that label and the factory decides again")
+  elif .held == "needs-info" then out("ignore"; "it is waiting for answers (`needs-info`). Answer them, then label it `ready` again")
   elif .building != null then
     if .building.has_pr or .building.age <= 90 then out("ok"; "being built")
-    else out("human"; "the factory started building it \(.building.age) minutes ago and no open pull request closes it") end
+    else out("stuck"; "the factory started building it \(.building.age) minutes ago and no open pull request closes it. It is no longer `building`, so the next ticket can start; remove `needs-human` and the factory decides on this one again") end
   elif .ready == null or .ready.by_owner != true then out("ignore"; "not labeled `ready` by the owner")
   elif .edited_after_ready then
-    out("unlabel"; "its description was edited by someone else after it was labeled `ready`. Reread it, and label it `ready` again if it should still be built")
+    out("unlabel"; "its title or description was edited by someone else after it was labeled `ready`. Reread it, and label it `ready` again if it should still be built")
   elif any(.blockers[]; .open != true and .closed == "unmerged") then
     out("human"; "\([.blockers[] | select(.open != true and .closed == "unmerged") | .number] | refs) closed without a merged pull request, so the plan may have changed. Remove that dependency if this should still be built")
   elif any(.blockers[]; .open or .closed == "merged") then
@@ -83,10 +87,11 @@ query='query($owner: String!, $name: String!, $number: Int!) {
       state
       labels(first: 50) { nodes { name } }
       userContentEdits(last: 20) { nodes { editedAt editor { login } } }
-      timelineItems(itemTypes: [LABELED_EVENT, CLOSED_EVENT], last: 100) {
+      timelineItems(itemTypes: [LABELED_EVENT, RENAMED_TITLE_EVENT, CLOSED_EVENT], last: 100) {
         nodes {
           __typename
           ... on LabeledEvent { createdAt label { name } actor { login } }
+          ... on RenamedTitleEvent { createdAt actor { login } }
           ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } }
         }
       }
@@ -117,11 +122,17 @@ gather() {
     | [$i.timelineItems.nodes[] | select(.__typename == "LabeledEvent")] as $labeled
     | ([$labeled[] | select(.label.name == "ready")] | last) as $ready
     | ([$labeled[] | select(.label.name == "building")] | last) as $building
+    | ([$labeled[] | select(.label.name == "needs-info")] | last) as $info
+    | ($info != null and $ready != null and $ready.createdAt > $info.createdAt) as $answered
     | {number: $i.number, open: ($i.state == "OPEN"), sha: ($i.timelineItems | sha),
        ready: (if ($labels | index("ready")) != null and $ready != null
                then {by_owner: ($ready.actor.login == $owner), at: $ready.createdAt, age: age($ready.createdAt)} else null end),
-       edited_after_ready: ($ready != null and any($i.userContentEdits.nodes[]; .editedAt > $ready.createdAt and (.editor.login // "") != $owner)),
-       held: (($labels | index("needs-human")) != null or ($labels | index("needs-info")) != null),
+       edited_after_ready: ($ready != null and (
+         any($i.userContentEdits.nodes[]; .editedAt > $ready.createdAt and (.editor.login // "") != $owner) or
+         any($i.timelineItems.nodes[]; .__typename == "RenamedTitleEvent" and .createdAt > $ready.createdAt and (.actor.login // "") != $owner))),
+       held: (if ($labels | index("needs-human")) != null then "needs-human"
+              elif ($labels | index("needs-info")) != null and ($answered | not) then "needs-info" else null end),
+       answered: (($labels | index("needs-info")) != null and $answered),
        building: (if ($labels | index("building")) != null
                   then {age: (if $building != null then age($building.createdAt) else 0 end), has_pr: ($i.closedByPullRequestsReferences.nodes | length > 0)} else null end),
        blockers: [$i.blockedBy.nodes[] | {number, open: (.state == "OPEN"), sha: (.timelineItems | sha)}]}
@@ -157,7 +168,7 @@ say() { # say <issue> <text> [always]
 }
 
 # Acts on one decision. mode is gate or sweep.
-act() { # act <mode> <issue> <decision JSON>
+act() { # act <mode> <issue> <decision JSON> <state JSON>
   local action reason
   action=$(jq -r .action <<<"$3")
   reason=$(jq -r .reason <<<"$3")
@@ -166,6 +177,14 @@ act() { # act <mode> <issue> <decision JSON>
   local always=
   [ "$1" != gate ] || always=always
   case "$action" in
+    ignore)
+      # Only the gate answers an ignore: the owner just added the label and should see why nothing ran.
+      [ "$1" != gate ] || say "$2" "The factory didn't start this: $reason. ADR-0047." always
+      ;;
+    stuck)
+      "$GH" issue edit "$2" -R "$repo" --remove-label building --add-label needs-human >/dev/null
+      say "$2" "The factory stopped on this ticket: $reason. ADR-0047." always
+      ;;
     release) "$GH" issue edit "$2" -R "$repo" --remove-label building >/dev/null ;;
     unlabel)
       "$GH" issue edit "$2" -R "$repo" --remove-label ready >/dev/null
@@ -178,12 +197,16 @@ act() { # act <mode> <issue> <decision JSON>
     wait | queue) say "$2" "The factory will build this later: $reason. It says here when it starts. ADR-0047." $always ;;
     start)
       if [ "$1" = gate ]; then
-        "$GH" issue edit "$2" -R "$repo" --add-label building >/dev/null
+        if [ "$(jq -r .answered <<<"$4")" = true ]; then
+          "$GH" issue edit "$2" -R "$repo" --add-label building --remove-label needs-info >/dev/null
+        else
+          "$GH" issue edit "$2" -R "$repo" --add-label building >/dev/null
+        fi
         [ -z "${GITHUB_OUTPUT:-}" ] || echo "start=true" >>"$GITHUB_OUTPUT"
       else
         # Starting it from here needs the implementer to accept a dispatch (ADR-0047's second
         # step). Until then, hand the start to the owner, once.
-        say "$2" "Nothing blocks this any more and nothing else is in flight. Remove \`ready\` and add it again to have the factory build it now. ADR-0047."
+        say "$2" "Nothing blocks this any more and nothing else is in flight. Reread it, then remove \`ready\` and add it again to have the factory build it now. ADR-0047."
       fi
       ;;
   esac
@@ -201,15 +224,12 @@ while read -r number; do
   state=$(gather "$number" | jq -c '.others_building = []')
   decision=$(jq -c "$decide" <<<"$state")
   case "$(jq -r .action <<<"$decision")" in
-    release) act sweep "$number" "$decision" ;;
+    # Closed and deployed, or open with no pull request long after it started (handed to a human,
+    # so it no longer holds the queue): either way, no longer in flight.
+    release | stuck) act sweep "$number" "$decision" "$state" ;;
     *)
       in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
-      # Open and building may be stuck (no pull request long after it started); the rest only report.
-      if [ "$(jq -r .action <<<"$decision")" = human ]; then
-        act sweep "$number" "$decision"
-      else
-        echo "#$number: $(jq -r '"\(.action) (\(.reason))"' <<<"$decision")"
-      fi
+      echo "#$number: $(jq -r '"\(.action) (\(.reason))"' <<<"$decision")"
       ;;
   esac
 done < <("$GH" issue list -R "$repo" --label building --state all --limit 100 --json number --jq '.[].number')
@@ -217,7 +237,7 @@ done < <("$GH" issue list -R "$repo" --label building --state all --limit 100 --
 if [ "${1:-}" = --gate ]; then
   number=$2
   state=$(gather "$number" | jq -c --argjson f "$in_flight" --argjson n "$number" '.others_building = ($f - [$n])')
-  act gate "$number" "$(jq -c "$decide" <<<"$state")"
+  act gate "$number" "$(jq -c "$decide" <<<"$state")" "$state"
   exit 0
 fi
 
@@ -231,6 +251,6 @@ done < <("$GH" issue list -R "$repo" --label ready --state open --limit 100 --js
 while read -r state; do
   number=$(jq -r .number <<<"$state")
   decision=$(jq -c --argjson f "$in_flight" '.others_building = ($f - [.number])' <<<"$state" | jq -c "$decide")
-  act sweep "$number" "$decision"
+  act sweep "$number" "$decision" "$state"
   [ "$(jq -r .action <<<"$decision")" != start ] || in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
 done < <(printf '%s\n' "${states[@]}" | jq -sc 'sort_by(.ready.at // "") | .[]')

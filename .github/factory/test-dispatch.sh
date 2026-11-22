@@ -16,13 +16,15 @@ check() { # check <name> <state JSON> <expected action>
 }
 
 # A ready ticket the owner labeled, nothing blocking it, nothing in flight. Cases change one thing.
-base='{"open":true,"closed":null,"ready":{"by_owner":true,"age":5},"edited_after_ready":false,"held":false,"building":null,"blockers":[],"others_building":[]}'
+base='{"open":true,"closed":null,"ready":{"by_owner":true,"age":5},"edited_after_ready":false,"held":null,"answered":false,"building":null,"blockers":[],"others_building":[]}'
 with() { jq -c "$1" <<<"$base"; }
 
 check "unblocked, nothing in flight: start" "$base" start
 check "labeled by someone other than the owner: ignore" "$(with '.ready.by_owner = false')" ignore
 check "no ready label: ignore" "$(with '.ready = null')" ignore
-check "waiting for the owner (needs-human or needs-info): ignore" "$(with '.held = true')" ignore
+check "labeled needs-human: ignore" "$(with '.held = "needs-human"')" ignore
+check "waiting for answers (needs-info): ignore" "$(with '.held = "needs-info"')" ignore
+check "needs-info, answered and relabeled ready: start" "$(with '.answered = true')" start
 check "edited by someone else after the label: unlabel" "$(with '.edited_after_ready = true')" unlabel
 check "edited after the label and also blocked: unlabel first" "$(with '.edited_after_ready = true | .blockers = [{"number":3,"open":true,"closed":null}]')" unlabel
 
@@ -37,8 +39,8 @@ check "blocked and another in flight: wait (the blocker is the reason)" "$(with 
 
 check "building, just started: ok" "$(with '.building = {"age":10,"has_pr":false}')" ok
 check "building with its pull request open: ok" "$(with '.building = {"age":600,"has_pr":true}')" ok
-check "building for over 90 minutes with no pull request: human" "$(with '.building = {"age":91,"has_pr":false}')" human
-check "building and held: ignore, still in flight" "$(with '.building = {"age":600,"has_pr":false} | .held = true')" ignore
+check "building for over 90 minutes with no pull request: stuck" "$(with '.building = {"age":91,"has_pr":false}')" stuck
+check "building and handed to a human: ignore, still in flight" "$(with '.building = {"age":600,"has_pr":false} | .held = "needs-human"')" ignore
 
 check "closed and merged, not yet deployed: ok (still in flight)" "$(with '.open = false | .closed = "merged" | .building = {"age":60,"has_pr":false}')" ok
 check "closed and deployed: release" "$(with '.open = false | .closed = "deployed" | .building = {"age":60,"has_pr":false}')" release
@@ -78,10 +80,19 @@ issue 10 OPEN '["ready","enhancement"]' "[$(labeled $t ready o)]" "[{\"number\":
 issue 11 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o)]" '[{"number":4,"state":"OPEN","timelineItems":{"nodes":[]}}]'
 issue 12 OPEN '["ready"]' "[$(labeled $t ready someone)]" '[]'
 issue 13 OPEN '["ready"]' "[$(labeled $t ready o)]" '[]' '[{"editedAt":"2026-11-20T11:00:00Z","editor":{"login":"stranger"}},{"editedAt":"2026-11-20T09:00:00Z","editor":{"login":"o"}}]'
+renamed() { printf '{"__typename":"RenamedTitleEvent","createdAt":"%s","actor":{"login":"%s"}}' "$1" "$2"; }
+issue 15 OPEN '["ready","needs-info"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(labeled 2026-11-20T09:30:00Z needs-info github-actions),$(labeled $t ready o)]" '[]'
+issue 16 OPEN '["ready","needs-human"]' "[$(labeled $t ready o)]" '[]'
+issue 17 OPEN '["ready"]' "[$(labeled $t ready o),$(renamed 2026-11-20T11:00:00Z stranger)]" '[]'
+issue 18 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by old)")]" '[]'
+issue 19 OPEN '["building","ready"]' "[$(labeled $t ready o),$(labeled $t building github-actions)]" '[]'
 issue 14 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by new)")]" '[]'
 echo '[{"headSha":"dep"}]' >"$work/deploy.json"
-echo '[{"number":10},{"number":11},{"number":12},{"number":13}]' >"$work/ready.json"
+echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
 echo '[{"number":14}]' >"$work/building.json"
+# The dispatcher's last comment on #11 already says it waits on #4: a sweep doesn't repeat it.
+jq -n --arg b "$(printf '<!-- factory-dispatch -->\nThe factory will build this later: it is blocked by #4, until each is merged and deployed. It says here when it starts. ADR-0047.')" \
+  '[{user:{login:"github-actions[bot]"},body:$b}]' >"$work/comments-11.json"
 cat >"$work/gh" <<'GH'
 #!/usr/bin/env bash
 filter=.
@@ -98,6 +109,7 @@ case "$*" in
   "issue list"*"--label ready"*) file=ready.json ;;
   "issue list"*"--label building"*) file=building.json ;;
   "api repos/o/r/compare/old...dep"*) echo ahead; exit 0 ;;
+  "api repos/o/r/issues/11/comments"*) file=comments-11.json ;;
   "api repos/o/r/compare/"*) echo behind; exit 0 ;;
   *) echo "$*" >>"$WORK/writes"; exit 0 ;;
 esac
@@ -120,6 +132,21 @@ expect "an unblocked ticket queues behind the one in flight" "$output" "#10: que
 expect "an open blocker means wait" "$output" "#11: wait"
 expect "someone else's ready label is ignored" "$output" "#12: ignore"
 expect "an edit by someone else after the label sends it back" "$output" "#13: unlabel"
+expect "a title change by someone else after the label sends it back" "$output" "#17: unlabel"
+
+# A real sweep: #18's work is deployed, so it's released; #19 has built for hours with no pull
+# request, so it goes to a human and stops holding the queue; #11 isn't told again what it was told.
+echo '[{"number":18},{"number":19}]' >"$work/building.json"
+echo '[{"number":11}]' >"$work/ready.json"
+: >"$work/writes"
+output=$(run)
+expect "a deployed ticket is released" "$(cat "$work/writes")" "issue edit 18 -R o/r --remove-label building"
+expect "a stuck ticket goes to a human and leaves the queue" "$(cat "$work/writes")" "issue edit 19 -R o/r --remove-label building --add-label needs-human"
+if grep -q "issue comment 11" "$work/writes"; then
+  echo "FAIL: a waiting ticket was told the same thing twice"
+  failures=$((failures + 1))
+fi
+echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
 
 # Once #14 is deployed, it's released and the gate starts #10, labeling it building.
 echo '[]' >"$work/building.json"
@@ -139,6 +166,19 @@ if grep -q start=true "$work/out"; then
   echo "FAIL: the gate started a blocked ticket"
   failures=$((failures + 1))
 fi
+
+# Relabeling `ready` after answering `needs-info` starts it again, and clears `needs-info`.
+: >"$work/writes"
+: >"$work/out"
+output=$(GITHUB_OUTPUT=$work/out run --gate 15)
+expect "an answered needs-info ticket starts when relabeled" "$output" "#15: start"
+expect "starting it clears needs-info" "$(cat "$work/writes")" "issue edit 15 -R o/r --add-label building --remove-label needs-info"
+
+# A label the gate won't act on is never silent.
+: >"$work/writes"
+output=$(GITHUB_OUTPUT=$work/out run --gate 16)
+expect "the gate ignores a ticket held for a human" "$output" "#16: ignore"
+expect "and says why" "$(cat "$work/writes")" "issue comment 16"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

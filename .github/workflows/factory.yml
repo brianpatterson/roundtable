@@ -36,8 +36,9 @@ jobs:
   # issue blocking it is unmerged or undeployed, not if someone else edited it after the label, and
   # one ticket at a time. Holds no secrets and runs no agent. Shares its group with the Dispatcher
   # workflow, so two decisions never read the same in-flight state. GitHub keeps one pending run per
-  # group and drops the others; a dropped gate loses nothing, because the dispatcher's next sweep
-  # decides every `ready` ticket again.
+  # group and cancels the others, silently skipping that label's build. The dispatcher's next sweep
+  # (within 30 minutes) decides every `ready` ticket again: for now it asks the owner to relabel a
+  # ticket that can start; once it starts tickets itself (ADR-0047's step 2), it just starts it.
   gate:
     if: >-
       github.actor == github.repository_owner &&
