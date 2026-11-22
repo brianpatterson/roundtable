@@ -138,8 +138,9 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
 
 11. **Modules** (ADR-0023): put code in the module it belongs to, and import another module only
     through its `index.ts`. Modules never import `server.ts` or `shell/`; `platform/` and
-    `shared/` never import modules; a module queries only its own tables (the applications FK to
-    `users` is the one exception). `pnpm check:boundaries` enforces these. A new module gets a
+    `shared/` never import modules; a module queries only its own tables. Any module's tables may reference `users`; a
+    link to another module's rows is a plain id, what others refer to is archived rather than
+    deleted, and no transaction spans two modules ([ADR-0044](docs/adr/0044-links-between-modules.md)). `pnpm check:boundaries` enforces the import rules; the ADR-0044 rules are checked in review. A new module gets a
     folder in `modules/` (API and web, as needed), a file in `packages/contract`, and a line in
     `docs/architecture.md`.
 12. **Design system** (ADR-0024): UI goes through `design-system/`, never raw `<button>` or
