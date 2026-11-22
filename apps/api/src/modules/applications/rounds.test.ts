@@ -23,7 +23,7 @@ type ApplicationJson = typeof Application.Encoded;
 type RoundJson = typeof Round.Encoded;
 
 function request(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   payload?: Json,
   as = cookie,
@@ -172,6 +172,235 @@ describe('the first Round and the application’s status', () => {
   });
 });
 
+const scheduleOf = (applicationId: string, roundId: string) =>
+  `${roundsOf(applicationId)}/${roundId}/schedule`;
+
+const addRoundWith = (applicationId: string, schedule: Record<string, Json>) =>
+  request('POST', roundsOf(applicationId), { interviewType: 'coding', ...schedule });
+
+/** The schedule fields of a Round as the API returns it. */
+const scheduleIn = (round: RoundJson) => ({
+  startsAt: round.startsAt,
+  durationMinutes: round.durationMinutes,
+  dueOn: round.dueOn,
+});
+
+const NOT_SCHEDULED = { startsAt: null, durationMinutes: null, dueOn: null };
+
+describe('scheduling a Round', () => {
+  it('adds a Round with a start and a duration', async () => {
+    const application = await createApplication();
+
+    const res = await addRoundWith(application.id, {
+      startsAt: '2026-11-25T15:30:00.000Z',
+      durationMinutes: 45,
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(scheduleIn(res.json<RoundJson>())).toEqual({
+      startsAt: '2026-11-25T15:30:00.000Z',
+      durationMinutes: 45,
+      dueOn: null,
+    });
+    expect(Schema.decodeUnknownSync(Round)(res.json()).startsAt).toEqual(
+      new Date('2026-11-25T15:30:00.000Z'),
+    );
+  });
+
+  it('adds a Round with a start and no duration', async () => {
+    const application = await createApplication();
+
+    const res = await addRoundWith(application.id, { startsAt: '2026-11-25T15:30:00+09:00' });
+
+    expect(res.statusCode).toBe(201);
+    expect(scheduleIn(res.json<RoundJson>())).toEqual({
+      startsAt: '2026-11-25T06:30:00.000Z',
+      durationMinutes: null,
+      dueOn: null,
+    });
+  });
+
+  it('adds a take-home with a due date', async () => {
+    const application = await createApplication();
+
+    const res = await addRoundWith(application.id, { dueOn: '2026-12-01' });
+
+    expect(res.statusCode).toBe(201);
+    expect(scheduleIn(res.json<RoundJson>())).toEqual({ ...NOT_SCHEDULED, dueOn: '2026-12-01' });
+  });
+
+  it('adds a Round not scheduled yet, with or without nulls', async () => {
+    const application = await createApplication();
+
+    const bare = await addRound(application.id);
+    const nulls = await addRoundWith(application.id, NOT_SCHEDULED);
+
+    expect(scheduleIn(bare.json<RoundJson>())).toEqual(NOT_SCHEDULED);
+    expect(nulls.statusCode).toBe(201);
+    expect(scheduleIn(nulls.json<RoundJson>())).toEqual(NOT_SCHEDULED);
+  });
+
+  it.each([
+    ['a start and a due date', { startsAt: '2026-11-25T15:30:00Z', dueOn: '2026-11-25' }],
+    ['a duration without a start', { durationMinutes: 30 }],
+    ['a duration with a due date', { dueOn: '2026-11-25', durationMinutes: 30 }],
+    ['a duration under 5 minutes', { startsAt: '2026-11-25T15:30:00Z', durationMinutes: 4 }],
+    ['a duration over 480 minutes', { startsAt: '2026-11-25T15:30:00Z', durationMinutes: 481 }],
+    ['a fractional duration', { startsAt: '2026-11-25T15:30:00Z', durationMinutes: 30.5 }],
+    ['a duration as text', { startsAt: '2026-11-25T15:30:00Z', durationMinutes: '30' }],
+    ['a start that isn’t a date', { startsAt: 'tomorrow' }],
+    ['a start before 1970', { startsAt: '1969-12-31T23:59:59Z' }],
+    ['a due date with a time', { dueOn: '2026-11-25T10:00:00Z' }],
+    ['a due date that doesn’t exist', { dueOn: '2026-02-30' }],
+    ['a due date before 1970', { dueOn: '0000-01-01' }],
+  ])('refuses %s with 400, adding nothing', async (_name, schedule) => {
+    const application = await createApplication();
+
+    const res = await addRoundWith(application.id, schedule);
+
+    expect(res.statusCode).toBe(400);
+    expect((await request('GET', roundsOf(application.id))).json()).toEqual([]);
+  });
+
+  it('accepts the shortest and longest durations', async () => {
+    const application = await createApplication();
+    const startsAt = '2026-11-25T15:30:00.000Z';
+
+    const shortest = await addRoundWith(application.id, { startsAt, durationMinutes: 5 });
+    const longest = await addRoundWith(application.id, { startsAt, durationMinutes: 480 });
+
+    expect(shortest.json<RoundJson>().durationMinutes).toBe(5);
+    expect(longest.json<RoundJson>().durationMinutes).toBe(480);
+  });
+
+  it('sets, changes and clears an existing Round’s schedule', async () => {
+    const application = await createApplication();
+    const round = (await addRound(application.id)).json<RoundJson>();
+    const path = scheduleOf(application.id, round.id);
+
+    const set = await request('PUT', path, {
+      startsAt: '2026-11-25T15:30:00.000Z',
+      durationMinutes: 60,
+    });
+
+    expect(set.statusCode).toBe(200);
+    expect(scheduleIn(set.json<RoundJson>())).toEqual({
+      startsAt: '2026-11-25T15:30:00.000Z',
+      durationMinutes: 60,
+      dueOn: null,
+    });
+
+    // The schedule is replaced as a whole: the start and duration go with a due date.
+    const changed = await request('PUT', path, { dueOn: '2026-11-28' });
+
+    expect(scheduleIn(changed.json<RoundJson>())).toEqual({
+      ...NOT_SCHEDULED,
+      dueOn: '2026-11-28',
+    });
+
+    const cleared = await request('PUT', path, {});
+
+    expect(cleared.statusCode).toBe(200);
+    expect(scheduleIn(cleared.json<RoundJson>())).toEqual(NOT_SCHEDULED);
+
+    const [listed] = (await request('GET', roundsOf(application.id))).json<RoundJson[]>();
+
+    expect(listed).toEqual(cleared.json());
+    expect(listed?.interviewType).toBe('coding');
+  });
+
+  it('refuses an inconsistent schedule with 400, keeping the old one', async () => {
+    const application = await createApplication();
+    const round = (await addRoundWith(application.id, { dueOn: '2026-11-28' })).json<RoundJson>();
+    const path = scheduleOf(application.id, round.id);
+
+    const both = await request('PUT', path, {
+      startsAt: '2026-11-25T15:30:00Z',
+      dueOn: '2026-11-28',
+    });
+
+    const durationOnly = await request('PUT', path, { durationMinutes: 30 });
+
+    expect([both.statusCode, durationOnly.statusCode]).toEqual([400, 400]);
+    expect((await request('GET', roundsOf(application.id))).json()).toEqual([round]);
+  });
+
+  // The contract keeps these out; the table refuses them too, whatever writes to it.
+  it('refuses an inconsistent schedule in the database itself', async () => {
+    const application = await createApplication();
+    const startsAt = new Date('2026-11-25T15:30:00Z');
+    const base = { applicationId: application.id, interviewType: 'coding' as const };
+
+    const insert = (values: Partial<typeof rounds.$inferInsert>) =>
+      t.db.insert(rounds).values({ ...base, ...values });
+
+    await expect(insert({ startsAt, dueOn: '2026-11-25' })).rejects.toThrow();
+    await expect(insert({ durationMinutes: 30 })).rejects.toThrow();
+    await expect(insert({ startsAt, durationMinutes: 4 })).rejects.toThrow();
+    await expect(insert({ startsAt, durationMinutes: 481 })).rejects.toThrow();
+    await expect(insert({ startsAt, durationMinutes: 480 })).resolves.toBeDefined();
+  });
+
+  it('answers 404 for a missing Round, or one under another of the user’s applications', async () => {
+    const first = await createApplication();
+    const second = await createApplication();
+    const round = (await addRound(first.id)).json<RoundJson>();
+
+    const elsewhere = await request('PUT', scheduleOf(second.id, round.id), {
+      dueOn: '2026-11-28',
+    });
+
+    const missing = await request('PUT', scheduleOf(first.id, MISSING_ID), { dueOn: '2026-11-28' });
+
+    expect([elsewhere.statusCode, missing.statusCode]).toEqual([404, 404]);
+    expect((await request('GET', roundsOf(first.id))).json()).toEqual([round]);
+  });
+});
+
+describe('the order Rounds are listed in', () => {
+  it('lists dated Rounds by date, a take-home by its due date, then the rest as added', async () => {
+    const application = await createApplication();
+
+    const add = async (interviewType: string, schedule: Record<string, Json>) =>
+      (
+        await request('POST', roundsOf(application.id), { interviewType, ...schedule })
+      ).json<RoundJson>().id;
+
+    const unscheduledFirst = await add('recruiter_screen', {});
+    const late = await add('system_design', { startsAt: '2026-12-10T17:00:00Z' });
+    const takeHome = await add('take_home', { dueOn: '2026-12-03' });
+    const unscheduledSecond = await add('behavioral', {});
+    const early = await add('coding', { startsAt: '2026-12-01T17:00:00Z', durationMinutes: 60 });
+
+    const list = (await request('GET', roundsOf(application.id))).json<RoundJson[]>();
+
+    expect(list.map((r) => r.id)).toEqual([
+      early,
+      takeHome,
+      late,
+      unscheduledFirst,
+      unscheduledSecond,
+    ]);
+  });
+
+  it('moves a Round when its schedule changes', async () => {
+    const application = await createApplication();
+    const first = (await addRound(application.id, 'coding')).json<RoundJson>();
+    const second = (await addRound(application.id, 'behavioral')).json<RoundJson>();
+
+    await request('PUT', scheduleOf(application.id, second.id), { dueOn: '2026-12-03' });
+
+    const ids = async () =>
+      (await request('GET', roundsOf(application.id))).json<RoundJson[]>().map((r) => r.id);
+
+    expect(await ids()).toEqual([second.id, first.id]);
+
+    await request('PUT', scheduleOf(application.id, second.id), {});
+
+    expect(await ids()).toEqual([first.id, second.id]);
+  });
+});
+
 // CLAUDE.md rule 8: another user's rows are a 404, never a 403, and a malformed id is a 400.
 describe('another user’s Rounds', () => {
   let theirs: ApplicationJson;
@@ -197,6 +426,18 @@ describe('another user’s Rounds', () => {
     expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
   });
 
+  it('schedules as not found, changing nothing', async () => {
+    const res = await request(
+      'PUT',
+      scheduleOf(theirs.id, theirRound.id),
+      { dueOn: '2026-11-28' },
+      mine,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
+  });
+
   it('deletes as not found, deleting nothing', async () => {
     const res = await request('DELETE', `${roundsOf(theirs.id)}/${theirRound.id}`, undefined, mine);
 
@@ -216,8 +457,10 @@ describe('another user’s Rounds', () => {
       await addRound('abc'),
       await request('DELETE', `${roundsOf('abc')}/${theirRound.id}`),
       await request('DELETE', `${roundsOf(theirs.id)}/abc`),
+      await request('PUT', scheduleOf('abc', theirRound.id), {}),
+      await request('PUT', scheduleOf(theirs.id, 'abc'), {}),
     ];
 
-    expect(malformed.map((res) => res.statusCode)).toEqual([400, 400, 400, 400]);
+    expect(malformed.map((res) => res.statusCode)).toEqual([400, 400, 400, 400, 400, 400]);
   });
 });

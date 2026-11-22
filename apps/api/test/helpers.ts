@@ -25,7 +25,7 @@ export type Json =
   string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json | undefined };
 
 export interface InjectRequest {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
   headers?: Readonly<Record<string, string>>;
   payload?: Json;
@@ -244,7 +244,7 @@ async function answeredRoutes(inject: (request: InjectRequest) => Promise<Inject
 
   for (const { method, path } of declared) {
     const url = path.replace(':id', crypto.randomUUID());
-    const hasBody = method === 'POST' || method === 'PATCH';
+    const hasBody = method === 'POST' || method === 'PUT' || method === 'PATCH';
     const res = await inject({ method, url, payload: hasBody ? {} : undefined });
 
     if (res.statusCode !== 404) answered.push(`${method} ${path}`);
@@ -254,7 +254,7 @@ async function answeredRoutes(inject: (request: InjectRequest) => Promise<Inject
 }
 
 const isInjectMethod = (method: string): method is InjectRequest['method'] =>
-  ['GET', 'POST', 'PATCH', 'DELETE'].includes(method);
+  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
 export type TestApp = ReturnType<typeof setupTestApp>;
 
