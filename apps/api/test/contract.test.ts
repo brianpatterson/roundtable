@@ -116,6 +116,36 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const tagCases = {
+    plain: [{ tag: 'React' }, { tag: 'React' }],
+    'trimmed': [{ tag: '  live debugging ' }, { tag: 'live debugging' }],
+    '40 characters once trimmed': [{ tag: ` ${'x'.repeat(40)} ` }, { tag: 'x'.repeat(40) }],
+    '41 characters': [{ tag: 'x'.repeat(41) }, false],
+    blank: [{ tag: '   ' }, false],
+    empty: [{ tag: '' }, false],
+    missing: [{}, false],
+    'not a string': [{ tag: 1 }, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(tagCases))('tag: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.RoundTag)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
+  it('reads a Round from a server before Tags as having none', () => {
+    const round = Schema.decodeUnknownSync(contract.Round)({
+      id: 'r',
+      applicationId: 'a',
+      interviewType: 'coding',
+      createdAt: '2026-11-01T00:00:00.000Z',
+      updatedAt: '2026-11-01T00:00:00.000Z',
+    });
+
+    expect(round.tags).toEqual([]);
+  });
+
   it.each(Object.entries(updateCases))('update: %s', (_name, [input, decoded]) => {
     const exit = Schema.decodeUnknownExit(contract.UpdateApplication)(input);
 
@@ -317,11 +347,13 @@ describe('expected errors stay out of Sentry', () => {
       'ReportNotFound',
       'ReportRateLimited',
       'RoundNotFound',
+      'TooManyTags',
       'Unauthorized',
     ]);
   });
 
-  it('ApplicationNotFound, RoundNotFound and ReportNotFound (404), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+  it('ApplicationNotFound, RoundNotFound and ReportNotFound (404), TooManyTags (400), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+    expect(new contract.TooManyTags()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.ApplicationNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.RoundNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.ReportNotFound()[ErrorReporter.ignore]).toBe(true);

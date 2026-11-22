@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { index, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { INTERVIEW_TYPES, STORED_APPLICATION_STATUSES } from '@roundtable/contract';
 import { timestamps } from '../../platform/database/columns.js';
@@ -39,6 +40,10 @@ export const rounds = pgTable(
       .notNull()
       .references(() => applications.id, { onDelete: 'cascade' }),
     interviewType: interviewType('interview_type').notNull(),
+    // Its Tags (GLOSSARY.md), in the order they were added: trimmed, at most 10, and none the same
+    // as another ignoring case. The handlers keep those rules (ADR-0054). Defaulted, so the release
+    // before it still inserts Rounds.
+    tags: text().array().notNull().default(sql`'{}'::text[]`),
     ...timestamps,
   },
   // Every query reads one application's Rounds in the order they were added.

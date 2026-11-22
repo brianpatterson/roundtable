@@ -1,0 +1,1 @@
+ALTER TABLE "rounds" ADD COLUMN "tags" text[] DEFAULT '{}'::text[] NOT NULL;

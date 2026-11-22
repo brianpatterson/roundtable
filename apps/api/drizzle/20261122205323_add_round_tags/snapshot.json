@@ -1,0 +1,47 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "5969a2fd-2f98-4d26-8aa3-6d8a1d687719",
+  "prevIds": [
+    "45ddbd63-5414-44b8-8006-807e8c995ccf"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "tags"
+      ],
+      "writes": [
+        "s|col|public.rounds.tags",
+        "n|col|public.rounds.tags",
+        "e|col|public.rounds.tags"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "tags",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 1,
+        "default": "'{}'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

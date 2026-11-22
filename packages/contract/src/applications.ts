@@ -181,11 +181,50 @@ export const CreateRound = Schema.Struct({ interviewType: InterviewType });
 
 export type CreateRound = typeof CreateRound.Type;
 
+/** The most Tags one Round can have. */
+export const MAX_TAGS = 10;
+
+const MAX_TAG_LENGTH = 40;
+
+/**
+ * A Tag (GLOSSARY.md): free-form detail the Interview type doesn't carry, 1–40 characters once
+ * trimmed. Trimmed in both directions, like `Text`.
+ */
+export const Tag = Schema.String.pipe(
+  Schema.decodeTo(
+    Schema.String.check(
+      Schema.makeFilter((value: string) => {
+        const length = value.trim().length;
+
+        if (length === 0) return 'must not be blank';
+
+        return length > MAX_TAG_LENGTH
+          ? `must be at most ${MAX_TAG_LENGTH} characters`
+          : undefined;
+      }),
+    ),
+    new SchemaTransformation.Transformation(SchemaGetter.trim(), SchemaGetter.trim()),
+  ),
+);
+
+/** Adds a Tag to a Round, or one in the request's path to remove. */
+export const RoundTag = Schema.Struct({ tag: Tag });
+
+export type RoundTag = typeof RoundTag.Type;
+
+/** Whether two Tags are the same one: case and surrounding spaces don't count. */
+export const sameTag = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
 /** A Round as the API returns it: one interview within an Application. */
 export const Round = Schema.Struct({
   id: Schema.String,
   applicationId: Schema.String,
   interviewType: InterviewType,
+  /**
+   * Its Tags, in the order they were added, none the same as another. A server from before Tags
+   * leaves them out, which reads as none.
+   */
+  tags: Schema.Array(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 });
@@ -199,6 +238,14 @@ export class RoundNotFound extends Schema.TaggedError<
   RoundNotFound,
   { readonly brand: unique symbol }
 >()('RoundNotFound', {}, { httpApiStatus: 404 }) {
+  readonly [ErrorReporter.ignore] = true;
+}
+
+/** A Round already has `MAX_TAGS` Tags, so a new one can't be added: a 400, like a bad body. */
+export class TooManyTags extends Schema.TaggedError<
+  TooManyTags,
+  { readonly brand: unique symbol }
+>()('TooManyTags', {}, { httpApiStatus: 400 }) {
   readonly [ErrorReporter.ignore] = true;
 }
 
@@ -244,6 +291,22 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
     HttpApiEndpoint.delete('deleteRound', '/:id/rounds/:roundId', {
       params: RoundParams,
       success: HttpApiSchema.NoContent,
+      error: RoundNotFound,
+    }),
+    // Adds a Tag to a Round. One the Round already has (ignoring case and surrounding spaces) is
+    // left as it is. Answers the Round with its Tags.
+    HttpApiEndpoint.post('addTag', '/:id/rounds/:roundId/tags', {
+      params: RoundParams,
+      payload: RoundTag,
+      success: Round,
+      error: [RoundNotFound, TooManyTags],
+    }),
+    // Removes a Tag from a Round, matched ignoring case. One it doesn't have is already gone.
+    // The Tag is in the query string: it's free-form, and a `/` in a path segment can't be.
+    HttpApiEndpoint.delete('removeTag', '/:id/rounds/:roundId/tags', {
+      params: RoundParams,
+      query: RoundTag,
+      success: Round,
       error: RoundNotFound,
     }),
   )

@@ -56,6 +56,14 @@ export function makeApiClient(options: ApiClientOptions) {
       run((client) => client.applications.createRound({ params: { id: applicationId }, payload })),
     deleteRound: (applicationId: string, roundId: string) =>
       run((client) => client.applications.deleteRound({ params: { id: applicationId, roundId } })),
+    addTag: (applicationId: string, roundId: string, tag: string) =>
+      run((client) =>
+        client.applications.addTag({ params: { id: applicationId, roundId }, payload: { tag } }),
+      ),
+    removeTag: (applicationId: string, roundId: string, tag: string) =>
+      run((client) =>
+        client.applications.removeTag({ params: { id: applicationId, roundId }, query: { tag } }),
+      ),
     createReport: (payload: CreateReport) =>
       run((client) => client.support.createReport({ payload })),
   };
