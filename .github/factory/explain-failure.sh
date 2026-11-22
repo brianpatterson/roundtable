@@ -6,7 +6,8 @@
 #
 # The action also fails a run that finished but took more turns than --max-turns, and then leaves
 # its structured_output empty, although the agent returned its answer (#132: 179 turns of 150, with
-# the pull request open). So when the last result is a success with a JSON object answer, this
+# the pull request open). So when the last result is a success with a JSON object answer, whatever
+# the action then failed on (this can't tell the turn cap from anything else), this
 # writes that answer as the `result` output, for the steps after it to use in place of the
 # action's; it passes the same guards there. Always writes `reason`, one line, for a summary.
 #
@@ -32,7 +33,7 @@ answer=$(jq -c '
   | select(type == "object")' <<<"$last")
 
 if [ -n "$answer" ]; then
-  reason="it finished and answered after $turns turns, but the action marked the run failed (it fails a run over --max-turns); its answer was recovered from the run's output"
+  reason="it answered after $turns turns, but the action marked the run failed after that; its answer was recovered from the run's output"
   echo "result=$answer" >>"$out"
   echo "::warning::The $who $reason."
   title="The $who finished, but the action failed the run"
