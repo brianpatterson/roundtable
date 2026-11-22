@@ -65,10 +65,11 @@
   gap: var(--ds-space-2);
 }
 
-/* The note keeps the user's line breaks. */
+/* The note keeps the user's line breaks, and a long word or URL wraps instead of widening the page. */
 .note {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--ds-color-on-surface-variant);
 }
 
