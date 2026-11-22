@@ -515,9 +515,10 @@ and nobody else edited the ticket since, every issue blocking it (GitHub's issue
 merged and deployed, and no other ticket is in flight. A started ticket is labeled `building`
 until what closed it is deployed. It runs as the Factory workflow's gate when the owner labels a
 ticket, and as the Dispatcher workflow when an issue closes, a deploy finishes, and every 30
-minutes. The sweep starts the next free ticket itself, through the Factory workflow's
-`workflow_dispatch`: a `verify` job with no secrets checks the same rules again, then `build` runs
-the implementer in agent mode, with the ticket as a file and its answer posted by the workflow.
+minutes. Both start a ticket the same way, through the Factory workflow's `workflow_dispatch`: a
+`verify` job with no secrets checks the same rules again, then `build` runs the implementer in
+agent mode, with the ticket as a file it re-checks for edits after writing, and its answer posted
+by the workflow. Only an owner's `@claude` comment runs the implementer in tag mode, directly.
 
 Once CI passes on a new commit of any pull request from this repository except Dependabot's
 (unless someone else, such as the CI fixer, has pushed to it)

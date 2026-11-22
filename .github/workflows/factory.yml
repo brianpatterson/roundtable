@@ -5,9 +5,10 @@
 # When CI, dependency review or CodeQL fails on a factory pull request (or one labeled `autofix`),
 # the same agent fixes it: up to two attempts, then it stops and asks for a human (ADR-0028).
 #
-# The dispatcher (ADR-0047) also starts it through `workflow_dispatch`, for a `ready` ticket whose
-# blockers are now deployed: `verify` checks the dispatcher's rules again with no secrets, then
-# `build` runs the same agent on the ticket.
+# A `ready` ticket is started by the dispatcher (ADR-0047) through `workflow_dispatch`: by the
+# `gate` job when the owner labels it, or by a sweep once its blockers are deployed. `verify` checks
+# the dispatcher's rules again with no secrets, then `build` runs the agent on the ticket, after
+# checking once more that nobody else edited it. An `@claude` comment runs `implement` directly.
 #
 # Only `issues`, `issue_comment` (pull request conversation comments included), `workflow_run` and
 # `workflow_dispatch` trigger it. The first three always run this file and the agent's instructions
@@ -51,6 +52,10 @@ jobs:
   # workflow, so two decisions never read the same in-flight state. GitHub keeps one pending run per
   # group and cancels the others, silently skipping that label's build. The dispatcher's next sweep
   # (within 30 minutes) decides every `ready` ticket again, and starts it then.
+  #
+  # A ticket it lets through is started the way the sweep starts one, through workflow_dispatch:
+  # `build` re-checks the ticket after loading it, so an edit made after this decision never
+  # reaches the agent. The tag-mode `implement` job reads the issue itself, too late to check.
   gate:
     if: >-
       github.actor == github.repository_owner &&
@@ -63,9 +68,7 @@ jobs:
     permissions:
       contents: read # compares commits with what's deployed
       issues: write # labels and comments
-      actions: read # finds the latest successful Deploy
-    outputs:
-      start: ${{ steps.gate.outputs.start }}
+      actions: write # finds the latest successful Deploy, and starts the build (workflow_dispatch)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -78,16 +81,12 @@ jobs:
         run: .github/factory/dispatch.sh --gate "$ISSUE"
 
   implement:
-    needs: gate
-    # Only the owner starts it: by labeling, or by mentioning @claude. Strangers can open issues
-    # on a public repo, so the label is the owner's sign-off that the ticket is safe to build. A
-    # label builds only once the gate says so; an @claude comment is the owner asking directly, and
-    # skips the gate. `always()` because the gate is skipped for comments.
+    # The owner mentioning @claude on an issue or pull request: the owner asking directly, outside
+    # the dispatcher's queue. Strangers can comment on a public repo, so only the owner's mention
+    # counts. A `ready` label goes through the gate and `build` instead (ADR-0047).
     if: >-
-      always() && github.actor == github.repository_owner && (
-        (github.event_name == 'issues' && github.event.label.name == 'ready' && needs.gate.outputs.start == 'true') ||
-        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
-      )
+      github.actor == github.repository_owner &&
+      github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: factory
@@ -184,7 +183,6 @@ jobs:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          label_trigger: ready
           trigger_phrase: '@claude'
           # Only the owner's comments, and the reviewer's (posted by github-actions[bot], ADR-0026),
           # reach the agent; anyone else's text in the thread is dropped.
@@ -233,41 +231,6 @@ jobs:
           gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "The factory's agent tried tool calls that reach for credentials or the factory's own rules, and was refused. A human should read [the run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) (its summary lists the calls) before anything here is merged. ADR-0029."
           exit 1
 
-      # Deterministic checks on what the agent left, whatever it reported.
-      - name: Check the result
-        if: always() && github.event_name == 'issues'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ steps.claude.outputs.branch_name }}
-          ISSUE: ${{ github.event.issue.number }}
-        run: |
-          # Releases the ticket from `building` too, so the next one can start (ADR-0047).
-          needs_info() {
-            gh issue edit "$ISSUE" --remove-label ready --remove-label building --add-label needs-info
-            exit 0
-          }
-
-          # Asked through the API, not git: the action rewires the checkout's credentials.
-          # No branch, or nothing committed: the agent stopped to ask, or failed. Its comment says which.
-          [ -n "$BRANCH" ] || needs_info
-          compare=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$BRANCH" 2>/dev/null) || needs_info
-          [ "$(echo "$compare" | jq .ahead_by)" -gt 0 ] || needs_info
-
-          # The agent never changes its own rules or CI.
-          if echo "$compare" | jq -r '.files[].filename' | grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-            gh issue comment "$ISSUE" --body "The factory's branch \`$BRANCH\` changes \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the implementer may not touch. Don't merge it."
-            echo "::error::$BRANCH changes protected paths"
-            exit 1
-          fi
-
-          # The agent opens the pull request with the Claude App's token, so CI runs on it. If it
-          # didn't, open one here; a PR opened with this job's token starts no workflows, so CI
-          # waits until a human closes and reopens it.
-          if [ "$(gh pr list --head "$BRANCH" --state all --json number --jq length)" = 0 ]; then
-            body=$(printf 'Closes #%s\n\nThe implementer pushed this branch but did not open the pull request. **CI has not run: close and reopen this PR to start it.**' "$ISSUE")
-            gh pr create --base main --head "$BRANCH" --title "$(gh issue view "$ISSUE" --json title --jq .title)" --body "$body" --label factory --draft
-          fi
-
       # The agent posts its own comments and pull request description, so they're checked after
       # the fact (ADR-0029): anything that looks like a credential is taken down, and the run fails
       # so the owner rotates it.
@@ -305,7 +268,7 @@ jobs:
           DESCRIPTION: ${{ runner.temp }}/report-guard/description.txt
         run: '"$RUNNER_TEMP/takedown-report-quotes.sh"'
 
-  # A ticket the dispatcher started (ADR-0047). Its rules are checked again here, in a job with no
+  # A ticket the dispatcher started (ADR-0047), from a sweep or from the gate when the owner labeled it. Its rules are checked again here, in a job with no
   # secrets, before anything runs: whoever dispatched this, only a ticket the owner labeled `ready`,
   # unedited since by anyone else, with every blocker deployed, is built. A refused ticket loses
   # `building` and gets a comment saying why.

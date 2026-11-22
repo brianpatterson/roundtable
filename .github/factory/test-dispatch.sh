@@ -166,7 +166,7 @@ echo '[]' >"$work/building.json"
 : >"$work/writes"
 output=$(GITHUB_OUTPUT=$work/out run --gate 10)
 expect "the gate starts an unblocked ticket" "$output" "#10: start"
-expect "the gate tells the implement job to run" "$(cat "$work/out" 2>/dev/null)" "start=true"
+expect "the gate starts the build through a dispatch, not the tag-mode job" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=10"
 expect "a started ticket is labeled building" "$(cat "$work/writes")" "issue edit 10 -R o/r --add-label building"
 
 # The gate refuses a blocked ticket and always says why, so the owner sees an answer.
@@ -175,7 +175,7 @@ expect "a started ticket is labeled building" "$(cat "$work/writes")" "issue edi
 output=$(GITHUB_OUTPUT=$work/out run --gate 11)
 expect "the gate holds a blocked ticket" "$output" "#11: wait"
 expect "the gate comments on a held ticket" "$(cat "$work/writes")" "issue comment 11"
-if grep -q start=true "$work/out"; then
+if grep -q "issue=11" "$work/writes"; then
   echo "FAIL: the gate started a blocked ticket"
   failures=$((failures + 1))
 fi

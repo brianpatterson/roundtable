@@ -7,8 +7,8 @@
 #
 #   dispatch.sh --decide        read one ticket's state as JSON on stdin, print the decision (tests)
 #   dispatch.sh --state ISSUE   print the state decide would get for ISSUE (read-only, for debugging)
-#   dispatch.sh --gate ISSUE    the owner just labeled ISSUE `ready`: decide for it alone, and write
-#                               start=true to $GITHUB_OUTPUT if the implementer should build it now
+#   dispatch.sh --gate ISSUE    the owner just labeled ISSUE `ready`: decide for it alone, start it
+#                               if it may start, and always say what happened
 #   dispatch.sh --verify ISSUE  in a run the dispatcher started for ISSUE: check the same rules again
 #                               before the agent runs, and write ok=true to $GITHUB_OUTPUT if they hold
 #   dispatch.sh                 sweep: release tickets whose work is deployed, then decide for every
@@ -216,9 +216,9 @@ act() { # act <mode> <issue> <decision JSON> <state JSON>
       local edit=(--add-label building)
       [ "$(jq -r .answered <<<"$4")" != true ] || edit+=(--remove-label needs-info)
       "$GH" issue edit "$2" -R "$repo" "${edit[@]}" >/dev/null
-      if [ "$1" = gate ]; then
-        [ -z "${GITHUB_OUTPUT:-}" ] || echo "start=true" >>"$GITHUB_OUTPUT"
-      elif "$GH" workflow run factory.yml -R "$repo" --ref main -f issue="$2"; then
+      # The gate starts it the same way as the sweep: the dispatched build re-checks the ticket
+      # after loading it, which the tag-mode job can't.
+      if "$GH" workflow run factory.yml -R "$repo" --ref main -f issue="$2"; then
         say "$2" "The factory started building this: nothing blocks it any more. ADR-0047." always
       else
         # Not started, so not in flight: the next sweep tries again.
