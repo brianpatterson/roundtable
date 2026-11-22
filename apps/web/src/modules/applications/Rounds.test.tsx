@@ -971,6 +971,7 @@ describe('a Round’s Self-rating', () => {
       round(1, 'coding', { selfRating: 2, ratingNote: 'Ran out of time' }),
       round(2, 'behavioral'),
       round(3, 'system_design', { selfRating: 5 }),
+      round(4, 'presentation', { ratingNote: 'Slides too long' }),
     ];
     await renderPage();
     await listed();
@@ -981,8 +982,56 @@ describe('a Round’s Self-rating', () => {
     });
     expect(ratingShown('Behavioral 1')).toEqual({ line: 'Not rated yet', note: null });
     expect(ratingShown('System design 1')).toEqual({ line: 'Self-rating: 5 of 5', note: null });
+    expect(ratingShown('Presentation 1')).toEqual({
+      line: 'Not rated yet',
+      note: 'Slides too long',
+    });
+  });
+
+  // A rating or a note alone is something to edit; neither is something to give.
+  it('offers to rate a Round with neither, and to edit one with a rating or a note', async () => {
+    stored = [
+      round(1, 'coding', { selfRating: 2, ratingNote: 'Ran out of time' }),
+      round(2, 'behavioral'),
+      round(3, 'system_design', { selfRating: 5 }),
+      round(4, 'presentation', { ratingNote: 'Slides too long' }),
+    ];
+    await renderPage();
+    await listed();
+
+    const buttons = ['Coding 1', 'Behavioral 1', 'System design 1', 'Presentation 1'].map(
+      (name) => within(ratingGroup(name)).getByRole('button').textContent,
+    );
+
+    expect(buttons).toEqual(['Edit rating', 'Rate', 'Edit rating', 'Edit rating']);
     expect(screen.getByRole('button', { name: 'Edit rating of Coding 1' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Rate Behavioral 1' })).toBeDefined();
+  });
+
+  it('says what the dialog is for, and that the note is optional', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1');
+
+    expect(
+      within(dialog).getByText('How it went, from 1 (badly) to 5 (well), and what went wrong.'),
+    ).toBeDefined();
+    expect(within(dialog).getByText('Optional, up to 2000 characters.')).toBeDefined();
+  });
+
+  it('closes with Escape, sending nothing', async () => {
+    stored = [round(1, 'coding', { selfRating: 2 })];
+    await renderPage();
+
+    const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
+
+    await pickRating(dialog, '4');
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(ratings).toEqual([]);
+    expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 2 of 5', note: null });
   });
 
   it('offers ratings from 1 (went badly) to 5 (went well), or none', async () => {
