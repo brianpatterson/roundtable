@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Posts the factory reviewer's verdict on a pull request (ADR-0026, ADR-0046).
+# Posts the factory reviewer's review on a pull request, with a verdict this script derives from its
+# blocking findings (ADR-0026, ADR-0046, ADR-0052).
 #
 # One review comment per pull request, marked `<!-- factory-review -->`, edited in place on every
 # re-review. GitHub sends no event a watcher can see for an edit, so a re-review that asks for
