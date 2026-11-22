@@ -61,6 +61,9 @@ jobs:
       # When the sweeper reruns CI or hands a stuck factory pull request to a human (ADR-0040).
       - name: Sweeper decisions
         run: .github/factory/test-sweep-prs.sh
+      # Which ready ticket the factory builds, and when (ADR-0047).
+      - name: Dispatcher decisions
+        run: .github/factory/test-dispatch.sh
       # What the reviewer posts, and when a re-review adds a comment Auto-fix can see (ADR-0046).
       - name: Review comments
         run: .github/factory/test-post-review.sh

@@ -492,7 +492,7 @@ pre-upgrade branch fails to migrate.
 Every Monday, the Architecture review workflow runs Matt Pocock's `improve-codebase-architecture`
 skill (vendored in `.github/factory/skills/`) unattended over recently changed code, uploads its
 HTML report, and opens an `architecture` issue for each Strong candidate; the owner labels it
-`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets ([ADR-0025](adr/0025-software-factory-implementer.md)). `Factory sweeper`: every 30 minutes, reruns a cancelled CI on a factory pull request once and labels any other stuck one `needs-human` with the reason ([ADR-0040](adr/0040-factory-sweeper.md)). `Security audit`: nightly when main changed ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)), an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)). `Rework`: the implementer again, when the reviewer asks for changes on a factory PR ([ADR-0037](adr/0037-software-factory-rework.md)) |
+`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets once its gate allows ([ADR-0025](adr/0025-software-factory-implementer.md)). `Dispatcher`: on issue close, after each deploy and every 30 minutes, decides which `ready` ticket is next in dependency order ([ADR-0047](adr/0047-factory-dispatcher.md)). `Factory sweeper`: every 30 minutes, reruns a cancelled CI on a factory pull request once and labels any other stuck one `needs-human` with the reason ([ADR-0040](adr/0040-factory-sweeper.md)). `Security audit`: nightly when main changed ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)), an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)). `Rework`: the implementer again, when the reviewer asks for changes on a factory PR ([ADR-0037](adr/0037-software-factory-rework.md)) |
 | Production | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md)) |
 
 ### Software factory
@@ -508,6 +508,14 @@ rejects branches that change `.github/`, `.claude/` or `CLAUDE.md`
 fetches the report for the agent to read, with a token the agent never gets, and a step after
 the run takes down comments and descriptions that quote it
 ([ADR-0041](adr/0041-factory-reads-user-reports.md)).
+
+A labeled ticket is built only when the dispatcher (`.github/factory/dispatch.sh`, no agent, no
+secrets) says so ([ADR-0047](adr/0047-factory-dispatcher.md)): the owner added the `ready` label
+and nobody else edited the ticket since, every issue blocking it (GitHub's issue dependencies) is
+merged and deployed, and no other ticket is in flight. A started ticket is labeled `building`
+until what closed it is deployed. It runs as the Factory workflow's gate when the owner labels a
+ticket, and as the Dispatcher workflow when an issue closes, a deploy finishes, and every 30
+minutes; for now, a ticket that becomes free is handed back to the owner to relabel.
 
 Once CI passes on a new commit of any pull request from this repository except Dependabot's
 (unless someone else, such as the CI fixer, has pushed to it)

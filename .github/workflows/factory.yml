@@ -32,12 +32,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  implement:
-    # Only the owner starts it: by labeling, or by mentioning @claude. Strangers can open issues
-    # on a public repo, so the label is the owner's sign-off that the ticket is safe to build.
+  # Whether the ticket the owner just labeled `ready` may be built now (ADR-0047): not while an
+  # issue blocking it is unmerged or undeployed, not if someone else edited it after the label, and
+  # one ticket at a time. Holds no secrets and runs no agent. Shares its group with the Dispatcher
+  # workflow, so two decisions never read the same in-flight state. GitHub keeps one pending run per
+  # group and cancels the others, silently skipping that label's build. The dispatcher's next sweep
+  # (within 30 minutes) decides every `ready` ticket again: for now it asks the owner to relabel a
+  # ticket that can start; once it starts tickets itself (ADR-0047's step 2), it just starts it.
+  gate:
     if: >-
-      github.actor == github.repository_owner && (
-        (github.event_name == 'issues' && github.event.label.name == 'ready') ||
+      github.actor == github.repository_owner &&
+      github.event_name == 'issues' && github.event.label.name == 'ready'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: factory-dispatch
+      cancel-in-progress: false
+    permissions:
+      contents: read # compares commits with what's deployed
+      issues: write # labels and comments
+      actions: read # finds the latest successful Deploy
+    outputs:
+      start: ${{ steps.gate.outputs.start }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/factory
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: .github/factory/dispatch.sh --gate "$ISSUE"
+
+  implement:
+    needs: gate
+    # Only the owner starts it: by labeling, or by mentioning @claude. Strangers can open issues
+    # on a public repo, so the label is the owner's sign-off that the ticket is safe to build. A
+    # label builds only once the gate says so; an @claude comment is the owner asking directly, and
+    # skips the gate. `always()` because the gate is skipped for comments.
+    if: >-
+      always() && github.actor == github.repository_owner && (
+        (github.event_name == 'issues' && github.event.label.name == 'ready' && needs.gate.outputs.start == 'true') ||
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
       )
     runs-on: ubuntu-latest
@@ -193,8 +229,9 @@ jobs:
           BRANCH: ${{ steps.claude.outputs.branch_name }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
+          # Releases the ticket from `building` too, so the next one can start (ADR-0047).
           needs_info() {
-            gh issue edit "$ISSUE" --remove-label ready --add-label needs-info
+            gh issue edit "$ISSUE" --remove-label ready --remove-label building --add-label needs-info
             exit 0
           }
 

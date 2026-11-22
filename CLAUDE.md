@@ -47,6 +47,8 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/rework.yml` restarts it when the reviewer asks for changes on a factory PR ([ADR-0037](docs/adr/0037-software-factory-rework.md)).
   On a user report's issue it first fetches the report with `.github/factory/fetch-report.sh` (a
   token the agent never sees), and `guard-report-text.sh` takes down what quotes it ([ADR-0041](docs/adr/0041-factory-reads-user-reports.md)).
+  `.github/factory/dispatch.sh` (the Factory workflow's gate and `.github/workflows/dispatcher.yml`) builds `ready`
+  tickets one at a time, each once the issues blocking it are merged and deployed ([ADR-0047](docs/adr/0047-factory-dispatcher.md)).
   `.github/workflows/sweeper.yml` checks open factory PRs every 30 minutes: it reruns a cancelled CI
   once and labels any other stuck PR `needs-human` with the reason ([ADR-0040](docs/adr/0040-factory-sweeper.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
