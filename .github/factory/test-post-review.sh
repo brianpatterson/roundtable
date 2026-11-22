@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks what the reviewer posts (ADR-0026, ADR-0046), against a stand-in gh that answers from
+# Checks what the reviewer posts (ADR-0026, ADR-0046, ADR-0052), against a stand-in gh that answers from
 # canned comments and logs every call that changes something. Run from anywhere:
 # .github/factory/test-post-review.sh
 set -euo pipefail
@@ -31,19 +31,27 @@ review() { # review <heading> <sha>: the main comment post-review.sh writes
 nudge() { printf '<!-- factory-review-changes -->\nRe-reviewed %s: ✋ changes needed.\n' "$1"; }
 
 # run <name> <verdict> <sha> [comment JSON...]: posts a review of commit <sha> on #5, whose
-# comments are the given ones.
+# comments are the given ones. The reviewer reports one blocking finding for `changes`, none for
+# `ready`; post_result posts any structured output.
 run() {
+  local name=$1 verdict=$2
+  shift 2
+  post_result "$name" "$(jq -n --argjson b "$([ "$verdict" = changes ] && echo 1 || echo 0)" '{blocking: $b, review: "Some findings."}')" "$@"
+}
+post_result() { # post_result <name> <RESULT> <sha> [comment JSON...]
   CASE="$work/$1"
   mkdir -p "$CASE"
   : >"$CASE/calls"
-  shift
-  local verdict=$1 sha=$2
-  shift 2
+  : >"$CASE/output"
+  local out=$CASE/output
+  local result=$2 sha=$3
+  shift 3
   jq -s . <<<"${*:-}" >"$CASE/comments.json"
   CASE=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$sha GITHUB_SERVER_URL=https://github.com \
-    RESULT=$(jq -n --arg v "$verdict" '{verdict: $v, review: "Some findings."}') \
+    GITHUB_OUTPUT=$out RESULT=$result \
     "$here/post-review.sh" >/dev/null || fail "$CASE: post-review.sh exited $?"
   calls=$(cat "$CASE/calls")
+  output=$(cat "$CASE/output")
 }
 comment() { # comment <id> <body> [login]
   jq -nc --argjson id "$1" --arg b "$2" --arg u "${3:-github-actions[bot]}" '{id: $id, user: {login: $u}, body: $b}'
@@ -91,11 +99,36 @@ has "issues/comments/10" || fail "the workflow's own review is the one edited"
 # and rework.yml all find the review with startswith("<!-- factory-review -->").
 case "$(nudge abc)" in "<!-- factory-review -->"*) fail "the short comment's marker starts like the review's" ;; esac
 
+# The verdict follows the blocking findings (ADR-0052), whatever the count says.
+result() { jq -n --argjson b "$1" --arg r "$2" '{blocking: $b, review: $r}'; }
+findings=$'**Findings**\n1. **minor**: `a.ts:1` could be clearer.\n2. **minor**: `b.ts:2` too.'
+blocker=$'**Findings**\n1. **minor**: `a.ts:1` could be clearer.\n2. **blocking**: A01 `b.ts:2` leaks rows.'
+
+post_result counted-ready "$(result 0 "$findings")" "$new"
+has "### Factory review: ✅ Ready for you" || fail "minor findings only are ready: [$calls]"
+[ "$output" = verdict=ready ] || fail "the verdict ready is written to GITHUB_OUTPUT: [$output]"
+
+post_result counted-changes "$(result 1 "$blocker")" "$new"
+has "### Factory review: ✋ Changes needed" || fail "a blocking finding needs changes"
+[ "$output" = verdict=changes ] || fail "the verdict changes is written to GITHUB_OUTPUT: [$output]"
+
+post_result undercounted "$(result 0 "$blocker")" "$new"
+has "### Factory review: ✋ Changes needed" || fail "a finding marked blocking needs changes even when the count says 0"
+[ "$output" = verdict=changes ] || fail "an undercount still records changes: [$output]"
+
+post_result unmarked "$(result 2 "$findings")" "$new"
+[ "$output" = verdict=changes ] || fail "a blocking count needs changes even without markers: [$output]"
+
+post_result prose "$(result 0 $'**Findings**\nNone.\n\nNothing here is **blocking** the merge.')" "$new"
+[ "$output" = verdict=ready ] || fail "the word blocking in prose isn't a finding: [$output]"
+
 CASE="$work/bad" && mkdir -p "$CASE" && echo '[]' >"$CASE/comments.json"
-if CASE=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$new RESULT='{"verdict":"maybe","review":""}' \
-  "$here/post-review.sh" 2>/dev/null; then
-  fail "an unknown verdict fails"
-fi
+for bad in '{"verdict":"ready","review":""}' '{"blocking":-1,"review":""}' '{"blocking":1.5,"review":""}' '{"blocking":"1","review":""}'; do
+  if CASE=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$new RESULT=$bad \
+    "$here/post-review.sh" 2>/dev/null; then
+    fail "a result without a whole, non-negative blocking count fails: $bad"
+  fi
+done
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."
