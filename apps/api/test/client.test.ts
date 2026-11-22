@@ -49,6 +49,21 @@ describe('the web client', () => {
     expect(await api.listApplications()).toEqual([]);
   });
 
+  it('adds, lists and deletes Rounds, with dates decoded', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'system_design' });
+
+    expect(round).toMatchObject({ applicationId: application.id, interviewType: 'system_design' });
+    expect(round.createdAt).toBeInstanceOf(Date);
+    expect(await api.listRounds(application.id)).toEqual([round]);
+
+    await api.deleteRound(application.id, round.id);
+    expect(await api.listRounds(application.id)).toEqual([]);
+    await expect(api.deleteRound(application.id, round.id)).rejects.toThrow(
+      'That round no longer exists.',
+    );
+  });
+
   it('reads the public auth config without a session', async () => {
     expect(await clientFor().authConfig()).toEqual({ providers: [] });
   });

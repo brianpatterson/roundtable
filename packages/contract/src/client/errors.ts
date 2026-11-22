@@ -1,7 +1,7 @@
 // What the user sees when an API call fails. The contract's errors carry no message, so the
 // wording lives here, one section per module. A new error in the contract needs a line here.
 import { Schema } from 'effect';
-import { ApplicationNotFound } from '../applications.js';
+import { ApplicationNotFound, RoundNotFound } from '../applications.js';
 import { ReportNotFound, ReportRateLimited } from '../support.js';
 
 /** A failed API call, with a message fit to show the user. `cause` is the original error. */
@@ -15,6 +15,8 @@ export class ApiError extends Error {
 // Applications
 const isNotFound = Schema.is(ApplicationNotFound);
 
+const isRoundNotFound = Schema.is(RoundNotFound);
+
 // Support
 const isReportRateLimited = Schema.is(ReportRateLimited);
 
@@ -23,6 +25,8 @@ const isReportNotFound = Schema.is(ReportNotFound);
 
 export function toApiError(cause: unknown): ApiError {
   if (isNotFound(cause)) return new ApiError('That application no longer exists.', { cause });
+
+  if (isRoundNotFound(cause)) return new ApiError('That round no longer exists.', { cause });
 
   if (isReportRateLimited(cause)) {
     return new ApiError(

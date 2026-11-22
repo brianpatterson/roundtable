@@ -98,6 +98,24 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const roundCases = {
+    coding: [{ interviewType: 'coding' }, { interviewType: 'coding' }],
+    'take-home': [{ interviewType: 'take_home' }, { interviewType: 'take_home' }],
+    'unknown key is dropped': [
+      { interviewType: 'other', applicationId: 'x' },
+      { interviewType: 'other' },
+    ],
+    'unknown type': [{ interviewType: 'onsite' }, false],
+    'missing type': [{}, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(roundCases))('round: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.CreateRound)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
   it.each(Object.entries(updateCases))('update: %s', (_name, [input, decoded]) => {
     const exit = Schema.decodeUnknownExit(contract.UpdateApplication)(input);
 
@@ -298,12 +316,14 @@ describe('expected errors stay out of Sentry', () => {
       'ApplicationNotFound',
       'ReportNotFound',
       'ReportRateLimited',
+      'RoundNotFound',
       'Unauthorized',
     ]);
   });
 
-  it('ApplicationNotFound and ReportNotFound (404), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+  it('ApplicationNotFound, RoundNotFound and ReportNotFound (404), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
     expect(new contract.ApplicationNotFound()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.RoundNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.ReportNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.Unauthorized()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.ReportRateLimited()[ErrorReporter.ignore]).toBe(true);

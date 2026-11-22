@@ -12,6 +12,7 @@ import {
   RoundtableApi,
   type CreateApplication,
   type CreateReport,
+  type CreateRound,
   type UpdateApplication,
 } from '../index.js';
 import { toApiError } from './errors.js';
@@ -49,6 +50,12 @@ export function makeApiClient(options: ApiClientOptions) {
       run((client) => client.applications.update({ params: { id }, payload })),
     deleteApplication: (id: string) =>
       run((client) => client.applications.delete({ params: { id } })),
+    listRounds: (applicationId: string) =>
+      run((client) => client.applications.listRounds({ params: { id: applicationId } })),
+    createRound: (applicationId: string, payload: CreateRound) =>
+      run((client) => client.applications.createRound({ params: { id: applicationId }, payload })),
+    deleteRound: (applicationId: string, roundId: string) =>
+      run((client) => client.applications.deleteRound({ params: { id: applicationId, roundId } })),
     createReport: (payload: CreateReport) =>
       run((client) => client.support.createReport({ payload })),
   };
