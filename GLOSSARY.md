@@ -40,8 +40,9 @@ mark, the code is what's true.
   company named the step but hasn't booked it). Listed with dated Rounds first, in date order (a
   scheduled Round by its start, a take-home by its due date), then the rest in the order they were
   added.
-- **Self-rating** _(planned)_: the user's own score for a Round, given right after it, with a note on what
-  went wrong. Immediate and per Round, where the Outcome is late and coarse.
+- **Self-rating**: the user's own score for a Round, given right after it, from 1 (went badly) to
+  5 (went well), with a note on what went wrong (up to 2000 characters). Both are optional and
+  can be changed or cleared. Immediate and per Round, where the Outcome is late and coarse.
 - **Session expiry**: the moment the API answers `Unauthorized` for a user the web app still
   shows as signed in. Owned by the identity module, which returns the user to sign-in with a
   notice ([ADR-0032](docs/adr/0032-web-identity-owns-session-expiry.md)).
