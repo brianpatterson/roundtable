@@ -22,8 +22,6 @@ export const ApplicationStatus = Schema.Literals(APPLICATION_STATUSES);
 
 export type ApplicationStatus = typeof ApplicationStatus.Type;
 
-export const isApplicationStatus = Schema.is(ApplicationStatus);
-
 /**
  * The Postgres enum's values, in its order (apps/api/src/modules/applications/schema.ts).
  * `screening` was folded into `interviewing` (ADR-0045) but stays in the enum until a later
