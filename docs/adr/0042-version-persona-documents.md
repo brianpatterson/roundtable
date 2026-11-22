@@ -34,8 +34,8 @@ came from and leaves the Persona's draft alone.
 ## Consequences
 
 - What a company saw is never lost, and analytics can group Applications by Version.
-- Versions and Forks are immutable once an Application points at them: deleting a Persona or a
-  Version must not delete what a sent Application used.
+- Versions and Forks are immutable once an Application points at them, and outlive edits to the
+  Persona ([ADR-0044](0044-links-between-modules.md) says how they're kept).
 - Two kinds of copy (Version, Fork) and a draft are more to explain in the UI than a single
   document.
 - Revisit if documents become large binary files (uploaded PDFs) rather than text, where storage

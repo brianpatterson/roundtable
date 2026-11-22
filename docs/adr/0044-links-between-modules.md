@@ -34,9 +34,12 @@ plain id with no foreign key.
 
 Option 3, as four rules:
 
-1. **Links across modules are plain ids**, never foreign keys. Dependencies run one way
-   (applications → personas → identity); a module reads another's data only through that module's
-   `index.ts`, and a module never needs to know who refers to its rows.
+1. **Links across modules are plain ids**, never foreign keys, except to `users` (rule 2).
+   Dependencies run one way (applications → personas → identity); a module reads another's data
+   only through that module's `index.ts`, and a module never needs to know who refers to its
+   rows. A module that accepts another module's id resolves it through that `index.ts`, scoped to
+   the `CurrentUser`, before storing it: an id that isn't the user's is a 404, like any other
+   resource of theirs.
 2. **Any module's tables may reference `users`**, and those that do are deleted with the account.
    Identity sits under every module. A table may still choose not to, as `user_reports` does so
    a report outlives the account. This replaces ADR-0023's single
@@ -50,8 +53,10 @@ Option 3, as four rules:
    Application creates the Version first and updates the Application second: a failure leaves
    an unused Version and an unsent Application. Forks live in personas, filed under an
    application id that personas treats as an opaque owner key and never resolves (it never
-   reads applications, so rule 1's direction holds); deleting an Application asks personas to delete its Forks, and a failure
-   there leaves Forks nothing can reach.
+   reads applications, so rule 1's direction holds). Forks are created and deleted only through
+   applications, after it has checked the user owns the Application, since personas can't check
+   that itself. Deleting an Application asks personas to delete its Forks, and a failure there
+   leaves Forks nothing can reach.
 
 ## Consequences
 
