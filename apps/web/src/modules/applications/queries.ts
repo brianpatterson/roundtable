@@ -5,3 +5,6 @@ export const applicationsQueryKey = ['applications'] as const;
 
 /** One application, for its page. */
 export const applicationQueryKey = (id: string) => [...applicationsQueryKey, id] as const;
+
+/** One application's Rounds: invalidating the application refreshes them too. */
+export const roundsQueryKey = (id: string) => [...applicationQueryKey(id), 'rounds'] as const;

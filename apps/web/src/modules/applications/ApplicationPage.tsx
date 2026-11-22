@@ -6,6 +6,7 @@ import { api } from '../../shared/api';
 import styles from './ApplicationPage.module.css';
 import { appliedLabel, statusLabel } from './format';
 import { applicationQueryKey } from './queries';
+import { Rounds } from './Rounds';
 
 /**
  * One application, or null if there is none with that id for this user. A missing id and another
@@ -82,6 +83,7 @@ export function ApplicationPage({ applicationId }: { applicationId: string }) {
         <dt>Applied</dt>
         <dd>{appliedLabel(appliedAt)}</dd>
       </dl>
+      <Rounds applicationId={applicationId} />
     </section>
   );
 }

@@ -1,14 +1,15 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { Effect } from 'effect';
 import { HttpApiBuilder } from 'effect/http-api';
 import {
   ApplicationNotFound,
   CurrentUser,
+  RoundNotFound,
   RoundtableApi,
   currentStatus,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { applications } from './schema.js';
+import { applications, rounds } from './schema.js';
 
 type Row = typeof applications.$inferSelect;
 
@@ -117,6 +118,99 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .pipe(Effect.orDie);
 
           if (!row) return yield* new ApplicationNotFound();
+        }),
+
+      listRounds: ({ params }) =>
+        Effect.gen(function* () {
+          const user = yield* CurrentUser;
+
+          const [owned] = yield* db
+            .select({ id: applications.id })
+            .from(applications)
+            .where(ownedBy(user.id, params.id))
+            .pipe(Effect.orDie);
+
+          if (!owned) return yield* new ApplicationNotFound();
+
+          return yield* db
+            .select()
+            .from(rounds)
+            .where(eq(rounds.applicationId, owned.id))
+            .orderBy(asc(rounds.createdAt))
+            .pipe(Effect.orDie);
+        }),
+
+      createRound: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const user = yield* CurrentUser;
+
+          // One transaction holding the application's row, so two first Rounds added at once
+          // can't both miss each other, and a Round is never added to an application being
+          // deleted.
+          const row = yield* db
+            .transaction((tx) =>
+              Effect.gen(function* () {
+                const [application] = yield* tx
+                  .select({ id: applications.id, status: applications.status })
+                  .from(applications)
+                  .where(ownedBy(user.id, params.id))
+                  .for('update');
+
+                if (!application) return undefined;
+
+                const [earlier] = yield* tx
+                  .select({ id: rounds.id })
+                  .from(rounds)
+                  .where(eq(rounds.applicationId, application.id))
+                  .limit(1);
+
+                const [round] = yield* tx
+                  .insert(rounds)
+                  .values({ applicationId: application.id, interviewType: payload.interviewType })
+                  .returning();
+
+                // Its first Round moves an applied application to interviewing (GLOSSARY.md). Any
+                // other status was set by the user, and stays.
+                if (!earlier && application.status === 'applied') {
+                  yield* tx
+                    .update(applications)
+                    .set({ status: 'interviewing' })
+                    .where(eq(applications.id, application.id));
+                }
+
+                return round;
+              }),
+            )
+            .pipe(Effect.orDie);
+
+          if (!row) return yield* new ApplicationNotFound();
+
+          return row;
+        }),
+
+      deleteRound: ({ params }) =>
+        Effect.gen(function* () {
+          const user = yield* CurrentUser;
+
+          const [row] = yield* db
+            .delete(rounds)
+            .where(
+              and(
+                eq(rounds.id, params.roundId),
+                eq(rounds.applicationId, params.id),
+                inArray(
+                  rounds.applicationId,
+                  db
+                    .select({ id: applications.id })
+                    .from(applications)
+                    .where(ownedBy(user.id, params.id)),
+                ),
+              ),
+            )
+            .returning({ id: rounds.id })
+            .pipe(Effect.orDie);
+
+          if (!row) return yield* new RoundNotFound();
         }),
     });
   }),

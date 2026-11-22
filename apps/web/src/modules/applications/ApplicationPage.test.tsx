@@ -49,6 +49,10 @@ function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   if (request.method === 'GET' && pathname === `/api/applications/${ACME_ID}`)
     return Promise.resolve(Response.json(stored));
 
+  // Its Rounds have their own tests (Rounds.test.tsx).
+  if (request.method === 'GET' && pathname === `/api/applications/${ACME_ID}/rounds`)
+    return Promise.resolve(Response.json([]));
+
   // A missing application and another user's answer the same (CLAUDE.md, rule 8).
   return Promise.resolve(Response.json({ _tag: 'ApplicationNotFound' }, { status: 404 }));
 }

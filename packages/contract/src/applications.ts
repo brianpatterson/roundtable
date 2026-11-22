@@ -1,5 +1,5 @@
-// The applications module's contract: job applications and their CRUD endpoints, all behind the
-// identity module's Authorization middleware.
+// The applications module's contract: job applications, their Rounds, and their CRUD endpoints,
+// all behind the identity module's Authorization middleware.
 import { Effect, ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api';
 import { Authorization } from './identity.js';
@@ -157,6 +157,54 @@ export const isApplicationId = Schema.is(ApplicationId);
 /** A malformed id fails the params schema: 400 (ADR-0022), before any handler runs. */
 const IdParams = { id: ApplicationId };
 
+/**
+ * What a Round tests (GLOSSARY.md), in display order. Fixed, so analytics can compare like with
+ * like. The Postgres enum is made from it (apps/api/src/modules/applications/schema.ts): a new
+ * type needs a migration, and removing one needs expand/contract (ADR-0014).
+ */
+export const INTERVIEW_TYPES = [
+  'recruiter_screen',
+  'hiring_manager',
+  'coding',
+  'system_design',
+  'behavioral',
+  'take_home',
+  'presentation',
+  'other',
+] as const;
+
+export const InterviewType = Schema.Literals(INTERVIEW_TYPES);
+
+export type InterviewType = typeof InterviewType.Type;
+
+export const CreateRound = Schema.Struct({ interviewType: InterviewType });
+
+export type CreateRound = typeof CreateRound.Type;
+
+/** A Round as the API returns it: one interview within an Application. */
+export const Round = Schema.Struct({
+  id: Schema.String,
+  applicationId: Schema.String,
+  interviewType: InterviewType,
+  createdAt: Schema.DateFromString,
+  updatedAt: Schema.DateFromString,
+});
+
+export type Round = typeof Round.Type;
+
+/**
+ * A missing Round, one of another application, or one of another user's: always 404, never 403.
+ */
+export class RoundNotFound extends Schema.TaggedError<
+  RoundNotFound,
+  { readonly brand: unique symbol }
+>()('RoundNotFound', {}, { httpApiStatus: 404 }) {
+  readonly [ErrorReporter.ignore] = true;
+}
+
+/** A Round's path: its application's id and its own, both UUIDs; a malformed one is a 400. */
+const RoundParams = { id: ApplicationId, roundId: Schema.String.check(Schema.isUUID()) };
+
 export class ApplicationsApi extends HttpApiGroup.make('applications')
   .add(
     HttpApiEndpoint.get('list', '/', { success: Schema.Array(Application) }),
@@ -179,6 +227,24 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       params: IdParams,
       success: HttpApiSchema.NoContent,
       error: ApplicationNotFound,
+    }),
+    // An application's Rounds, in the order they were added.
+    HttpApiEndpoint.get('listRounds', '/:id/rounds', {
+      params: IdParams,
+      success: Schema.Array(Round),
+      error: ApplicationNotFound,
+    }),
+    // Adding the first Round of an applied application moves it to interviewing.
+    HttpApiEndpoint.post('createRound', '/:id/rounds', {
+      params: IdParams,
+      payload: CreateRound,
+      success: Round.pipe(HttpApiSchema.status(201)),
+      error: ApplicationNotFound,
+    }),
+    HttpApiEndpoint.delete('deleteRound', '/:id/rounds/:roundId', {
+      params: RoundParams,
+      success: HttpApiSchema.NoContent,
+      error: RoundNotFound,
     }),
   )
   .middleware(Authorization)

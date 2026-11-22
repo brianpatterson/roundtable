@@ -1,0 +1,35 @@
+.rounds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+
+  & h3 {
+    margin: 0;
+  }
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The Round's name, with its Delete button beside it. */
+.round {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  border-bottom: 1px solid var(--ds-color-outline-variant);
+}
+
+/* The type picker and the Add button on one line, wrapping on narrow screens. */
+.add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ds-space-3);
+}

@@ -93,24 +93,24 @@ flowchart TB
   end
 ```
 
-| Module       | API                                                                                                                                         | Web                                                              | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------- |
-| applications | CRUD handlers, `applications` table                                                                                                         | `ApplicationsPage` (form + table), `ApplicationPage`, query keys | `applications.ts` |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages   | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                             | none              |
-| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                     | `support.ts`      |
-| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                             | `system.ts`       |
+| Module       | API                                                                                                                                         | Web                                                                                  | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------- |
+| applications | CRUD handlers for applications and their Rounds, `applications` and `rounds` tables                                                         | `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                       | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                 | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                         | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                                                 | `system.ts`       |
 
 **Routes** ([ADR-0049](adr/0049-tanstack-router.md)): the shell owns the web app's pages, in
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
 component, passing the URL's params as props:
 
-| Path                           | Page                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page |
-| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date        |
-| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                      |
-| anything else                  | the shell's "Page not found", with a link to the applications                              |
+| Path                           | Page                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page  |
+| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds |
+| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                       |
+| anything else                  | the shell's "Page not found", with a link to the applications                               |
 
 The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
 and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules
@@ -119,7 +119,9 @@ shell's routes; only `shell/`, `design-system/` and `shared/` import the router.
 data through TanStack Query: an application's page reads `GET /api/applications/:id` under the
 key `['applications', id]`, so a change in the table (which invalidates `['applications']`)
 refreshes it. A malformed id, a missing one and another user's all show the same "Application
-not found"; a malformed one is never sent.
+not found"; a malformed one is never sent. Its Rounds come from `GET /api/applications/:id/rounds`
+under `['applications', id, 'rounds']`; adding one invalidates `['applications']`, since the
+first Round can move the application to interviewing.
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
@@ -201,6 +203,7 @@ module reaches into another's tables, and would go with that split.
 ```mermaid
 erDiagram
   users ||--o{ applications : owns
+  applications ||--o{ rounds : has
   users ||--o{ sessions : has
   users ||--o{ accounts : "signs in with"
   users {
@@ -237,6 +240,13 @@ erDiagram
     timestamptz created_at
     timestamptz updated_at "bumped on every update"
   }
+  rounds {
+    uuid id PK "gen_random_uuid()"
+    uuid application_id FK "NOT NULL, ON DELETE CASCADE"
+    interview_type interview_type "NOT NULL"
+    timestamptz created_at "the list's order"
+    timestamptz updated_at
+  }
   user_reports {
     uuid id PK "gen_random_uuid()"
     text description "NOT NULL, private"
@@ -271,13 +281,22 @@ erDiagram
   added were backfilled from `created_at` (ADR-0045).
 - Index `applications_user_id_updated_at_idx (user_id, updated_at DESC)` serves the only list
   query: one user's applications, newest first.
+- `rounds` are an application's interviews (`GLOSSARY.md`), in the applications module: an
+  application owns its Rounds, and they're deleted with it. They have no `user_id`: every query
+  reaches them through an application filtered on the session's user, so another user's are a
+  404 like their applications. `interview_type` is a Postgres enum made from the contract's
+  `INTERVIEW_TYPES` (recruiter screen, hiring manager, coding, system design, behavioral,
+  take-home, presentation, other). Adding the first Round of an `applied` application moves it to
+  `interviewing`, in the same transaction, holding the application's row; any other status stays.
+  Index `rounds_application_id_created_at_idx` serves the list: one application's Rounds in the
+  order they were added.
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
   email. Indexes on `(client_key, created_at)` and `issue_requested_at` serve the hourly and daily
   limits.
 - Source of truth: each module's `schema.ts` (`apps/api/src/modules/*/schema.ts`): identity owns
-  the auth tables, applications its own, email `email_sends`, support `user_reports`. One database and one migrations
+  the auth tables, applications `applications` and `rounds`, email `email_sends`, support `user_reports`. One database and one migrations
   folder. Migrations are generated into `apps/api/drizzle/`,
   one folder each (`<timestamp>_<name>/migration.sql` + `snapshot.json`, Drizzle 1.0's layout)
   ([ADR-0004](adr/0004-drizzle-orm-and-migrations.md), [ADR-0022](adr/0022-effect-for-the-api.md)).
@@ -298,18 +317,21 @@ for `Unauthorized`, a return to the sign-in page (see Identity above). `client.t
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
-| Method   | Path                       | Auth                      | Success | Errors                                                                |
-| -------- | -------------------------- | ------------------------- | ------- | --------------------------------------------------------------------- |
-| GET      | `/api/health`              | public                    | 200     | (reports `db: "down"` instead of failing)                             |
-| GET      | `/api/auth-config`         | public                    | 200     | (lists enabled social providers)                                      |
-| GET/POST | `/api/auth/*`              | public                    | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session |
-| GET      | `/api/applications`        | session                   | 200     | 401                                                                   |
-| GET      | `/api/applications/:id`    | session                   | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                   |
-| POST     | `/api/applications`        | session                   | 201     | 400, 401                                                              |
-| PATCH    | `/api/applications/:id`    | session                   | 200     | 400 (body or id), 401, 404                                            |
-| DELETE   | `/api/applications/:id`    | session                   | 204     | 400 (malformed id), 401, 404                                          |
-| POST     | `/api/reports`             | public (session optional) | 201     | 400, 429 (5 per client address per hour)                              |
-| GET      | `/api/factory/reports/:id` | factory token             | 200     | 400 (malformed id), 401, 404 (unknown or over 30 days old)            |
+| Method   | Path                                    | Auth                      | Success | Errors                                                                                         |
+| -------- | --------------------------------------- | ------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| GET      | `/api/health`                           | public                    | 200     | (reports `db: "down"` instead of failing)                                                      |
+| GET      | `/api/auth-config`                      | public                    | 200     | (lists enabled social providers)                                                               |
+| GET/POST | `/api/auth/*`                           | public                    | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                          |
+| GET      | `/api/applications`                     | session                   | 200     | 401                                                                                            |
+| GET      | `/api/applications/:id`                 | session                   | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                                            |
+| POST     | `/api/applications`                     | session                   | 201     | 400, 401                                                                                       |
+| PATCH    | `/api/applications/:id`                 | session                   | 200     | 400 (body or id), 401, 404                                                                     |
+| DELETE   | `/api/applications/:id`                 | session                   | 204     | 400 (malformed id), 401, 404                                                                   |
+| GET      | `/api/applications/:id/rounds`          | session                   | 200     | 400 (malformed id), 401, 404 (application unknown or not yours)                                |
+| POST     | `/api/applications/:id/rounds`          | session                   | 201     | 400 (body, e.g. an unknown interview type, or id), 401, 404                                    |
+| DELETE   | `/api/applications/:id/rounds/:roundId` | session                   | 204     | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours) |
+| POST     | `/api/reports`                          | public (session optional) | 201     | 400, 429 (5 per client address per hour)                                                       |
+| GET      | `/api/factory/reports/:id`              | factory token             | 200     | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                     |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.
