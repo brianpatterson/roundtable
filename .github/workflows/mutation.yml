@@ -2,7 +2,8 @@
 # and reports every change no test notices. Pull requests don't run it: a full API run takes about
 # half an hour on a runner, and one that timed out left a factory pull request stuck. Advisory: it
 # never fails on the score, only if Stryker itself can't run. The score and the survivors go to
-# each job's summary and its artifact (`web-mutation-report`, `api-mutation-report`).
+# each job's summary and its artifact (`web-mutation-report`, `api-mutation-report`). Then `file`
+# opens the factory's next mutation ticket from them (ADR-0051).
 #
 # It also runs on pull requests that change this file, so a change to it is tested before it lands.
 name: Mutation testing
@@ -146,3 +147,32 @@ jobs:
           name: api-mutation-report
           path: api-mutation-report/
           retention-days: 14
+
+  # The factory's next mutation ticket (ADR-0051): the file with the most mutants no test detects,
+  # as a `mutation` issue this job labels `ready`, so the dispatcher builds it without waiting for
+  # the owner. One at a time, so nothing is filed while one is open. Only from main: anywhere else
+  # (a pull request that changes this file, a manual run on a branch) it prints the ticket instead.
+  file:
+    needs: [web, api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write # creates the ticket and the `mutation` label
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/factory
+      - uses: actions/download-artifact@v7
+        with:
+          path: reports
+      - name: File the next mutation ticket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DRY_RUN: ${{ github.ref != 'refs/heads/main' }}
+        run: >-
+          .github/factory/file-mutation-issue.sh
+          apps/web=reports/web-mutation-report/mutation.json
+          apps/api=reports/api-mutation-report/mutation.json

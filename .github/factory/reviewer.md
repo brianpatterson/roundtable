@@ -50,7 +50,16 @@ the owner always merges.
    **minor** unless it breaks one of `CLAUDE.md`'s module rules.
 5. **Security**, against the OWASP Top 10:2025 in the next section. Go through every category
    for every change; most won't apply, and saying which do is part of the review.
-6. **What CI can't see.** Behavior worth checking in a browser (layout, focus, themes, mobile),
+6. **Mutation tickets** (a ticket labeled `mutation`, [ADR-0051](../../docs/adr/0051-nightly-mutation-tickets.md)).
+   The nightly run labeled it `ready`, not the owner, because it asks only for tests. Check the
+   diff stays that way: outside test files, nothing but Stryker disable comments
+   (`// Stryker disable next-line <Mutator>: <reason>`). Any other source change is **blocking**.
+   So is `disable all`, a disable without `next-line`, or one with no reason. For each disable, ask whether the mutant really is
+   equivalent (no test could tell it apart); if a test could kill it, that's **blocking** too. For
+   each new test, ask whether it checks behavior a user or caller sees, or only pins an
+   implementation detail to kill a mutant (a class name, a call count, a log string). The second
+   is **minor**, and should have been left alive and named instead.
+7. **What CI can't see.** Behavior worth checking in a browser (layout, focus, themes, mobile),
    and anything only a human can judge. Say exactly what to try.
 
 Also note real bugs you find on the way, with the input that triggers them. Skip style

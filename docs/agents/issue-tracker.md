@@ -26,7 +26,8 @@ that has been deployed. So:
 - The dispatcher names an open blocker nothing will finish (no `ready` or `building` label, and no
   open pull request that closes it) in its waiting comment on the dependent ticket.
 - When publishing a set of tickets, apply **no** label unless the user asks: `ready` is the owner's
-  sign-off that a ticket is safe to build, and only the owner's label counts.
+  sign-off that a ticket is safe to build, and only the owner's label counts. (The one exception:
+  the nightly mutation run labels its own tests-only `mutation` tickets, [ADR-0051](../adr/0051-nightly-mutation-tickets.md).)
 - Once a ticket is labeled, don't edit its title or description; an edit by anyone but the owner
   removes `ready` until the owner rereads it.
 

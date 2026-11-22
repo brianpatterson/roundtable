@@ -3,7 +3,9 @@
 # when. A ticket waits until every issue blocking it (GitHub's issue dependencies) is merged and
 # deployed, and the factory builds one ticket at a time: a ticket labeled `building` is in flight
 # until what closed it is deployed. Only a `ready` label the owner added counts, and a ticket whose
-# description someone else edited after that label goes back to the owner.
+# description someone else edited after that label goes back to the owner. The one exception is a
+# `mutation` ticket the nightly mutation run opened and labeled itself: it asks only for tests
+# (ADR-0051).
 #
 #   dispatch.sh --decide        read one ticket's state as JSON on stdin, print the decision (tests)
 #   dispatch.sh --state ISSUE   print the state decide would get for ISSUE (read-only, for debugging)
@@ -21,7 +23,7 @@ set -euo pipefail
 GH=${GH:-gh}
 
 # The decision, from a state gather() builds (ages in minutes):
-#   {open, closed: null | deployed | merged | unmerged, ready: null | {by_owner, age},
+#   {open, closed: null | deployed | merged | unmerged, ready: null | {approved, age},
 #    edited_after_ready, held: null | needs-human | needs-info, answered, building: null | {age, has_pr},
 #    blockers: [{number, open, closed, active, held}], others_building: [number]}
 # `closed` is what closed an issue: a pull request or commit whose merge commit the latest
@@ -31,7 +33,9 @@ GH=${GH:-gh}
 # a start then removes it. `edited_after_ready` counts title and description edits by anyone but
 # the owner since the owner's approval began: the first `ready` label the owner added after the
 # workflow last removed it. Removing and re-adding it themselves doesn't restart the approval, so an
-# edit made in between still counts. A blocker is `active` when it's labeled `ready` or `building`,
+# edit made in between still counts. `approved` means the label is the owner's, or the workflow's
+# on a `mutation` ticket the workflow opened (ADR-0051); there, the approval is the workflow's
+# label, and anyone else's edit still sends the ticket back. A blocker is `active` when it's labeled `ready` or `building`,
 # or an open pull request closes it, and `held` (needs-human | needs-info | null) when it waits on
 # the owner. An open blocker that is neither (a tracking issue opened after its pull request merged,
 # or a ticket nobody labeled) would be waited on forever, so the wait names it, and names a held one
@@ -51,7 +55,7 @@ decide='
   elif .building != null then
     if .building.has_pr or .building.age <= 90 then out("ok"; "being built")
     else out("stuck"; "the factory started building it \(.building.age) minutes ago and no open pull request closes it. It is no longer `building`, so the next ticket can start; remove `needs-human` and the factory decides on this one again") end
-  elif .ready == null or .ready.by_owner != true then out("ignore"; "not labeled `ready` by the owner")
+  elif .ready == null or .ready.approved != true then out("ignore"; "not labeled `ready` by the owner")
   elif .edited_after_ready then
     out("unlabel"; "its title or description was edited by someone else after it was labeled `ready`. Reread it, and label it `ready` again if it should still be built")
   elif any(.blockers[]; .open != true and .closed == "unmerged") then
@@ -98,6 +102,7 @@ query='query($owner: String!, $name: String!, $number: Int!) {
     issue(number: $number) {
       number
       state
+      author { login }
       labels(first: 50) { nodes { name } }
       userContentEdits(last: 20) { nodes { editedAt editor { login } } }
       timelineItems(itemTypes: [LABELED_EVENT, UNLABELED_EVENT, RENAMED_TITLE_EVENT, CLOSED_EVENT], last: 100) {
@@ -139,7 +144,11 @@ gather() {
       | if $c == null then "" elif $c.__typename == "PullRequest" then (if $c.merged then $c.mergeCommit.oid else "" end) else $c.oid end;
     .data.repository.issue as $i
     | [$i.labels.nodes[].name] as $labels
-    | [$i.timelineItems.nodes[] | select(.__typename == "LabeledEvent")] as $labeled
+    # A `mutation` ticket the nightly mutation run opened (GraphQL names the workflow token
+    # "github-actions") may be approved by that workflow, which labels it `ready` itself (ADR-0051).
+    | (($labels | index("mutation")) != null and ($i.author.login // "") == "github-actions") as $nightly
+    | def approver: (. // "") as $l | $l == $owner or ($nightly and $l == "github-actions");
+    [$i.timelineItems.nodes[] | select(.__typename == "LabeledEvent")] as $labeled
     | ([$labeled[] | select(.label.name == "ready")] | last) as $ready
     | ([$labeled[] | select(.label.name == "building")] | last) as $building
     | ([$labeled[] | select(.label.name == "needs-info")] | last) as $info
@@ -148,11 +157,11 @@ gather() {
     | (reduce ($i.timelineItems.nodes[] | select((.__typename == "LabeledEvent" or .__typename == "UnlabeledEvent") and .label.name == "ready")) as $e
         (null;
          if $e.__typename == "UnlabeledEvent" and ($e.actor.login // "") != $owner then null
-         elif $e.__typename == "LabeledEvent" and . == null and ($e.actor.login // "") == $owner then $e.createdAt
+         elif $e.__typename == "LabeledEvent" and . == null and ($e.actor.login | approver) then $e.createdAt
          else . end)) as $since
     | {number: $i.number, open: ($i.state == "OPEN"), sha: ($i.timelineItems | sha),
        ready: (if ($labels | index("ready")) != null and $ready != null
-               then {by_owner: ($ready.actor.login == $owner), at: $ready.createdAt, age: age($ready.createdAt)} else null end),
+               then {approved: ($ready.actor.login | approver), at: $ready.createdAt, age: age($ready.createdAt)} else null end),
        edited_after_ready: ($ready != null and (($since // $ready.createdAt) as $from |
          any($i.userContentEdits.nodes[]; .editedAt > $from and (.editor.login // "") != $owner) or
          any($i.timelineItems.nodes[]; .__typename == "RenamedTitleEvent" and .createdAt > $from and (.actor.login // "") != $owner))),
