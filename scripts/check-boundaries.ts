@@ -2,8 +2,9 @@
 //   1. Another module is imported only through its index.ts.
 //   2. Modules never import the assembly: server.ts and main.ts (API) or shell/ (web).
 //   3. platform/, shared/ and design-system/ never import from modules/ (their tests may).
-//   4. An API module never imports another module's tables, except in its own schema.ts (a
-//      foreign key).
+//   4. An API module never imports another module's tables. The one exception is identity's
+//      `users`, which any module's schema.ts may import for a foreign key: links between other
+//      modules are plain ids, never foreign keys (ADR-0044).
 //   5. Code outside design-system/ imports it only through its index.ts, and only design-system/
 //      imports @base-ui/react (ADR-0024), so replacing Base UI touches one folder.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -30,6 +31,7 @@ function moduleOf(path: string): string | undefined {
 }
 
 const designSystem = 'apps/web/src/design-system/';
+const identity = 'apps/api/src/modules/identity';
 
 function isAssembly(path: string): boolean {
   return (
@@ -100,17 +102,23 @@ for (const file of sources.flatMap(walk)) {
       problems.push(`${where} (platform, shared and design-system never import modules)`);
 
     const tables = toModule ? tablesByModule.get(toModule) : undefined;
-    const imported = names.split(',').map((name) => name.replace(/^\s*type\s+/, '').trim());
-    const foreign = imported.filter((name) => tables?.has(name));
 
-    if (
-      fromModule &&
-      toModule !== fromModule &&
-      foreign.length > 0 &&
-      !file.endsWith('/schema.ts') &&
-      !isTest(file)
-    )
-      problems.push(`${where} (another module's tables: ${foreign.join(', ')})`);
+    const imported = names
+      .split(',')
+      .map((name) => name.replace(/^\s*type\s+/, '').trim())
+      // `{ sessions as s }` imports `sessions`.
+      .map((name) => name.split(/\s+as\s+/)[0]!);
+
+    const isUsersForeignKey = (name: string) =>
+      file.endsWith('/schema.ts') && toModule === identity && name === 'users';
+
+    const foreign = imported.filter((name) => tables?.has(name) && !isUsersForeignKey(name));
+
+    if (fromModule && toModule !== fromModule && foreign.length > 0 && !isTest(file))
+      problems.push(
+        `${where} (another module's tables: ${foreign.join(', ')}; ` +
+          "only identity's users may be a foreign key, other links are plain ids, ADR-0044)",
+      );
   }
 }
 
@@ -118,7 +126,7 @@ for (const problem of problems) console.error(`✗ ${problem}`);
 
 if (problems.length > 0) {
   console.error(
-    '\nModule boundaries: see docs/adr/0023-modular-monolith-layout.md and 0024-design-system.md',
+    '\nModule boundaries: see docs/adr/0023-modular-monolith-layout.md, 0024-design-system.md and 0044-links-between-modules.md',
   );
   process.exit(1);
 }
