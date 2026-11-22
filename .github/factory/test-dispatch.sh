@@ -86,6 +86,16 @@ issue 16 OPEN '["ready","needs-human"]' "[$(labeled $t ready o)]" '[]'
 issue 17 OPEN '["ready"]' "[$(labeled $t ready o),$(renamed 2026-11-20T11:00:00Z stranger)]" '[]'
 issue 18 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by old)")]" '[]'
 issue 19 OPEN '["building","ready"]' "[$(labeled $t ready o),$(labeled $t building github-actions)]" '[]'
+unlabeled() { printf '{"__typename":"UnlabeledEvent","createdAt":"%s","label":{"name":"%s"},"actor":{"login":"%s"}}' "$1" "$2" "$3"; }
+stranger_edit='[{"editedAt":"2026-11-20T09:30:00Z","editor":{"login":"stranger"}}]'
+# #20: ready (by o) later than #10, nothing blocking it. #21: started by the dispatcher (building).
+# #22: started, but edited by a stranger after the label. #23 and #24: a stranger edited at 09:30,
+# then the label came off and went back on at 10:00; by the owner (#23) or by the workflow (#24).
+issue 20 OPEN '["ready"]' "[$(labeled 2026-11-20T12:00:00Z ready o)]" '[]'
+issue 21 OPEN '["ready","building"]' "[$(labeled $t ready o),$(labeled 2026-11-20T12:00:00Z building github-actions)]" '[]'
+issue 22 OPEN '["ready","building"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(labeled 2026-11-20T12:00:00Z building github-actions)]" '[]' "$stranger_edit"
+issue 23 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 2026-11-20T09:45:00Z ready o),$(labeled $t ready o)]" '[]' "$stranger_edit"
+issue 24 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 2026-11-20T09:45:00Z ready github-actions),$(labeled $t ready o)]" '[]' "$stranger_edit"
 issue 14 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by new)")]" '[]'
 echo '[{"headSha":"dep"}]' >"$work/deploy.json"
 echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
@@ -179,6 +189,42 @@ expect "starting it clears needs-info" "$(cat "$work/writes")" "issue edit 15 -R
 output=$(GITHUB_OUTPUT=$work/out run --gate 16)
 expect "the gate ignores a ticket held for a human" "$output" "#16: ignore"
 expect "and says why" "$(cat "$work/writes")" "issue comment 16"
+
+# The sweep starts the oldest free ticket itself, and the next free one queues behind it.
+echo '[]' >"$work/building.json"
+echo '[{"number":20},{"number":10}]' >"$work/ready.json"
+: >"$work/writes"
+output=$(run)
+expect "the sweep starts the oldest free ticket" "$output" "#10: start"
+expect "and marks it building" "$(cat "$work/writes")" "issue edit 10 -R o/r --add-label building"
+expect "by dispatching the implementer from main" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=10"
+expect "the next free ticket queues behind it" "$output" "#20: queue"
+if grep -q "issue=20" "$work/writes"; then
+  echo "FAIL: the sweep started two tickets at once"
+  failures=$((failures + 1))
+fi
+
+# The dispatched run checks the rules again before its agent runs.
+: >"$work/out"
+output=$(GITHUB_OUTPUT=$work/out run --verify 21)
+expect "a ticket the dispatcher started is verified" "$(cat "$work/out")" "ok=true"
+: >"$work/out"
+: >"$work/writes"
+output=$(GITHUB_OUTPUT=$work/out run --verify 22)
+expect "an edit since the label refuses the dispatched run" "$output" "#22: refused"
+expect "and releases it" "$(cat "$work/writes")" "issue edit 22 -R o/r --remove-label building"
+: >"$work/out"
+output=$(GITHUB_OUTPUT=$work/out run --verify 20)
+expect "a ticket the dispatcher didn't mark is refused" "$output" "#20: refused"
+if grep -q ok=true "$work/out"; then
+  echo "FAIL: verify passed a ticket that isn't building"
+  failures=$((failures + 1))
+fi
+
+# The approval runs from the owner's first label: relabeling yourself doesn't wash out an edit made
+# in between, but a label the workflow removed starts a fresh one.
+expect "an edit before the owner's own relabel still counts" "$(run --state 23 | jq -c .edited_after_ready)" true
+expect "an edit before the workflow removed the label doesn't" "$(run --state 24 | jq -c .edited_after_ready)" false
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."
