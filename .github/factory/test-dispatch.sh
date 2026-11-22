@@ -96,6 +96,8 @@ issue 21 OPEN '["ready","building"]' "[$(labeled $t ready o),$(labeled 2026-11-2
 issue 22 OPEN '["ready","building"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(labeled 2026-11-20T12:00:00Z building github-actions)]" '[]' "$stranger_edit"
 issue 23 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 2026-11-20T09:45:00Z ready o),$(labeled $t ready o)]" '[]' "$stranger_edit"
 issue 24 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o),$(unlabeled 2026-11-20T09:45:00Z ready github-actions),$(labeled $t ready o)]" '[]' "$stranger_edit"
+# #25: building; a pull request closed it, then it was reopened and closed by hand.
+issue 25 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by old)"),{\"__typename\":\"ClosedEvent\",\"closer\":null}]" '[]'
 issue 14 CLOSED '["building"]' "[$(labeled $t building github-actions),$(jq -c '.nodes[0]' <<<"$(closed_by new)")]" '[]'
 echo '[{"headSha":"dep"}]' >"$work/deploy.json"
 echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
@@ -114,7 +116,7 @@ for arg in "$@"; do
   prev=$arg
 done
 case "$*" in
-  "api graphql"*) file=issue-$number.json ;;
+  "api graphql"*) [ "$number" != "$FAIL_READ" ] || { echo "GitHub says no" >&2; exit 1; }; file=issue-$number.json ;;
   "run list"*) file=deploy.json ;;
   "issue list"*"--label ready"*) file=ready.json ;;
   "issue list"*"--label building"*) file=building.json ;;
@@ -127,7 +129,7 @@ esac
 jq -rc "$filter" "$WORK/$file"
 GH
 chmod +x "$work/gh"
-run() { FAIL_DISPATCH=${FAIL_DISPATCH:-none} WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
+run() { FAIL_READ=${FAIL_READ:-none} FAIL_DISPATCH=${FAIL_DISPATCH:-none} WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
 expect() { # expect <name> <output> <text it must contain>
   case "$2" in *"$3"*) ;; *)
     echo "FAIL: $1: no [$3] in [$2]"
@@ -233,6 +235,32 @@ fi
 # in between, but a label the workflow removed starts a fresh one.
 expect "an edit before the owner's own relabel still counts" "$(run --state 23 | jq -c .edited_after_ready)" true
 expect "an edit before the workflow removed the label doesn't" "$(run --state 24 | jq -c .edited_after_ready)" false
+
+# The gate answers a relabel on a ticket that's already building (#26: #21 with its pull request open).
+jq '.data.repository.issue.number = 26 | .data.repository.issue.closedByPullRequestsReferences.nodes = [{number: 99}]' \
+  "$work/issue-21.json" >"$work/issue-26.json"
+: >"$work/writes"
+output=$(GITHUB_OUTPUT=$work/out run --gate 26)
+expect "relabeling a building ticket is ok" "$output" "#26: ok"
+expect "and gets an answer" "$(cat "$work/writes")" "issue comment 26"
+
+# What closed an issue is its last close: a pull request's earlier close doesn't count.
+expect "a reopened issue closed by hand counts as unmerged" "$(run --state 25 | jq -r .closed)" unmerged
+
+# A ticket that can't be read doesn't stop the sweep, and turns the run red. One that's building
+# stays in flight, so nothing starts beside it.
+echo '[]' >"$work/building.json"
+echo '[{"number":11},{"number":10}]' >"$work/ready.json"
+: >"$work/writes"
+status=0
+output=$(FAIL_READ=11 run) || status=$?
+expect "an unreadable ready ticket is skipped" "$output" "Couldn't read #11"
+expect "and the rest are still decided" "$output" "#10: start"
+[ "$status" -ne 0 ] || { echo "FAIL: a sweep with an unreadable ticket exits 0"; failures=$((failures + 1)); }
+echo '[{"number":21}]' >"$work/building.json"
+echo '[{"number":10}]' >"$work/ready.json"
+output=$(FAIL_READ=21 run) || true
+expect "an unreadable building ticket stays in flight" "$output" "#10: queue"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

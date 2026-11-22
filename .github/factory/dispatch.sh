@@ -106,7 +106,7 @@ query='query($owner: String!, $name: String!, $number: Int!) {
           number
           state
           timelineItems(itemTypes: [CLOSED_EVENT], last: 1) {
-            nodes { ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } }
+            nodes { __typename ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } }
           }
         }
       }
@@ -118,10 +118,14 @@ query='query($owner: String!, $name: String!, $number: Int!) {
 # merge commit of the pull request that closed it, or the commit itself.
 gather() {
   local raw state
-  raw=$("$GH" api graphql -F owner="$owner" -F name="${repo#*/}" -F number="$1" -f query="$query")
+  raw=$("$GH" api graphql -F owner="$owner" -F name="${repo#*/}" -F number="$1" -f query="$query") || return 1
+  [ -n "$raw" ] || return 1
   state=$(jq -c --arg owner "$owner" --argjson now "$now" '
     def age($t): (($now - ($t | fromdateiso8601)) / 60 | floor);
-    def sha: [.nodes[] | .closer? // empty | if .__typename == "PullRequest" then (if .merged then .mergeCommit.oid else empty end) else .oid end] | last // "";
+    # What closed it the last time: a reopened issue closed by hand has no closer, even if a pull
+    # request closed it before.
+    def sha: ([.nodes[] | select(.__typename == "ClosedEvent")] | last | .closer) as $c
+      | if $c == null then "" elif $c.__typename == "PullRequest" then (if $c.merged then $c.mergeCommit.oid else "" end) else $c.oid end;
     .data.repository.issue as $i
     | [$i.labels.nodes[].name] as $labels
     | [$i.timelineItems.nodes[] | select(.__typename == "LabeledEvent")] as $labeled
@@ -147,7 +151,8 @@ gather() {
        building: (if ($labels | index("building")) != null
                   then {age: (if $building != null then age($building.createdAt) else 0 end), has_pr: ($i.closedByPullRequestsReferences.nodes | length > 0)} else null end),
        blockers: [$i.blockedBy.nodes[] | {number, open: (.state == "OPEN"), sha: (.timelineItems | sha)}]}
-  ' <<<"$raw")
+  ' <<<"$raw") || return 1
+  [ -n "$state" ] || return 1
 
   local closed=null
   if [ "$(jq -r .open <<<"$state")" = false ]; then
@@ -188,6 +193,7 @@ act() { # act <mode> <issue> <decision JSON> <state JSON>
   local always=
   [ "$1" != gate ] || always=always
   case "$action" in
+    ok) [ "$1" != gate ] || say "$2" "The factory is already building this, so there's nothing to start. ADR-0047." always ;;
     ignore)
       # Only the gate answers an ignore: the owner just added the label and should see why nothing ran.
       [ "$1" != gate ] || say "$2" "The factory didn't start this: $reason. ADR-0047." always
@@ -234,9 +240,17 @@ fi
 
 # Tickets in flight: labeled `building`, open or merged but not yet deployed. Releases the rest.
 in_flight='[]'
+failed=0
 while read -r number; do
   [ -n "$number" ] || continue
-  state=$(gather "$number" | jq -c '.others_building = []')
+  # One that can't be read stays in flight: better a stalled queue than two builds at once.
+  if ! state=$(gather "$number"); then
+    echo "::warning::Couldn't read #$number; it counts as in flight."
+    in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
+    failed=1
+    continue
+  fi
+  state=$(jq -c '.others_building = []' <<<"$state")
   decision=$(jq -c "$decide" <<<"$state")
   case "$(jq -r .action <<<"$decision")" in
     # Closed and deployed, or open with no pull request long after it started (handed to a human,
@@ -253,7 +267,7 @@ done < <("$GH" issue list -R "$repo" --label building --state all --limit 100 --
 # if it were deciding now; if not, release it and say why, and the next sweep decides again.
 if [ "${1:-}" = --verify ]; then
   number=$2
-  state=$(gather "$number")
+  state=$(gather "$number") || { echo "::error::Couldn't read #$number."; exit 1; }
   decision=$(jq -c --argjson f "$in_flight" --argjson n "$number" \
     '(.building != null) as $marked | (.building = null | .others_building = ($f - [$n]) | '"$decide"') + {marked: $marked}' <<<"$state")
   action=$(jq -r .action <<<"$decision")
@@ -273,7 +287,8 @@ fi
 
 if [ "${1:-}" = --gate ]; then
   number=$2
-  state=$(gather "$number" | jq -c --argjson f "$in_flight" --argjson n "$number" '.others_building = ($f - [$n])')
+  state=$(gather "$number") || { echo "::error::Couldn't read #$number."; exit 1; }
+  state=$(jq -c --argjson f "$in_flight" --argjson n "$number" '.others_building = ($f - [$n])' <<<"$state")
   act gate "$number" "$(jq -c "$decide" <<<"$state")" "$state"
   exit 0
 fi
@@ -283,9 +298,15 @@ fi
 states=()
 while read -r number; do
   [ -n "$number" ] || continue
-  states+=("$(gather "$number")")
+  # One that can't be read is skipped this time; the rest are still decided.
+  if state=$(gather "$number"); then
+    states+=("$state")
+  else
+    echo "::warning::Couldn't read #$number; carrying on with the rest."
+    failed=1
+  fi
 done < <("$GH" issue list -R "$repo" --label ready --state open --limit 100 --json number --jq '.[].number')
-[ "${#states[@]}" -gt 0 ] || exit 0
+[ "${#states[@]}" -gt 0 ] || exit "$failed"
 while read -r state; do
   number=$(jq -r .number <<<"$state")
   decision=$(jq -c --argjson f "$in_flight" '.others_building = ($f - [.number])' <<<"$state" | jq -c "$decide")
@@ -293,3 +314,5 @@ while read -r state; do
     in_flight=$(jq -c --argjson n "$number" '. + [$n]' <<<"$in_flight")
   fi
 done < <(printf '%s\n' "${states[@]}" | jq -sc 'sort_by(.ready.at // "") | .[]')
+# A ticket that couldn't be read turns the run red, so it gets noticed.
+exit "$failed"
