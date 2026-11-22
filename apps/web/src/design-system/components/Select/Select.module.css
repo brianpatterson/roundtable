@@ -64,8 +64,9 @@
   transform: rotate(180deg);
 }
 
+/* Above a Dialog's popup (20), so a Select inside a dialog opens over it. */
 .positioner {
-  z-index: 10;
+  z-index: 30;
   outline: none;
 }
 

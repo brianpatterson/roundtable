@@ -1,0 +1,175 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "6499be9b-e089-406b-acaf-226b44320a67",
+  "prevIds": [
+    "45ddbd63-5414-44b8-8006-807e8c995ccf"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "starts_at"
+      ],
+      "writes": [
+        "s|col|public.rounds.starts_at",
+        "n|col|public.rounds.starts_at",
+        "e|col|public.rounds.starts_at"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "duration_minutes"
+      ],
+      "writes": [
+        "s|col|public.rounds.duration_minutes",
+        "n|col|public.rounds.duration_minutes",
+        "e|col|public.rounds.duration_minutes"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "due_on"
+      ],
+      "writes": [
+        "s|col|public.rounds.due_on",
+        "n|col|public.rounds.due_on",
+        "e|col|public.rounds.due_on"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "rounds"
+      ],
+      "writes": [
+        "s|ck|public.rounds.rounds_start_or_due_check",
+        "n|ck|public.rounds.rounds_start_or_due_check",
+        "e|ck|public.rounds.rounds_start_or_due_check",
+        "n|con|public.rounds.rounds_start_or_due_check"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|col|public.rounds.starts_at",
+        "n|col|public.rounds.due_on"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "rounds"
+      ],
+      "writes": [
+        "s|ck|public.rounds.rounds_duration_check",
+        "n|ck|public.rounds.rounds_duration_check",
+        "e|ck|public.rounds.rounds_duration_check",
+        "n|con|public.rounds.rounds_duration_check"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|col|public.rounds.duration_minutes",
+        "n|col|public.rounds.starts_at"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "starts_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "duration_minutes",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "due_on",
+        "type": "date",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "rounds_start_or_due_check",
+        "value": "\"starts_at\" is null or \"due_on\" is null",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "rounds_duration_check",
+        "value": "\"duration_minutes\" is null or (\"starts_at\" is not null and \"duration_minutes\" between 5 and 480)",
+        "entityType": "checks"
+      }
+    }
+  ]
+}

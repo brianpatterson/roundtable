@@ -1,0 +1,7 @@
+/* The kind of schedule and its fields on one line, wrapping on narrow screens. */
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ds-space-3);
+}
