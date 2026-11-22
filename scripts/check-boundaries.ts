@@ -33,6 +33,7 @@ function moduleOf(path: string): string | undefined {
 }
 
 const designSystem = 'apps/web/src/design-system/';
+
 // The shell owns the routes; modules link through the design system's Link and navigate through
 // shared/ (ADR-0049).
 const routerUsers = ['apps/web/src/shell/', designSystem, 'apps/web/src/shared/'];
