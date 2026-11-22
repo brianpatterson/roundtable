@@ -7,6 +7,8 @@
 //      modules are plain ids, never foreign keys (ADR-0044).
 //   5. Code outside design-system/ imports it only through its index.ts, and only design-system/
 //      imports @base-ui/react (ADR-0024), so replacing Base UI touches one folder.
+//   6. Only shell/, design-system/ and shared/ import @tanstack/react-router (ADR-0049): the shell
+//      owns the routes, and modules link and navigate through the other two.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
@@ -31,6 +33,9 @@ function moduleOf(path: string): string | undefined {
 }
 
 const designSystem = 'apps/web/src/design-system/';
+// The shell owns the routes; modules link through the design system's Link and navigate through
+// shared/ (ADR-0049).
+const routerUsers = ['apps/web/src/shell/', designSystem, 'apps/web/src/shared/'];
 const identity = 'apps/api/src/modules/identity';
 
 function isAssembly(path: string): boolean {
@@ -78,6 +83,12 @@ for (const file of sources.flatMap(walk)) {
 
     if (specifier.startsWith('@base-ui/') && !file.startsWith(designSystem))
       problems.push(`${where} (only the design system uses Base UI; import from design-system)`);
+
+    if (
+      specifier.startsWith('@tanstack/react-router') &&
+      !routerUsers.some((dir) => file.startsWith(dir))
+    )
+      problems.push(`${where} (only shell, design-system and shared use the router; ADR-0049)`);
 
     if (!specifier.startsWith('.')) continue;
     const target = resolve(file, specifier);

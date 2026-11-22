@@ -8,7 +8,9 @@
 The web app has no routing: the shell shows sign-in or the applications table. Phase 4 needs
 pages of their own, starting with one per Application (brianpatterson/roundtable#130), that can
 be bookmarked, reloaded and linked to from the Agenda later. Caddy already serves `index.html`
-for every path, so client-side routing needs no server change.
+for every path; it marked only `/index.html` itself `no-cache`, so a page's own path could serve
+a cached `index.html` pointing at assets a deploy had removed. This change marks every response but
+the fingerprinted assets `no-cache`.
 
 The software factory stopped on #130 because it couldn't install the router. Its allowlist permits
 `pnpm add` and `pnpm install`, but its sandbox
@@ -33,7 +35,9 @@ route tree). The **shell owns the routes**: it creates the router inside `AuthGa
 deep link shows sign-in and then the same URL, and maps each path to a module's root component,
 passing the parsed params as props. Modules don't import each other and don't define routes
 ([ADR-0023](0023-modular-monolith-layout.md)); they link through a design-system `Link` built
-with the router's `createLink`, so links keep the design system's look and stay type-checked.
+with the router's `createLink`, so links keep the design system's look and stay type-checked, and
+navigate after an action (to a new application's page, say) through a typed helper in `shared/`.
+Only `shell/`, `design-system/` and `shared/` import the router; `pnpm check:boundaries` enforces it.
 Data still loads through TanStack Query, not the router's loaders.
 
 ## Consequences

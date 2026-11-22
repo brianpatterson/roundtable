@@ -24,10 +24,12 @@ www.{$DOMAIN} {
 
 	handle {
 		root * /srv
-		# Vite fingerprints asset filenames, so they can be cached forever. index.html must not be.
+		# Vite fingerprints asset filenames, so they can be cached forever. Everything else, index.html
+		# served for any page's path included, must not be: a stale one points at assets a deploy removed.
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
-		header /index.html Cache-Control "no-cache"
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
 	}
