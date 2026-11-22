@@ -168,14 +168,27 @@ const renderPage = async () => {
   await screen.findByRole('heading', { name: 'Rounds' });
 };
 
-/** The Rounds as the list shows them, in order. */
-const listed = async () => {
-  const list = await screen.findByRole('list', { name: 'Rounds' });
+/** Formatted dates' narrow spaces become plain. */
+const plain = (text: string | null | undefined) => text?.replace(/\s+/g, ' ');
 
-  return within(list)
-    .getAllByRole('listitem')
-    .map((item) => within(item).getByText(/^Round \d+:/).textContent);
-};
+/** The Rounds' items in the list, in order. */
+const items = async () =>
+  within(await screen.findByRole('list', { name: 'Rounds' })).getAllByRole('listitem');
+
+/** A listed Round's name, as its buttons carry it: `Coding (Not scheduled yet)`. */
+const nameOf = (item: HTMLElement) =>
+  plain(
+    within(item)
+      .getByRole('button', { name: /^Delete / })
+      .getAttribute('aria-label'),
+  )?.slice('Delete '.length) ?? '';
+
+/** The Rounds as the page names them (their type and when), in order. */
+const listed = async () => (await items()).map(nameOf);
+
+/** The type a listed Round shows: the text its name starts with. */
+const typeShown = (item: HTMLElement) =>
+  within(item).getByText(nameOf(item).split(' (')[0] ?? '', { selector: 'span' });
 
 /** The status the page's fields show. */
 const statusShown = () => {
@@ -190,18 +203,9 @@ const addRound = async (type: string) => {
   await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 };
 
-/** When each listed Round is, as the list shows it. Formatted dates' narrow spaces become plain. */
-const whenListed = async () => {
-  const list = await screen.findByRole('list', { name: 'Rounds' });
-
-  return within(list)
-    .getAllByRole('listitem')
-    .map((item) =>
-      within(item)
-        .getByText(/^Round \d+:/)
-        .nextSibling?.textContent?.replace(/\s+/g, ' '),
-    );
-};
+/** When each listed Round is, as the list shows it under its type. */
+const whenListed = async () =>
+  (await items()).map((item) => plain(typeShown(item).nextSibling?.textContent));
 
 /** Picks how a Round is scheduled, in the add form or the edit dialog. */
 const pickWhen = async (scope: HTMLElement, label: string) => {
@@ -215,17 +219,22 @@ const fill = (scope: HTMLElement, label: string, value: string) =>
 
 const addForm = () => screen.getByRole('form', { name: 'Add a round' });
 
-const openScheduleDialog = async (name: string) => {
-  await userEvent.click(await screen.findByRole('button', { name: `Edit schedule of ${name}` }));
-  const dialog = await screen.findByRole('alertdialog', { name: `Schedule ${name}` });
+/** A Round's buttons are named after its type and when it is: `Coding (Not scheduled yet)`. */
+const named = (verb: string, type: string) => new RegExp(`^${verb} ${type} \\(`);
+
+const openScheduleDialog = async (type: string) => {
+  await userEvent.click(
+    await screen.findByRole('button', { name: named('Edit schedule of', type) }),
+  );
+  const dialog = await screen.findByRole('alertdialog', { name: 'Schedule round' });
 
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
 
   return dialog;
 };
 
-const openDeleteDialog = async (name: string) => {
-  await userEvent.click(await screen.findByRole('button', { name: `Delete ${name}` }));
+const openDeleteDialog = async (type: string) => {
+  await userEvent.click(await screen.findByRole('button', { name: named('Delete', type) }));
   const dialog = await screen.findByRole('alertdialog', { name: 'Delete round?' });
 
   // Base UI moves focus in on the next frame.
@@ -242,15 +251,21 @@ describe('Rounds on an application’s page', () => {
     expect(screen.queryByRole('list', { name: 'Rounds' })).toBeNull();
   });
 
-  it('lists the Rounds in the order the server sends them, numbered', async () => {
+  it('lists the Rounds in the order the server sends them, by type, without numbers', async () => {
     stored = [round(1, 'recruiter_screen'), round(2, 'take_home'), round(3, 'system_design')];
     await renderPage();
 
     expect(await listed()).toEqual([
-      'Round 1: Recruiter screen',
-      'Round 2: Take-home',
-      'Round 3: System design',
+      'Recruiter screen (Not scheduled yet)',
+      'Take-home (Not scheduled yet)',
+      'System design (Not scheduled yet)',
     ]);
+    expect((await items()).map((item) => typeShown(item).textContent)).toEqual([
+      'Recruiter screen',
+      'Take-home',
+      'System design',
+    ]);
+    expect(screen.queryByText(/Round \d/)).toBeNull();
   });
 
   it('offers every Interview type, in the fixed order', async () => {
@@ -275,7 +290,7 @@ describe('Rounds on an application’s page', () => {
     await renderPage();
     await addRound('Coding');
 
-    await waitFor(async () => expect(await listed()).toEqual(['Round 1: Coding']));
+    await waitFor(async () => expect(await listed()).toEqual(['Coding (Not scheduled yet)']));
     expect(added).toEqual([{ interviewType: 'coding' }]);
     expect(screen.queryByText('No rounds yet.')).toBeNull();
   });
@@ -284,7 +299,9 @@ describe('Rounds on an application’s page', () => {
     await renderPage();
     await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 
-    await waitFor(async () => expect(await listed()).toEqual(['Round 1: Recruiter screen']));
+    await waitFor(async () =>
+      expect(await listed()).toEqual(['Recruiter screen (Not scheduled yet)']),
+    );
   });
 
   it('shows the application as interviewing once its first Round is added', async () => {
@@ -311,14 +328,14 @@ describe('Rounds on an application’s page', () => {
     stored = [round(1, 'coding'), round(2, 'behavioral')];
     await renderPage();
 
-    const dialog = await openDeleteDialog('Round 2');
+    const dialog = await openDeleteDialog('Behavioral');
 
-    expect(dialog.textContent).toContain('Round 2 (Behavioral) will be deleted.');
+    expect(dialog.textContent).toContain('Behavioral (Not scheduled yet) will be deleted.');
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(await listed()).toEqual(['Round 1: Coding']);
+    expect(await listed()).toEqual(['Coding (Not scheduled yet)']);
     expect(stored.map((r) => r.id)).toEqual([roundId(1)]);
   });
 
@@ -326,20 +343,20 @@ describe('Rounds on an application’s page', () => {
     stored = [round(1, 'coding')];
     await renderPage();
 
-    const dialog = await openDeleteDialog('Round 1');
+    const dialog = await openDeleteDialog('Coding');
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(stored).toHaveLength(1);
-    expect(await listed()).toEqual(['Round 1: Coding']);
+    expect(await listed()).toEqual(['Coding (Not scheduled yet)']);
   });
 
   it('closes the dialog when the Round was already deleted elsewhere', async () => {
     stored = [round(1, 'coding')];
     await renderPage();
 
-    const dialog = await openDeleteDialog('Round 1');
+    const dialog = await openDeleteDialog('Coding');
 
     stored = [];
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
@@ -352,7 +369,7 @@ describe('Rounds on an application’s page', () => {
     stored = [round(1, 'coding')];
     await renderPage();
 
-    const dialog = await openDeleteDialog('Round 1');
+    const dialog = await openDeleteDialog('Coding');
 
     failWrites = 500;
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
@@ -517,7 +534,7 @@ describe('a Round’s schedule', () => {
     stored = [round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 })];
     await renderPage();
 
-    const dialog = await openScheduleDialog('Round 1');
+    const dialog = await openScheduleDialog('Coding');
 
     expect(within(dialog).getByRole('combobox', { name: 'When' }).textContent).toBe('At a time');
     expect(within(dialog).getByLabelText<HTMLInputElement>('Starts').value).toBe(
@@ -530,7 +547,7 @@ describe('a Round’s schedule', () => {
     stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
     await renderPage();
 
-    const dialog = await openScheduleDialog('Round 1');
+    const dialog = await openScheduleDialog('Take-home');
 
     expect(within(dialog).getByRole('combobox', { name: 'When' }).textContent).toBe(
       'Due by a date',
@@ -542,7 +559,7 @@ describe('a Round’s schedule', () => {
     stored = [round(1, 'coding')];
     await renderPage();
 
-    let dialog = await openScheduleDialog('Round 1');
+    let dialog = await openScheduleDialog('Coding');
 
     expect(within(dialog).getByRole('combobox', { name: 'When' }).textContent).toBe(
       'Not scheduled yet',
@@ -554,14 +571,14 @@ describe('a Round’s schedule', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(await whenListed()).toEqual(['Nov 25, 2026, 9:15 AM']);
 
-    dialog = await openScheduleDialog('Round 1');
+    dialog = await openScheduleDialog('Coding');
     await pickWhen(dialog, 'Due by a date');
     fill(dialog, 'Due date', '2026-11-30');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(async () => expect(await whenListed()).toEqual(['Due Nov 30, 2026']));
 
-    dialog = await openScheduleDialog('Round 1');
+    dialog = await openScheduleDialog('Coding');
     await pickWhen(dialog, 'Not scheduled yet');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
@@ -577,7 +594,7 @@ describe('a Round’s schedule', () => {
     stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
     await renderPage();
 
-    const dialog = await openScheduleDialog('Round 1');
+    const dialog = await openScheduleDialog('Take-home');
 
     fill(dialog, 'Due date', '2026-12-05');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -591,7 +608,7 @@ describe('a Round’s schedule', () => {
     stored = [round(1, 'coding')];
     await renderPage();
 
-    const dialog = await openScheduleDialog('Round 1');
+    const dialog = await openScheduleDialog('Coding');
 
     await pickWhen(dialog, 'At a time');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
@@ -609,7 +626,7 @@ describe('a Round’s schedule', () => {
     stored = [round(1, 'coding')];
     await renderPage();
 
-    const dialog = await openScheduleDialog('Round 1');
+    const dialog = await openScheduleDialog('Coding');
 
     if (code === 404) stored = [];
     else failWrites = code;
@@ -648,9 +665,9 @@ describe('a Round’s schedule', () => {
     await renderPage();
 
     expect(await listed()).toEqual([
-      'Round 1: Coding',
-      'Round 2: Take-home',
-      'Round 3: Behavioral',
+      'Coding (Nov 25, 2026, 10:00 AM)',
+      'Take-home (Due Dec 1, 2026)',
+      'Behavioral (Not scheduled yet)',
     ]);
     expect(await whenListed()).toEqual([
       'Nov 25, 2026, 10:00 AM',
