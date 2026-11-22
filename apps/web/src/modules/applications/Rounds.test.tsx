@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestRouter, TestRouterProvider } from '../../shared/testing/router';
@@ -12,13 +12,21 @@ const ROUNDS_PATH = `/api/applications/${ACME_ID}/rounds`;
 
 const TIMESTAMP = '2026-11-01T00:00:00.000Z';
 
-interface StoredRound {
+interface Schedule {
+  startsAt: string | null;
+  durationMinutes: number | null;
+  dueOn: string | null;
+}
+
+interface StoredRound extends Schedule {
   id: string;
   applicationId: string;
   interviewType: string;
   createdAt: string;
   updatedAt: string;
 }
+
+const NOT_SCHEDULED: Schedule = { startsAt: null, durationMinutes: null, dueOn: null };
 
 let status: string;
 let stored: StoredRound[];
@@ -29,6 +37,9 @@ let failWrites: number | undefined;
 
 /** The bodies the page sent to add Rounds. */
 let added: unknown[];
+
+/** The bodies the page sent to change a Round's schedule. */
+let scheduled: unknown[];
 
 const roundId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -57,7 +68,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     if (failWrites) return new Response(null, { status: failWrites });
 
     // SAFETY: the typed client encoded this body with the contract's CreateRound schema.
-    const body = (await request.json()) as { interviewType: string };
+    const body = (await request.json()) as { interviewType: string } & Partial<Schedule>;
 
     added.push(body);
 
@@ -67,9 +78,10 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     nextRound += 1;
 
     const round = {
+      ...NOT_SCHEDULED,
+      ...body,
       id: roundId(nextRound),
       applicationId: ACME_ID,
-      interviewType: body.interviewType,
       createdAt: TIMESTAMP,
       updatedAt: TIMESTAMP,
     };
@@ -77,6 +89,27 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     stored = [...stored, round];
 
     return Response.json(round, { status: 201 });
+  }
+
+  if (request.method === 'PUT' && pathname.endsWith('/schedule')) {
+    if (failWrites) return new Response(null, { status: failWrites });
+
+    const id = pathname.slice(ROUNDS_PATH.length + 1, -'/schedule'.length);
+    const existing = stored.find((r) => r.id === id);
+
+    if (!existing) return notFound('RoundNotFound');
+
+    // SAFETY: the typed client encoded this body with the contract's RoundSchedule schema.
+    const body = (await request.json()) as Partial<Schedule>;
+
+    scheduled.push(body);
+
+    // The whole schedule is replaced: what isn't sent is cleared.
+    const round = { ...existing, ...NOT_SCHEDULED, ...body };
+
+    stored = stored.map((r) => (r.id === id ? round : r));
+
+    return Response.json(round);
   }
 
   if (request.method === 'DELETE' && pathname.startsWith(`${ROUNDS_PATH}/`)) {
@@ -94,10 +127,16 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   return notFound('ApplicationNotFound');
 }
 
-const round = (n: number, interviewType: string): StoredRound => ({
+const round = (
+  n: number,
+  interviewType: string,
+  schedule: Partial<Schedule> = {},
+): StoredRound => ({
   id: roundId(n),
   applicationId: ACME_ID,
   interviewType,
+  ...NOT_SCHEDULED,
+  ...schedule,
   createdAt: TIMESTAMP,
   updatedAt: TIMESTAMP,
 });
@@ -108,6 +147,7 @@ beforeEach(() => {
   nextRound = 100;
   failWrites = undefined;
   added = [];
+  scheduled = [];
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -148,6 +188,40 @@ const addRound = async (type: string) => {
   await userEvent.click(screen.getByRole('combobox', { name: 'Interview type' }));
   await userEvent.click(await screen.findByRole('option', { name: type }));
   await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+};
+
+/** When each listed Round is, as the list shows it. Formatted dates' narrow spaces become plain. */
+const whenListed = async () => {
+  const list = await screen.findByRole('list', { name: 'Rounds' });
+
+  return within(list)
+    .getAllByRole('listitem')
+    .map((item) =>
+      within(item)
+        .getByText(/^Round \d+:/)
+        .nextSibling?.textContent?.replace(/\s+/g, ' '),
+    );
+};
+
+/** Picks how a Round is scheduled, in the add form or the edit dialog. */
+const pickWhen = async (scope: HTMLElement, label: string) => {
+  await userEvent.click(within(scope).getByRole('combobox', { name: 'When' }));
+  await userEvent.click(await screen.findByRole('option', { name: label }));
+};
+
+/** Sets a date or time field the way the browser's picker does: the whole value at once. */
+const fill = (scope: HTMLElement, label: string, value: string) =>
+  fireEvent.change(within(scope).getByLabelText(label), { target: { value } });
+
+const addForm = () => screen.getByRole('form', { name: 'Add a round' });
+
+const openScheduleDialog = async (name: string) => {
+  await userEvent.click(await screen.findByRole('button', { name: `Edit schedule of ${name}` }));
+  const dialog = await screen.findByRole('alertdialog', { name: `Schedule ${name}` });
+
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+  return dialog;
 };
 
 const openDeleteDialog = async (name: string) => {
@@ -287,5 +361,282 @@ describe('Rounds on an application’s page', () => {
       'Something went wrong. Please try again.',
     );
     expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+});
+
+// The tests run in America/Los_Angeles (vite.config.ts): UTC−8 on these November dates.
+describe('a Round’s schedule', () => {
+  it('adds a Round at a local time with a duration, and shows its start and end', async () => {
+    await renderPage();
+    await pickWhen(addForm(), 'At a time');
+    fill(addForm(), 'Starts', '2026-11-25T10:00');
+    fill(addForm(), 'Duration (minutes)', '90');
+    await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+    await waitFor(async () =>
+      expect(await whenListed()).toEqual(['Nov 25, 2026, 10:00 – 11:30 AM']),
+    );
+    expect(added).toEqual([
+      {
+        interviewType: 'recruiter_screen',
+        startsAt: '2026-11-25T18:00:00.000Z',
+        durationMinutes: 90,
+      },
+    ]);
+  });
+
+  it('adds a Round with a start and no duration, showing just its start', async () => {
+    await renderPage();
+    await pickWhen(addForm(), 'At a time');
+    fill(addForm(), 'Starts', '2026-11-25T16:30');
+    await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+    await waitFor(async () => expect(await whenListed()).toEqual(['Nov 25, 2026, 4:30 PM']));
+    expect(added).toEqual([
+      { interviewType: 'recruiter_screen', startsAt: '2026-11-26T00:30:00.000Z' },
+    ]);
+  });
+
+  it('shows a start the server sends in the user’s time zone, a day earlier than UTC', async () => {
+    stored = [round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 })];
+    await renderPage();
+
+    expect(await whenListed()).toEqual(['Nov 25, 2026, 5:30 – 6:15 PM']);
+  });
+
+  it('adds a take-home due on a date, and shows it as due that day', async () => {
+    await renderPage();
+    await userEvent.click(screen.getByRole('combobox', { name: 'Interview type' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Take-home' }));
+    await pickWhen(addForm(), 'Due by a date');
+    fill(addForm(), 'Due date', '2026-12-01');
+    await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+    await waitFor(async () => expect(await whenListed()).toEqual(['Due Dec 1, 2026']));
+    expect(added).toEqual([{ interviewType: 'take_home', dueOn: '2026-12-01' }]);
+  });
+
+  it('adds a Round with neither as not scheduled yet', async () => {
+    await renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+    await waitFor(async () => expect(await whenListed()).toEqual(['Not scheduled yet']));
+    expect(added).toEqual([{ interviewType: 'recruiter_screen' }]);
+  });
+
+  it('sends only the picked kind’s fields after switching kinds', async () => {
+    await renderPage();
+    await pickWhen(addForm(), 'At a time');
+    fill(addForm(), 'Starts', '2026-11-25T10:00');
+    await pickWhen(addForm(), 'Due by a date');
+    fill(addForm(), 'Due date', '2026-12-01');
+    await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+    await waitFor(() =>
+      expect(added).toEqual([{ interviewType: 'recruiter_screen', dueOn: '2026-12-01' }]),
+    );
+  });
+
+  it('clears the schedule fields once a Round is added', async () => {
+    await renderPage();
+    await pickWhen(addForm(), 'Due by a date');
+    fill(addForm(), 'Due date', '2026-12-01');
+    await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+    await waitFor(async () => expect(await whenListed()).toEqual(['Due Dec 1, 2026']));
+    expect(within(addForm()).getByRole('combobox', { name: 'When' }).textContent).toBe(
+      'Not scheduled yet',
+    );
+    expect(within(addForm()).queryByLabelText('Due date')).toBeNull();
+  });
+
+  it.each([
+    ['a start time', 'At a time', [], 'Enter the date and time it starts.'],
+    ['a due date', 'Due by a date', [], 'Enter the date it’s due.'],
+    [
+      'a duration under 5 minutes',
+      'At a time',
+      [
+        ['Starts', '2026-11-25T10:00'],
+        ['Duration (minutes)', '4'],
+      ],
+      'The duration is a whole number of minutes, from 5 to 480.',
+    ],
+    [
+      'a duration over 480 minutes',
+      'At a time',
+      [
+        ['Starts', '2026-11-25T10:00'],
+        ['Duration (minutes)', '481'],
+      ],
+      'The duration is a whole number of minutes, from 5 to 480.',
+    ],
+    [
+      'a fractional duration',
+      'At a time',
+      [
+        ['Starts', '2026-11-25T10:00'],
+        ['Duration (minutes)', '30.5'],
+      ],
+      'The duration is a whole number of minutes, from 5 to 480.',
+    ],
+  ] satisfies [string, string, [string, string][], string][])(
+    'says what’s missing without sending anything: %s',
+    async (_name, kind, fields, message) => {
+      await renderPage();
+      await pickWhen(addForm(), kind);
+
+      for (const [label, value] of fields) fill(addForm(), label, value);
+      await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+
+      expect((await screen.findByRole('alert')).textContent).toBe(message);
+      expect(added).toEqual([]);
+    },
+  );
+
+  it('accepts the shortest and longest durations', async () => {
+    await renderPage();
+
+    for (const [i, minutes] of ['5', '480'].entries()) {
+      await pickWhen(addForm(), 'At a time');
+      fill(addForm(), 'Starts', '2026-11-25T10:00');
+      fill(addForm(), 'Duration (minutes)', minutes);
+      await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
+      await waitFor(() => expect(added).toHaveLength(i + 1));
+    }
+
+    const startsAt = '2026-11-25T18:00:00.000Z';
+
+    expect(added).toEqual([
+      { interviewType: 'recruiter_screen', startsAt, durationMinutes: 5 },
+      { interviewType: 'recruiter_screen', startsAt, durationMinutes: 480 },
+    ]);
+  });
+
+  it('opens the editor with the Round’s schedule filled in', async () => {
+    stored = [round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 })];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Round 1');
+
+    expect(within(dialog).getByRole('combobox', { name: 'When' }).textContent).toBe('At a time');
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Starts').value).toBe(
+      '2026-11-25T17:30',
+    );
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Duration (minutes)').value).toBe('45');
+  });
+
+  it('opens the editor for a take-home with its due date', async () => {
+    stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Round 1');
+
+    expect(within(dialog).getByRole('combobox', { name: 'When' }).textContent).toBe(
+      'Due by a date',
+    );
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Due date').value).toBe('2026-12-01');
+  });
+
+  it('sets, changes and clears a Round’s schedule', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    let dialog = await openScheduleDialog('Round 1');
+
+    expect(within(dialog).getByRole('combobox', { name: 'When' }).textContent).toBe(
+      'Not scheduled yet',
+    );
+    await pickWhen(dialog, 'At a time');
+    fill(dialog, 'Starts', '2026-11-25T09:15');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(await whenListed()).toEqual(['Nov 25, 2026, 9:15 AM']);
+
+    dialog = await openScheduleDialog('Round 1');
+    await pickWhen(dialog, 'Due by a date');
+    fill(dialog, 'Due date', '2026-11-30');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(async () => expect(await whenListed()).toEqual(['Due Nov 30, 2026']));
+
+    dialog = await openScheduleDialog('Round 1');
+    await pickWhen(dialog, 'Not scheduled yet');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(async () => expect(await whenListed()).toEqual(['Not scheduled yet']));
+    expect(scheduled).toEqual([
+      { startsAt: '2026-11-25T17:15:00.000Z' },
+      { dueOn: '2026-11-30' },
+      {},
+    ]);
+  });
+
+  it('keeps the schedule when the user cancels', async () => {
+    stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Round 1');
+
+    fill(dialog, 'Due date', '2026-12-05');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(scheduled).toEqual([]);
+    expect(await whenListed()).toEqual(['Due Dec 1, 2026']);
+  });
+
+  it('keeps the editor open with what’s missing, sending nothing', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Round 1');
+
+    await pickWhen(dialog, 'At a time');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Enter the date and time it starts.',
+    );
+    expect(scheduled).toEqual([]);
+  });
+
+  it.each([
+    [500, 'Something went wrong. Please try again.'],
+    [404, 'That round no longer exists.'],
+  ])('keeps the editor open with the error when saving fails (%i)', async (code, message) => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Round 1');
+
+    if (code === 404) stored = [];
+    else failWrites = code;
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(message);
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('shows the Rounds in the server’s order, dated or not', async () => {
+    stored = [
+      round(1, 'coding', { startsAt: '2026-11-25T18:00:00.000Z' }),
+      round(2, 'take_home', { dueOn: '2026-12-01' }),
+      round(3, 'behavioral'),
+    ];
+    await renderPage();
+
+    expect(await listed()).toEqual([
+      'Round 1: Coding',
+      'Round 2: Take-home',
+      'Round 3: Behavioral',
+    ]);
+    expect(await whenListed()).toEqual([
+      'Nov 25, 2026, 10:00 AM',
+      'Due Dec 1, 2026',
+      'Not scheduled yet',
+    ]);
   });
 });

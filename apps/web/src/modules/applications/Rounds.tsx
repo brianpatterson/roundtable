@@ -5,12 +5,20 @@ import {
   RoundNotFound,
   type InterviewType,
   type Round,
+  type RoundSchedule,
 } from '@roundtable/contract';
 import { ApiError } from '@roundtable/contract/client';
 import { Alert, Button, Dialog, Select } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './Rounds.module.css';
-import { interviewTypeLabel } from './format';
+import {
+  EMPTY_SCHEDULE,
+  ScheduleFields,
+  draftOf,
+  scheduleOf,
+  type ScheduleDraft,
+} from './Schedule';
+import { interviewTypeLabel, scheduleLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
 
 const typeOptions = INTERVIEW_TYPES.map((type) => ({
@@ -35,7 +43,10 @@ async function deleteRound({ applicationId, id }: Round) {
   }
 }
 
-/** An application's Rounds, in the order they were added, with a form to add one. */
+/**
+ * An application's Rounds, dated ones first in date order and the rest as they were added (the
+ * server's order), with a form to add one and a dialog to change one's schedule.
+ */
 export function Rounds({ applicationId }: { applicationId: string }) {
   const queryClient = useQueryClient();
   const headingId = useId();
@@ -46,24 +57,30 @@ export function Rounds({ applicationId }: { applicationId: string }) {
   });
 
   const [interviewType, setInterviewType] = useState<InterviewType>(INTERVIEW_TYPES[0]);
+  const [schedule, setSchedule] = useState<ScheduleDraft>(EMPTY_SCHEDULE);
+  const [addError, setAddError] = useState<string>();
 
   // Adding the first Round can move the application to interviewing, so the application and the
   // list of applications are asked again along with the Rounds.
   const refresh = () => queryClient.invalidateQueries({ queryKey: applicationsQueryKey });
 
   const add = useMutation({
-    mutationFn: () => api.createRound(applicationId, { interviewType }),
-    onSuccess: refresh,
+    mutationFn: (when: RoundSchedule) => api.createRound(applicationId, { interviewType, ...when }),
+    onSuccess: () => {
+      setSchedule(EMPTY_SCHEDULE);
+
+      return refresh();
+    },
   });
+
+  const refreshRounds = () =>
+    queryClient.invalidateQueries({ queryKey: roundsQueryKey(applicationId) });
 
   // The Round being deleted stays set while the dialog closes, so its text doesn't vanish mid-fade.
   const [toDelete, setToDelete] = useState<{ round: Round; position: number }>();
   const [confirming, setConfirming] = useState(false);
 
-  const remove = useMutation({
-    mutationFn: deleteRound,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: roundsQueryKey(applicationId) }),
-  });
+  const remove = useMutation({ mutationFn: deleteRound, onSuccess: refreshRounds });
 
   const askToDelete = (round: Round, position: number) => {
     remove.reset();
@@ -76,6 +93,45 @@ export function Rounds({ applicationId }: { applicationId: string }) {
     if (!remove.isPending) setConfirming(false);
   };
 
+  // The same for the Round whose schedule is being edited.
+  const [toEdit, setToEdit] = useState<{ round: Round; position: number }>();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<ScheduleDraft>(EMPTY_SCHEDULE);
+  const [editError, setEditError] = useState<string>();
+
+  const reschedule = useMutation({
+    mutationFn: ({ round, when }: { round: Round; when: RoundSchedule }) =>
+      api.scheduleRound(round.applicationId, round.id, when),
+    onSuccess: refreshRounds,
+  });
+
+  const askToEdit = (round: Round, position: number) => {
+    reschedule.reset();
+    setEditError(undefined);
+    setToEdit({ round, position });
+    setDraft(draftOf(round));
+    setEditing(true);
+  };
+
+  const closeEditor = () => {
+    if (!reschedule.isPending) setEditing(false);
+  };
+
+  const save = () => {
+    const result = scheduleOf(draft);
+
+    setEditError(result.ok ? undefined : result.error);
+
+    if (result.ok && toEdit) {
+      reschedule.mutate(
+        { round: toEdit.round, when: result.schedule },
+        { onSuccess: () => setEditing(false) },
+      );
+    }
+  };
+
+  const editMessage = editError ?? reschedule.error?.message;
+
   return (
     <section className={styles.rounds} aria-labelledby={headingId}>
       <h3 id={headingId}>Rounds</h3>
@@ -86,25 +142,43 @@ export function Rounds({ applicationId }: { applicationId: string }) {
         <ol className={styles.list} aria-label="Rounds">
           {rounds.data.map((round, i) => (
             <li key={round.id} className={styles.round}>
-              <span>
-                {roundName(i + 1)}: {interviewTypeLabel(round.interviewType)}
+              <span className={styles.summary}>
+                <span>
+                  {roundName(i + 1)}: {interviewTypeLabel(round.interviewType)}
+                </span>
+                <span className={styles.when}>{scheduleLabel(round)}</span>
               </span>
-              <Button
-                variant="text"
-                aria-label={`Delete ${roundName(i + 1)}`}
-                onClick={() => askToDelete(round, i + 1)}
-              >
-                Delete
-              </Button>
+              <span className={styles.actions}>
+                <Button
+                  variant="text"
+                  aria-label={`Edit schedule of ${roundName(i + 1)}`}
+                  onClick={() => askToEdit(round, i + 1)}
+                >
+                  Edit schedule
+                </Button>
+                <Button
+                  variant="text"
+                  aria-label={`Delete ${roundName(i + 1)}`}
+                  onClick={() => askToDelete(round, i + 1)}
+                >
+                  Delete
+                </Button>
+              </span>
             </li>
           ))}
         </ol>
       )}
       <form
         className={styles.add}
+        aria-label="Add a round"
         onSubmit={(e) => {
           e.preventDefault();
-          add.mutate();
+
+          const result = scheduleOf(schedule);
+
+          setAddError(result.ok ? undefined : result.error);
+
+          if (result.ok) add.mutate(result.schedule);
         }}
       >
         <Select
@@ -113,11 +187,41 @@ export function Rounds({ applicationId }: { applicationId: string }) {
           value={interviewType}
           onValueChange={setInterviewType}
         />
+        <ScheduleFields draft={schedule} onChange={setSchedule} />
         <Button type="submit" variant="outlined" disabled={add.isPending}>
           Add round
         </Button>
       </form>
-      {add.isError && <Alert tone="error">{add.error.message}</Alert>}
+      {addError && <Alert tone="error">{addError}</Alert>}
+      {!addError && add.isError && <Alert tone="error">{add.error.message}</Alert>}
+      <Dialog
+        open={editing}
+        onOpenChange={(open) => {
+          if (!open) closeEditor();
+        }}
+        title={toEdit ? `Schedule ${roundName(toEdit.position)}` : 'Schedule'}
+        description={
+          toEdit && (
+            <>
+              {interviewTypeLabel(toEdit.round.interviewType)}: when it happens, when it’s due, or
+              not scheduled yet.
+            </>
+          )
+        }
+        actions={
+          <>
+            <Button variant="text" disabled={reschedule.isPending} onClick={closeEditor}>
+              Cancel
+            </Button>
+            <Button disabled={reschedule.isPending} onClick={save}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        <ScheduleFields draft={draft} onChange={setDraft} />
+        {editMessage && <Alert tone="error">{editMessage}</Alert>}
+      </Dialog>
       <Dialog
         open={confirming}
         onOpenChange={(open) => {
