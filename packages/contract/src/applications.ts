@@ -254,7 +254,8 @@ export type CreateRound = typeof CreateRound.Type;
 /** The most Tags one Round can have. */
 export const MAX_TAGS = 10;
 
-const MAX_TAG_LENGTH = 40;
+/** The most characters one Tag can have, once trimmed. */
+export const MAX_TAG_LENGTH = 40;
 
 /**
  * A Tag (GLOSSARY.md): free-form detail the Interview type doesn't carry, 1–40 characters once
