@@ -23,7 +23,7 @@ GH=${GH:-gh}
 # The decision, from a state gather() builds (ages in minutes):
 #   {open, closed: null | deployed | merged | unmerged, ready: null | {by_owner, age},
 #    edited_after_ready, held: null | needs-human | needs-info, answered, building: null | {age, has_pr},
-#    blockers: [{number, open, closed}], others_building: [number]}
+#    blockers: [{number, open, closed, active}], others_building: [number]}
 # `closed` is what closed an issue: a pull request or commit whose merge commit the latest
 # successful deploy includes (deployed) or doesn't yet (merged), or nothing (unmerged: closed by
 # hand, as not planned or done elsewhere). `held` is the label a ticket waits on the owner under;
@@ -31,7 +31,10 @@ GH=${GH:-gh}
 # a start then removes it. `edited_after_ready` counts title and description edits by anyone but
 # the owner since the owner's approval began: the first `ready` label the owner added after the
 # workflow last removed it. Removing and re-adding it themselves doesn't restart the approval, so an
-# edit made in between still counts.
+# edit made in between still counts. A blocker is `active` while something will finish it: it's
+# labeled `ready` or `building`, or an open pull request closes it. One that isn't (a tracking issue
+# opened after its pull request merged, or a ticket nobody labeled) would be waited on forever, so
+# the wait says so.
 # Prints {action: ignore | ok | release | unlabel | human | stuck | wait | queue | start, reason}.
 # shellcheck disable=SC2016 # backticks are Markdown
 decide='
@@ -52,7 +55,9 @@ decide='
   elif any(.blockers[]; .open != true and .closed == "unmerged") then
     out("human"; "\([.blockers[] | select(.open != true and .closed == "unmerged") | .number] | refs) closed without a merged pull request, so the plan may have changed. Remove that dependency if this should still be built")
   elif any(.blockers[]; .open or .closed == "merged") then
-    out("wait"; "it is blocked by \([.blockers[] | select(.open or .closed == "merged") | .number] | refs), until each is merged and deployed")
+    [.blockers[] | select(.open and .active == false) | .number] as $idle
+    | out("wait"; "it is blocked by \([.blockers[] | select(.open or .closed == "merged") | .number] | refs), until each is merged and deployed"
+        + (if $idle == [] then "" else ". Nothing will finish \($idle | refs): no `ready` label and no open pull request that closes it. Label each `ready`, or, if its work is already merged, remove the dependency and then close the issue" end))
   elif (.others_building | length) > 0 then
     out("queue"; "the factory builds one ticket at a time, and \(.others_building | refs) is in flight until it is deployed")
   else out("start"; "nothing blocks it") end'
@@ -105,6 +110,8 @@ query='query($owner: String!, $name: String!, $number: Int!) {
         nodes {
           number
           state
+          labels(first: 50) { nodes { name } }
+          closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { nodes { number } }
           timelineItems(itemTypes: [CLOSED_EVENT], last: 1) {
             nodes { __typename ... on ClosedEvent { closer { __typename ... on PullRequest { merged mergeCommit { oid } } ... on Commit { oid } } } }
           }
@@ -150,7 +157,9 @@ gather() {
        answered: (($labels | index("needs-info")) != null and $answered),
        building: (if ($labels | index("building")) != null
                   then {age: (if $building != null then age($building.createdAt) else 0 end), has_pr: ($i.closedByPullRequestsReferences.nodes | length > 0)} else null end),
-       blockers: [$i.blockedBy.nodes[] | {number, open: (.state == "OPEN"), sha: (.timelineItems | sha)}]}
+       blockers: [$i.blockedBy.nodes[] | {number, open: (.state == "OPEN"), sha: (.timelineItems | sha),
+         active: (([(.labels.nodes // [])[].name] | any(. == "ready" or . == "building"))
+                  or ((.closedByPullRequestsReferences.nodes // []) | length > 0))}]}
   ' <<<"$raw") || return 1
   [ -n "$state" ] || return 1
 
@@ -165,7 +174,7 @@ gather() {
     if [ "$(jq -r .open <<<"$blocker")" = false ]; then
       b_closed="\"$(closed_state "$(jq -r .sha <<<"$blocker")")\""
     fi
-    blockers=$(jq -c --argjson b "$blocker" --argjson c "$b_closed" '. + [{number: $b.number, open: $b.open, closed: $c}]' <<<"$blockers")
+    blockers=$(jq -c --argjson b "$blocker" --argjson c "$b_closed" '. + [{number: $b.number, open: $b.open, closed: $c, active: $b.active}]' <<<"$blockers")
   done < <(jq -c '.blockers[]' <<<"$state")
   jq -c --argjson closed "$closed" --argjson blockers "$blockers" '.closed = $closed | .blockers = $blockers | del(.sha)' <<<"$state"
 }

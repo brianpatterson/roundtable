@@ -16,7 +16,15 @@ that has been deployed. So:
 - Record an edge for every ticket that needs another's change in production first (an
   expand/contract migration, an API the UI calls), and for tickets that would conflict (the same
   files, or both adding a migration).
-- Closing a blocker by hand or as not planned stops its dependents with `needs-human`.
+- Closing a blocker by hand or as not planned stops its dependents with `needs-human`. If its work
+  is already merged, remove the dependency first, then close it.
+- A ticket that waits on work a human builds (a hand-made pull request) needs an issue for that
+  work to be blocked by. Open that issue **before** the pull request merges, and put
+  `Closes #<issue>` in the pull request: a `Closes` for an issue that doesn't exist yet at merge
+  does nothing. That issue stays open, and its dependents wait forever. Check that the pull
+  request's Development panel lists the issue before merging.
+- The dispatcher names an open blocker nothing will finish (no `ready` or `building` label, and no
+  open pull request that closes it) in its waiting comment on the dependent ticket.
 - When publishing a set of tickets, apply **no** label unless the user asks: `ready` is the owner's
   sign-off that a ticket is safe to build, and only the owner's label counts.
 - Once a ticket is labeled, don't edit its title or description; an edit by anyone but the owner

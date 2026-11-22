@@ -59,10 +59,32 @@ case "$reason" in *"#4"*)
   ;;
 esac
 
+# An open blocker nothing will finish (no `ready`, no `building`, no open pull request) still waits,
+# but the reason says so: a tracking issue opened after its pull request merged waited forever (#129).
+check "an open blocker nothing will finish: still wait" "$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false}]')" wait
+reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false},{"number":4,"open":true,"closed":null,"active":true},{"number":5,"open":false,"closed":"merged","active":false}]')" | jq -r .reason)
+case "$reason" in *"Nothing will finish #3:"*"remove the dependency"*) ;; *)
+  echo "FAIL: the reason names the blocker nothing will finish: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+case "$reason" in *"finish #3, #4"* | *"finish #3, #5"* | *"finish #4"* | *"finish #5"*)
+  echo "FAIL: the reason calls an active or closed blocker idle: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":true}]')" | jq -r .reason)
+case "$reason" in *"Nothing will finish"*)
+  echo "FAIL: an active blocker is reported as idle: got [$reason]"
+  failures=$((failures + 1))
+  ;;
+esac
+
 # End to end, against a stand-in gh that answers GraphQL per issue from canned JSON and applies
 # --jq as gh would. The repo is o/r, owned by o; the latest deploy shipped commit "dep".
 #   #10: ready (by o), blocked by #3, which a pull request merged as commit "old", which "dep" includes.
-#   #11: ready (by o), blocked by #4, still open.
+#   #11: ready (by o), blocked by #4, still open and labeled ready.
+#   #26: ready (by o), blocked by #5 (open, unlabeled, no pull request) and #6 (open, a pull request closes it).
 #   #12: ready, but labeled by someone else.
 #   #13: ready (by o), then its description was edited by "stranger".
 #   #14: building, closed by a pull request merged as "new", which "dep" doesn't include yet.
@@ -77,7 +99,8 @@ issue() { # issue <number> <state> <labels JSON> <timeline nodes JSON> <blockers
 }
 t=2026-11-20T10:00:00Z
 issue 10 OPEN '["ready","enhancement"]' "[$(labeled $t ready o)]" "[{\"number\":3,\"state\":\"CLOSED\",\"timelineItems\":$(closed_by old)}]"
-issue 11 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o)]" '[{"number":4,"state":"OPEN","timelineItems":{"nodes":[]}}]'
+issue 11 OPEN '["ready"]' "[$(labeled 2026-11-20T09:00:00Z ready o)]" '[{"number":4,"state":"OPEN","labels":{"nodes":[{"name":"ready"}]},"timelineItems":{"nodes":[]}}]'
+issue 26 OPEN '["ready"]' "[$(labeled $t ready o)]" '[{"number":5,"state":"OPEN","labels":{"nodes":[{"name":"enhancement"}]},"closedByPullRequestsReferences":{"nodes":[]},"timelineItems":{"nodes":[]}},{"number":6,"state":"OPEN","labels":{"nodes":[]},"closedByPullRequestsReferences":{"nodes":[{"number":60}]},"timelineItems":{"nodes":[]}}]'
 issue 12 OPEN '["ready"]' "[$(labeled $t ready someone)]" '[]'
 issue 13 OPEN '["ready"]' "[$(labeled $t ready o)]" '[]' '[{"editedAt":"2026-11-20T11:00:00Z","editor":{"login":"stranger"}},{"editedAt":"2026-11-20T09:00:00Z","editor":{"login":"o"}}]'
 renamed() { printf '{"__typename":"RenamedTitleEvent","createdAt":"%s","actor":{"login":"%s"}}' "$1" "$2"; }
@@ -144,6 +167,7 @@ output=$(DRY_RUN=true run)
 expect "a merged, undeployed ticket stays in flight" "$output" "#14: ok"
 expect "an unblocked ticket queues behind the one in flight" "$output" "#10: queue"
 expect "an open blocker means wait" "$output" "#11: wait"
+case "$output" in *"#11: wait"*"Nothing will finish"*) echo "FAIL: a blocker labeled ready counted as idle: [$output]"; failures=$((failures + 1)) ;; esac
 expect "someone else's ready label is ignored" "$output" "#12: ignore"
 expect "an edit by someone else after the label sends it back" "$output" "#13: unlabel"
 expect "a title change by someone else after the label sends it back" "$output" "#17: unlabel"
@@ -180,6 +204,16 @@ if grep -q "issue=11" "$work/writes"; then
   echo "FAIL: the gate started a blocked ticket"
   failures=$((failures + 1))
 fi
+
+# Read from GitHub: #5 has neither label nor pull request, so the wait names it; #6 has a pull
+# request that closes it, so it doesn't.
+output=$(DRY_RUN=true run --gate 26)
+expect "a blocker nothing will finish is named" "$output" "Nothing will finish #5:"
+case "$output" in *"finish #5, #6"* | *"finish #6"*)
+  echo "FAIL: a blocker an open pull request closes counted as idle: [$output]"
+  failures=$((failures + 1))
+  ;;
+esac
 
 # Relabeling `ready` after answering `needs-info` starts it again, and clears `needs-info`.
 : >"$work/writes"
