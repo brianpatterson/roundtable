@@ -20,6 +20,7 @@ import {
 } from './Schedule';
 import { inLocalOrder, interviewTypeLabel, roundNames, scheduleLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
+import { RoundTags } from './RoundTags';
 
 const typeOptions = INTERVIEW_TYPES.map((type) => ({
   value: type,
@@ -151,26 +152,29 @@ export function Rounds({ applicationId }: { applicationId: string }) {
 
             return (
               <li key={round.id} className={styles.round}>
-                <span className={styles.summary}>
-                  <span>{name}</span>
-                  <span className={styles.when}>{scheduleLabel(round)}</span>
-                </span>
-                <span className={styles.actions}>
-                  <Button
-                    variant="text"
-                    aria-label={`Edit schedule of ${name}`}
-                    onClick={() => askToEdit({ round, name })}
-                  >
-                    Edit schedule
-                  </Button>
-                  <Button
-                    variant="text"
-                    aria-label={`Delete ${name}`}
-                    onClick={() => askToDelete({ round, name })}
-                  >
-                    Delete
-                  </Button>
-                </span>
+                <div className={styles.heading}>
+                  <span className={styles.summary}>
+                    <span>{name}</span>
+                    <span className={styles.when}>{scheduleLabel(round)}</span>
+                  </span>
+                  <span className={styles.actions}>
+                    <Button
+                      variant="text"
+                      aria-label={`Edit schedule of ${name}`}
+                      onClick={() => askToEdit({ round, name })}
+                    >
+                      Edit schedule
+                    </Button>
+                    <Button
+                      variant="text"
+                      aria-label={`Delete ${name}`}
+                      onClick={() => askToDelete({ round, name })}
+                    >
+                      Delete
+                    </Button>
+                  </span>
+                </div>
+                <RoundTags round={round} name={name} />
               </li>
             );
           })}

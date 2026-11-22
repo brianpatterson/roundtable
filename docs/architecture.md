@@ -105,12 +105,12 @@ flowchart TB
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
 component, passing the URL's params as props:
 
-| Path                           | Page                                                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page  |
-| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds |
-| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                       |
-| anything else                  | the shell's "Page not found", with a link to the applications                               |
+| Path                           | Page                                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page                 |
+| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds and their Tags |
+| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                      |
+| anything else                  | the shell's "Page not found", with a link to the applications                                              |
 
 The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
 and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules
@@ -125,10 +125,10 @@ first Round can move the application to interviewing. A Round is added with its 
 has one, and its schedule is changed or cleared from a dialog (`PUT …/rounds/:roundId/schedule`,
 which replaces it as a whole). The page turns the browser's local date and time into the instant
 it sends, and shows starts in the browser's time zone; a due date is a calendar date, shown as
-that day wherever the user is.
+that day wherever the user is. Adding or removing a Round's Tag invalidates only its Rounds.
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
-the web app's components (Button, Link, TextField, TextArea, Select, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
+the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting
@@ -248,6 +248,7 @@ erDiagram
     uuid id PK "gen_random_uuid()"
     uuid application_id FK "NOT NULL, ON DELETE CASCADE"
     interview_type interview_type "NOT NULL"
+    text_array tags "NOT NULL DEFAULT '{}', at most 10"
     timestamptz starts_at "nullable: when a scheduled Round starts"
     integer duration_minutes "nullable, 5-480, only with starts_at"
     date due_on "nullable: a take-home's due date, never with starts_at"
@@ -303,7 +304,10 @@ erDiagram
   Index `rounds_application_id_created_at_idx` serves the list: one application's Rounds, sorted
   in the query with dated ones first by `coalesce(starts_at, due_on at 00:00 UTC)`, then the
   undated ones by `created_at` (an application has a handful of Rounds). The web app orders them
-  again by the user's own day, which the API can't know.
+  again by the user's own day, which the API can't know. `tags` holds the Round's Tags in the
+  order they were added: trimmed, 1–40 characters, at most 10, none the same as another ignoring
+  case. The handlers keep those rules in a transaction holding the Round's row
+  ([ADR-0055](adr/0055-round-tags-as-a-text-array.md)).
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
@@ -331,22 +335,24 @@ for `Unauthorized`, a return to the sign-in page (see Identity above). `client.t
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
-| Method   | Path                                             | Auth                      | Success | Errors                                                                                                             |
-| -------- | ------------------------------------------------ | ------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
-| GET      | `/api/health`                                    | public                    | 200     | (reports `db: "down"` instead of failing)                                                                          |
-| GET      | `/api/auth-config`                               | public                    | 200     | (lists enabled social providers)                                                                                   |
-| GET/POST | `/api/auth/*`                                    | public                    | varies  | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                              |
-| GET      | `/api/applications`                              | session                   | 200     | 401                                                                                                                |
-| GET      | `/api/applications/:id`                          | session                   | 200     | 400 (malformed id), 401, 404 (unknown or not yours)                                                                |
-| POST     | `/api/applications`                              | session                   | 201     | 400, 401                                                                                                           |
-| PATCH    | `/api/applications/:id`                          | session                   | 200     | 400 (body or id), 401, 404                                                                                         |
-| DELETE   | `/api/applications/:id`                          | session                   | 204     | 400 (malformed id), 401, 404                                                                                       |
-| GET      | `/api/applications/:id/rounds`                   | session                   | 200     | 400 (malformed id), 401, 404 (application unknown or not yours)                                                    |
-| POST     | `/api/applications/:id/rounds`                   | session                   | 201     | 400 (body, e.g. an unknown interview type, or id), 401, 404                                                        |
-| PUT      | `/api/applications/:id/rounds/:roundId/schedule` | session                   | 200     | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`) |
-| DELETE   | `/api/applications/:id/rounds/:roundId`          | session                   | 204     | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                     |
-| POST     | `/api/reports`                                   | public (session optional) | 201     | 400, 429 (5 per client address per hour)                                                                           |
-| GET      | `/api/factory/reports/:id`                       | factory token             | 200     | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                         |
+| Method   | Path                                              | Auth                      | Success         | Errors                                                                                                             |
+| -------- | ------------------------------------------------- | ------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| GET      | `/api/health`                                     | public                    | 200             | (reports `db: "down"` instead of failing)                                                                          |
+| GET      | `/api/auth-config`                                | public                    | 200             | (lists enabled social providers)                                                                                   |
+| GET/POST | `/api/auth/*`                                     | public                    | varies          | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                              |
+| GET      | `/api/applications`                               | session                   | 200             | 401                                                                                                                |
+| GET      | `/api/applications/:id`                           | session                   | 200             | 400 (malformed id), 401, 404 (unknown or not yours)                                                                |
+| POST     | `/api/applications`                               | session                   | 201             | 400, 401                                                                                                           |
+| PATCH    | `/api/applications/:id`                           | session                   | 200             | 400 (body or id), 401, 404                                                                                         |
+| DELETE   | `/api/applications/:id`                           | session                   | 204             | 400 (malformed id), 401, 404                                                                                       |
+| GET      | `/api/applications/:id/rounds`                    | session                   | 200             | 400 (malformed id), 401, 404 (application unknown or not yours)                                                    |
+| POST     | `/api/applications/:id/rounds`                    | session                   | 201             | 400 (body, e.g. an unknown interview type, or id), 401, 404                                                        |
+| PUT      | `/api/applications/:id/rounds/:roundId/schedule`  | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`) |
+| DELETE   | `/api/applications/:id/rounds/:roundId`           | session                   | 204             | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                     |
+| POST     | `/api/applications/:id/rounds/:roundId/tags`      | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)           |
+| DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=` | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                              |
+| POST     | `/api/reports`                                    | public (session optional) | 201             | 400, 429 (5 per client address per hour)                                                                           |
+| GET      | `/api/factory/reports/:id`                        | factory token             | 200             | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                         |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.

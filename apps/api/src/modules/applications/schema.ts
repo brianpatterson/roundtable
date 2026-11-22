@@ -59,6 +59,13 @@ export const rounds = pgTable(
       .notNull()
       .references(() => applications.id, { onDelete: 'cascade' }),
     interviewType: interviewType('interview_type').notNull(),
+    // Its Tags (GLOSSARY.md), in the order they were added: trimmed, at most 10, and none the same
+    // as another ignoring case. The handlers keep those rules (ADR-0055). Defaulted, so the release
+    // before it still inserts Rounds.
+    tags: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     // Its schedule (GLOSSARY.md): a start, with a duration when the company gave one; a due date
     // (a take-home); or neither yet. The contract checks the same rules before a handler runs.
     startsAt: timestamp('starts_at', { withTimezone: true }),

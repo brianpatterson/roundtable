@@ -4,9 +4,12 @@ import { HttpApiBuilder } from 'effect/http-api';
 import {
   ApplicationNotFound,
   CurrentUser,
+  MAX_TAGS,
   RoundNotFound,
   RoundtableApi,
+  TooManyTags,
   currentStatus,
+  sameTag,
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
@@ -45,16 +48,62 @@ export const ApplicationsLive = HttpApiBuilder.group(
     const ownedBy = (userId: string, id: string) =>
       and(eq(applications.id, id), eq(applications.userId, userId));
 
-    /** The Round at this path, if it's under that application and the application is the user's. */
-    const roundOwnedBy = (userId: string, params: { id: string; roundId: string }) =>
+    /** The Round `roundId` of the user's application `id`: none if either isn't theirs. */
+    const ownedRound = (userId: string, id: string, roundId: string) =>
       and(
-        eq(rounds.id, params.roundId),
-        eq(rounds.applicationId, params.id),
+        eq(rounds.id, roundId),
+        eq(rounds.applicationId, id),
         inArray(
           rounds.applicationId,
-          db.select({ id: applications.id }).from(applications).where(ownedBy(userId, params.id)),
+          db.select({ id: applications.id }).from(applications).where(ownedBy(userId, id)),
         ),
       );
+
+    /**
+     * Sets a Round's Tags to what `change` makes of them, in one transaction holding its row, so
+     * two changes at once can't both pass the limit or both miss each other. Tags `change` leaves
+     * as many as they were (adding one it has, removing one it hasn't) aren't written. Answers
+     * the Round.
+     */
+    const changeTags = (
+      params: { readonly id: string; readonly roundId: string },
+      change: (tags: readonly string[]) => readonly string[],
+    ) =>
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+
+        const result = yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const [round] = yield* tx
+                .select()
+                .from(rounds)
+                .where(ownedRound(user.id, params.id, params.roundId))
+                .for('update');
+
+              if (!round) return undefined;
+
+              const tags = change(round.tags);
+
+              if (tags.length === round.tags.length) return round;
+
+              const [updated] = yield* tx
+                .update(rounds)
+                .set({ tags: [...tags] })
+                .where(eq(rounds.id, round.id))
+                .returning();
+
+              if (!updated) return yield* Effect.die(new Error('update returned no row'));
+
+              return updated;
+            }),
+          )
+          .pipe(Effect.orDie);
+
+        if (!result) return yield* new RoundNotFound();
+
+        return result;
+      });
 
     return handlers.handleAll({
       list: () =>
@@ -224,7 +273,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
           const [row] = yield* db
             .update(rounds)
             .set(scheduleOf(payload))
-            .where(roundOwnedBy(user.id, params))
+            .where(ownedRound(user.id, params.id, params.roundId))
             .returning()
             .pipe(Effect.orDie);
 
@@ -239,12 +288,30 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           const [row] = yield* db
             .delete(rounds)
-            .where(roundOwnedBy(user.id, params))
+            .where(ownedRound(user.id, params.id, params.roundId))
             .returning({ id: rounds.id })
             .pipe(Effect.orDie);
 
           if (!row) return yield* new RoundNotFound();
         }),
+
+      addTag: ({ params, payload }) => {
+        const hasIt = (tags: readonly string[]) => tags.some((tag) => sameTag(tag, payload.tag));
+
+        // One it has already, ignoring case and spaces, stays as it is; so does a full Round,
+        // which comes back without the Tag.
+        return changeTags(params, (tags) =>
+          hasIt(tags) || tags.length >= MAX_TAGS ? tags : [...tags, payload.tag],
+        ).pipe(
+          Effect.filterOrFail(
+            (round) => hasIt(round.tags),
+            () => new TooManyTags(),
+          ),
+        );
+      },
+
+      removeTag: ({ params, query }) =>
+        changeTags(params, (tags) => tags.filter((tag) => !sameTag(tag, query.tag))),
     });
   }),
 );

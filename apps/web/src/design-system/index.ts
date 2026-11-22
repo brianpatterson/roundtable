@@ -5,6 +5,8 @@ export { Alert, type AlertProps, type AlertTone } from './components/Alert/Alert
 
 export { Button, type ButtonProps, type ButtonVariant } from './components/Button/Button';
 
+export { Chip, type ChipProps } from './components/Chip/Chip';
+
 export { Dialog, type DialogProps } from './components/Dialog/Dialog';
 
 export { Link } from './components/Link/Link';

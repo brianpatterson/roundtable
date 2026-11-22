@@ -1,7 +1,7 @@
 // The web app's typed client (packages/shared/src/client.ts) against the real server: the same
 // code the browser runs, with fetch pointed at the app in-process instead of the network.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ApplicationNotFound, Unauthorized, isApplicationId } from '@roundtable/contract';
+import { ApplicationNotFound, MAX_TAGS, Unauthorized, isApplicationId } from '@roundtable/contract';
 import { ApiError, makeApiClient } from '@roundtable/contract/client';
 import { setupTestApp, signUp } from './helpers.js';
 
@@ -60,6 +60,25 @@ describe('the web client', () => {
     await api.deleteRound(application.id, round.id);
     expect(await api.listRounds(application.id)).toEqual([]);
     await expect(api.deleteRound(application.id, round.id)).rejects.toThrow(
+      'That round no longer exists.',
+    );
+  });
+
+  it('adds and removes a Round’s Tags, and says when it has too many', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'coding' });
+
+    expect(round.tags).toEqual([]);
+    expect((await api.addTag(application.id, round.id, ' React ')).tags).toEqual(['React']);
+    expect((await api.addTag(application.id, round.id, 'CI/CD')).tags).toEqual(['React', 'CI/CD']);
+    expect((await api.removeTag(application.id, round.id, 'ci/cd')).tags).toEqual(['React']);
+
+    for (let i = 2; i <= MAX_TAGS; i++) await api.addTag(application.id, round.id, `tag ${i}`);
+
+    await expect(api.addTag(application.id, round.id, 'one more')).rejects.toThrow(
+      'A round can have at most 10 tags.',
+    );
+    await expect(api.addTag(application.id, crypto.randomUUID(), 'SQL')).rejects.toThrow(
       'That round no longer exists.',
     );
   });
@@ -154,6 +173,12 @@ describe('the web client', () => {
     await expect(
       counting.createApplication({ company: 'A', jobTitle: 'B', jobUrl: 'javascript:alert(1)' }),
     ).rejects.toThrow('must be an http(s) URL');
+    await expect(counting.addTag(crypto.randomUUID(), crypto.randomUUID(), ' ')).rejects.toThrow(
+      'must not be blank',
+    );
+    await expect(
+      counting.addTag(crypto.randomUUID(), crypto.randomUUID(), 'x'.repeat(41)),
+    ).rejects.toThrow('must be at most 40 characters');
     expect(requests).toBe(0);
   });
 });

@@ -10,6 +10,9 @@ import { ApplicationPage } from './ApplicationPage';
 const ACME_ID = '00000000-0000-4000-8000-000000000001';
 const ROUNDS_PATH = `/api/applications/${ACME_ID}/rounds`;
 
+/** A Round's Tags: the Round's id is the match's first group. */
+const TAGS_PATH = new RegExp(`^${ROUNDS_PATH}/([^/]+)/tags$`);
+
 const TIMESTAMP = '2026-11-01T00:00:00.000Z';
 
 interface Schedule {
@@ -22,6 +25,7 @@ interface StoredRound extends Schedule {
   id: string;
   applicationId: string;
   interviewType: string;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +86,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
       ...body,
       id: roundId(nextRound),
       applicationId: ACME_ID,
+      tags: [],
       createdAt: TIMESTAMP,
       updatedAt: TIMESTAMP,
     };
@@ -89,6 +94,37 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     stored = [...stored, round];
 
     return Response.json(round, { status: 201 });
+  }
+
+  const tags = TAGS_PATH.exec(pathname);
+
+  if (tags) {
+    if (failWrites) return new Response(null, { status: failWrites });
+
+    const target = stored.find((r) => r.id === tags[1]);
+
+    if (!target) return notFound('RoundNotFound');
+
+    // Matched the way the API does: trimmed, ignoring case.
+    const same = (a: string) => (b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+    if (request.method === 'POST') {
+      // SAFETY: the typed client encoded this body with the contract's RoundTag schema.
+      const { tag } = (await request.json()) as { tag: string };
+
+      if (!target.tags.some(same(tag))) {
+        if (target.tags.length >= 10)
+          return Response.json({ _tag: 'TooManyTags' }, { status: 400 });
+
+        target.tags = [...target.tags, tag];
+      }
+    } else {
+      const tag = new URL(request.url).searchParams.get('tag') ?? '';
+
+      target.tags = target.tags.filter((t) => !same(tag)(t));
+    }
+
+    return Response.json(target);
   }
 
   if (request.method === 'PUT' && pathname.endsWith('/schedule')) {
@@ -130,11 +166,12 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 const round = (
   n: number,
   interviewType: string,
-  schedule: Partial<Schedule> = {},
+  { tags = [], ...schedule }: Partial<Schedule> & { tags?: string[] } = {},
 ): StoredRound => ({
   id: roundId(n),
   applicationId: ACME_ID,
   interviewType,
+  tags,
   ...NOT_SCHEDULED,
   ...schedule,
   createdAt: TIMESTAMP,
@@ -171,9 +208,14 @@ const renderPage = async () => {
 /** Formatted dates' narrow spaces become plain. */
 const plain = (text: string | null | undefined) => text?.replace(/\s+/g, ' ');
 
-/** The Rounds' items in the list, in order. */
-const items = async () =>
-  within(await screen.findByRole('list', { name: 'Rounds' })).getAllByRole('listitem');
+/** The Rounds' items in the list, in order: only the Rounds, though each holds a list of its Tags. */
+const items = async () => {
+  const list = await screen.findByRole('list', { name: 'Rounds' });
+
+  return within(list)
+    .getAllByRole('listitem')
+    .filter((item) => item.parentElement === list);
+};
 
 /** A listed Round's name, as its buttons carry it: `Coding 2`. */
 const nameOf = (item: HTMLElement) =>
@@ -188,6 +230,22 @@ const listed = async () => (await items()).map(nameOf);
 
 /** The name a listed Round shows. */
 const nameShown = (item: HTMLElement) => within(item).getByText(nameOf(item), { selector: 'span' });
+
+/** Where a Round's Tags are shown and added, e.g. `tagsGroup('Coding 1')`. */
+const tagsGroup = (name: string) => screen.getByRole('group', { name: `${name} tags` });
+
+/** The Tags a Round shows, in order. */
+const tagsShown = (name: string) =>
+  within(tagsGroup(name))
+    .queryAllByRole('listitem')
+    .map((item) => item.textContent);
+
+const addTag = async (name: string, tag: string) => {
+  const group = tagsGroup(name);
+
+  await userEvent.type(within(group).getByRole('textbox', { name: 'Tag' }), tag);
+  await userEvent.click(within(group).getByRole('button', { name: 'Add tag' }));
+};
 
 /** The status the page's fields show. */
 const statusShown = () => {
@@ -373,6 +431,128 @@ describe('Rounds on an application’s page', () => {
       'Something went wrong. Please try again.',
     );
     expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+});
+
+const tagField = (name: string) =>
+  within(tagsGroup(name)).getByRole<HTMLInputElement>('textbox', { name: 'Tag' });
+
+describe('Tags on a Round', () => {
+  it('shows a Round’s Tags in order', async () => {
+    stored = [round(1, 'coding', { tags: ['React', 'SQL'] }), round(2, 'behavioral')];
+    await renderPage();
+    await listed();
+
+    expect(tagsShown('Coding 1')).toEqual(['React', 'SQL']);
+    expect(tagsShown('Behavioral 1')).toEqual([]);
+  });
+
+  it('adds a Tag to that Round only, and empties the field', async () => {
+    stored = [round(1, 'coding', { tags: ['React'] }), round(2, 'behavioral')];
+    await renderPage();
+    await listed();
+    await addTag('Coding 1', 'live debugging');
+
+    await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['React', 'live debugging']));
+    expect(tagsShown('Behavioral 1')).toEqual([]);
+    expect(tagField('Coding 1').value).toBe('');
+  });
+
+  it('adds a Tag with Enter', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+    await userEvent.type(tagField('Coding 1'), 'SQL[Enter]');
+
+    await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['SQL']));
+  });
+
+  it('removes a Tag', async () => {
+    stored = [round(1, 'coding', { tags: ['React', 'SQL', 'Go'] })];
+    await renderPage();
+    await listed();
+    await userEvent.click(
+      within(tagsGroup('Coding 1')).getByRole('button', { name: 'Remove SQL' }),
+    );
+
+    await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['React', 'Go']));
+    expect(stored[0]?.tags).toEqual(['React', 'Go']);
+  });
+
+  it('keeps one Tag when the same one is added in another case or with spaces', async () => {
+    stored = [round(1, 'coding', { tags: ['SQL'] })];
+    await renderPage();
+    await listed();
+    await addTag('Coding 1', '  sql ');
+
+    await waitFor(() => expect(tagField('Coding 1').value).toBe(''));
+    expect(tagsShown('Coding 1')).toEqual(['SQL']);
+    expect(stored[0]?.tags).toEqual(['SQL']);
+  });
+
+  it('says why a blank Tag isn’t added', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+    await addTag('Coding 1', '   ');
+
+    expect(await within(tagsGroup('Coding 1')).findByText(/must not be blank/)).toBeDefined();
+    expect(tagField('Coding 1').getAttribute('aria-invalid')).toBe('true');
+    expect(tagsShown('Coding 1')).toEqual([]);
+  });
+
+  it('says why a Tag over 40 characters isn’t added', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+    await addTag('Coding 1', 'x'.repeat(41));
+
+    expect(
+      await within(tagsGroup('Coding 1')).findByText(/must be at most 40 characters/),
+    ).toBeDefined();
+    expect(tagsShown('Coding 1')).toEqual([]);
+  });
+
+  it('says why an eleventh Tag isn’t added, keeping what was typed', async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `tag ${i + 1}`);
+
+    stored = [round(1, 'coding', { tags: ten })];
+    await renderPage();
+    await listed();
+    await addTag('Coding 1', 'one more');
+
+    expect(
+      await within(tagsGroup('Coding 1')).findByText('A round can have at most 10 tags.'),
+    ).toBeDefined();
+    expect(tagField('Coding 1').value).toBe('one more');
+    expect(tagsShown('Coding 1')).toEqual(ten);
+  });
+
+  it('clears the message once the user types again', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+    await addTag('Coding 1', ' ');
+    await within(tagsGroup('Coding 1')).findByText(/must not be blank/);
+    await userEvent.type(tagField('Coding 1'), 'R');
+
+    expect(within(tagsGroup('Coding 1')).queryByText(/must not be blank/)).toBeNull();
+  });
+
+  it('says why a Tag couldn’t be removed', async () => {
+    stored = [round(1, 'coding', { tags: ['React'] })];
+    await renderPage();
+    await listed();
+
+    failWrites = 500;
+    await userEvent.click(
+      within(tagsGroup('Coding 1')).getByRole('button', { name: 'Remove React' }),
+    );
+
+    expect((await within(tagsGroup('Coding 1')).findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(tagsShown('Coding 1')).toEqual(['React']);
   });
 });
 

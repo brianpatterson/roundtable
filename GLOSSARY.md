@@ -48,8 +48,9 @@ mark, the code is what's true.
 - **Skill** _(planned)_: something the user practices ("system design", "behavioral stories"). Each user has
   one skill library; a Persona picks the Skills it needs, so practice counts for every Persona
   that shares a Skill.
-- **Tag** _(planned)_: a free-form label on a Round for detail the Interview type doesn't carry ("React",
-  "SQL", "live debugging").
+- **Tag**: a free-form label on a Round for detail the Interview type doesn't carry ("React",
+  "SQL", "live debugging"). Up to 10 per Round, each up to 40 characters; two that differ only in
+  case or surrounding spaces are the same Tag.
 - **Version** _(planned)_: a frozen copy of a Document's draft. One is made automatically when an
   Application is sent with a draft that changed since the last Version, and the user can save
   one by hand. Every Application that was sent points at the Version (or Fork) it went out with.

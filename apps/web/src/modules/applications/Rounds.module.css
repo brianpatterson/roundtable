@@ -17,14 +17,38 @@
   list-style: none;
 }
 
-/* The Round's name and when it is, with its buttons beside them. */
+/* A Round: its heading, then its Tags. */
 .round {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  padding-bottom: var(--ds-space-3);
+  border-bottom: 1px solid var(--ds-color-outline-variant);
+}
+
+/* The Round's name and when it is, with its buttons beside them. */
+.heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--ds-space-3);
-  border-bottom: 1px solid var(--ds-color-outline-variant);
+}
+
+.tags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+}
+
+/* The Tags as chips, wrapping onto more lines. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .summary {

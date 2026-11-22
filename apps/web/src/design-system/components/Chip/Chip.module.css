@@ -1,0 +1,71 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-color-outline);
+  border-radius: var(--ds-shape-small);
+  color: var(--ds-color-on-surface-variant);
+  font: var(--ds-type-label-large);
+
+  /* A remove button sits closer to the edge, as in Material's input chip. */
+  &:has(.remove) {
+    padding-right: var(--ds-space-1);
+  }
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--ds-shape-full);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity var(--ds-motion-short);
+  }
+
+  @media (hover: hover) {
+    &:hover:not([data-disabled])::before {
+      opacity: var(--ds-state-hover);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ds-color-primary);
+    outline-offset: 1px;
+  }
+
+  &:active:not([data-disabled])::before {
+    opacity: var(--ds-state-pressed);
+  }
+
+  &[data-disabled] {
+    cursor: default;
+    opacity: var(--ds-state-disabled-content);
+  }
+}

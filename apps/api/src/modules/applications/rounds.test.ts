@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { Schema } from 'effect';
-import { Application, INTERVIEW_TYPES, Round } from '@roundtable/contract';
+import {
+  Application,
+  INTERVIEW_TYPES,
+  MAX_TAGS,
+  Round,
+  RoundNotFound,
+  TooManyTags,
+} from '@roundtable/contract';
 import { setupTestApp, signUp, type Json } from '#test/helpers';
 import { rounds } from './schema.js';
 
@@ -169,6 +176,152 @@ describe('the first Round and the application’s status', () => {
     await addRound(application.id);
 
     expect(await statusOf(application.id)).toBe('applied');
+  });
+});
+
+const tagsOf = (round: RoundJson) => `${roundsOf(round.applicationId)}/${round.id}/tags`;
+
+function addTag(round: RoundJson, tag: string, as = cookie) {
+  return request('POST', tagsOf(round), { tag }, as);
+}
+
+function removeTag(round: RoundJson, tag: string, as = cookie) {
+  return request('DELETE', `${tagsOf(round)}?tag=${encodeURIComponent(tag)}`, undefined, as);
+}
+
+async function tagsListed(round: RoundJson) {
+  const list = await request('GET', roundsOf(round.applicationId));
+
+  return list.json<RoundJson[]>().find((r) => r.id === round.id)?.tags;
+}
+
+async function newRound() {
+  const application = await createApplication();
+
+  return (await addRound(application.id)).json<RoundJson>();
+}
+
+describe('Tags on a Round', () => {
+  it('starts a Round with none', async () => {
+    const round = await newRound();
+
+    expect(round.tags).toEqual([]);
+  });
+
+  it('adds Tags, trimmed, in the order they were added, and lists them with the Round', async () => {
+    const round = await newRound();
+
+    await addTag(round, 'React');
+    const res = await addTag(round, '  live debugging ');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<RoundJson>()).toMatchObject({
+      id: round.id,
+      tags: ['React', 'live debugging'],
+    });
+    expect(() => Schema.decodeUnknownSync(Round)(res.json())).not.toThrow();
+    expect(await tagsListed(round)).toEqual(['React', 'live debugging']);
+  });
+
+  it('keeps one Tag when the same one is added again in another case or with spaces', async () => {
+    const round = await newRound();
+
+    await addTag(round, 'SQL');
+
+    for (const tag of ['sql', ' Sql ', 'SQL']) {
+      const res = await addTag(round, tag);
+
+      expect(res.statusCode, tag).toBe(200);
+      expect(res.json<RoundJson>().tags, tag).toEqual(['SQL']);
+    }
+
+    expect(await tagsListed(round)).toEqual(['SQL']);
+  });
+
+  it('removes a Tag, matched ignoring case, keeping the others in order', async () => {
+    const round = await newRound();
+
+    for (const tag of ['React', 'SQL', 'Go']) await addTag(round, tag);
+
+    const res = await removeTag(round, 'sql');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<RoundJson>().tags).toEqual(['React', 'Go']);
+    expect(await tagsListed(round)).toEqual(['React', 'Go']);
+  });
+
+  it('removes a Tag with characters a path couldn’t hold', async () => {
+    const round = await newRound();
+
+    await addTag(round, 'CI/CD & ops?');
+    const res = await removeTag(round, 'CI/CD & ops?');
+
+    expect(res.statusCode).toBe(200);
+    expect(await tagsListed(round)).toEqual([]);
+  });
+
+  it('answers a Tag the Round doesn’t have with the Round as it is', async () => {
+    const round = await newRound();
+
+    await addTag(round, 'React');
+    const res = await removeTag(round, 'Vue');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<RoundJson>().tags).toEqual(['React']);
+  });
+
+  it('rejects a blank Tag, or one longer than 40 characters once trimmed', async () => {
+    const round = await newRound();
+
+    for (const tag of ['', '   ', 'x'.repeat(41), ` ${'x'.repeat(41)} `]) {
+      const res = await addTag(round, tag);
+
+      expect(res.statusCode, JSON.stringify(tag)).toBe(400);
+    }
+
+    expect((await request('POST', tagsOf(round), {})).statusCode).toBe(400);
+    expect((await addTag(round, ` ${'x'.repeat(40)} `)).statusCode).toBe(200);
+    expect(await tagsListed(round)).toEqual(['x'.repeat(40)]);
+  });
+
+  it('rejects an eleventh Tag with TooManyTags, but still accepts one it has', async () => {
+    const round = await newRound();
+    const ten = Array.from({ length: MAX_TAGS }, (_, i) => `tag ${i + 1}`);
+
+    for (const tag of ten) expect((await addTag(round, tag)).statusCode).toBe(200);
+
+    const res = await addTag(round, 'one more');
+
+    expect(res.statusCode).toBe(400);
+    expect(Schema.decodeUnknownSync(TooManyTags)(res.json())).toBeInstanceOf(TooManyTags);
+    expect((await addTag(round, 'TAG 3')).statusCode).toBe(200);
+    expect(await tagsListed(round)).toEqual(ten);
+
+    await removeTag(round, 'tag 1');
+    expect((await addTag(round, 'one more')).json<RoundJson>().tags).toHaveLength(MAX_TAGS);
+  });
+
+  it('keeps to the limit when Tags are added at once', async () => {
+    const round = await newRound();
+    const tags = Array.from({ length: MAX_TAGS + 5 }, (_, i) => `tag ${i + 1}`);
+
+    const answers = await Promise.all(tags.map((tag) => addTag(round, tag)));
+
+    expect(answers.filter((res) => res.statusCode === 200)).toHaveLength(MAX_TAGS);
+    expect(await tagsListed(round)).toHaveLength(MAX_TAGS);
+  });
+
+  it('answers 404 for a Round that doesn’t exist or is under another application', async () => {
+    const round = await newRound();
+    const other = await createApplication();
+    const elsewhere = { ...round, applicationId: other.id };
+    const missing = { ...round, id: MISSING_ID };
+
+    expect((await addTag(elsewhere, 'React')).statusCode).toBe(404);
+    expect((await removeTag(elsewhere, 'React')).statusCode).toBe(404);
+    expect((await addTag(missing, 'React')).statusCode).toBe(404);
+    expect((await removeTag(missing, 'React')).statusCode).toBe(404);
+    expect(await tagsListed(round)).toEqual([]);
   });
 });
 
@@ -455,6 +608,17 @@ describe('another user’s Rounds', () => {
     expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
   });
 
+  it('changes their Tags as not found, changing nothing', async () => {
+    await addTag(theirRound, 'React');
+
+    const added = await addTag(theirRound, 'SQL', mine);
+    const removed = await removeTag(theirRound, 'React', mine);
+
+    expect([added.statusCode, removed.statusCode]).toEqual([404, 404]);
+    expect(Schema.decodeUnknownSync(RoundNotFound)(added.json())).toBeInstanceOf(RoundNotFound);
+    expect(await tagsListed(theirRound)).toEqual(['React']);
+  });
+
   it('answers a missing application the same as theirs', async () => {
     expect((await request('GET', roundsOf(MISSING_ID))).statusCode).toBe(404);
     expect((await addRound(MISSING_ID)).statusCode).toBe(404);
@@ -467,10 +631,12 @@ describe('another user’s Rounds', () => {
       await addRound('abc'),
       await request('DELETE', `${roundsOf('abc')}/${theirRound.id}`),
       await request('DELETE', `${roundsOf(theirs.id)}/abc`),
+      await addTag({ ...theirRound, applicationId: 'abc' }, 'React'),
+      await removeTag({ ...theirRound, id: 'abc' }, 'React'),
       await request('PUT', scheduleOf('abc', theirRound.id), {}),
       await request('PUT', scheduleOf(theirs.id, 'abc'), {}),
     ];
 
-    expect(malformed.map((res) => res.statusCode)).toEqual([400, 400, 400, 400, 400, 400]);
+    expect(malformed.map((res) => res.statusCode)).toEqual(Array(8).fill(400));
   });
 });
