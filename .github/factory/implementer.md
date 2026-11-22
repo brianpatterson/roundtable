@@ -91,8 +91,12 @@ bug it describes (see above); without the file, it isn't.
    hard-to-reverse decisions, `docs/architecture.md`, generated migrations, cross-user tests.
 4. If you changed `apps/web/src`, run Stryker on the source files you changed, never the whole
    app: a full run has well over a thousand mutants and doesn't finish within one command.
-   List them with `git diff --name-only origin/main -- apps/web/src` (leave out `*.test.*`),
-   then pass them, relative to `apps/web` and comma-separated, to
+   Stage your web changes first, so new files count (`git diff` ignores untracked ones), then
+   list them:
+   `git add apps/web/src && git diff --cached --name-only --diff-filter=d origin/main -- 'apps/web/src/*.ts' 'apps/web/src/*.tsx'`.
+   A `--mutate` list replaces the globs in `apps/web/stryker.config.mjs`, so leave out what that
+   config leaves out: tests (`*.test.*`), `index.ts` re-exports, `main.tsx`, `test-setup.ts` and
+   `src/shared/testing/`. Pass the rest, relative to `apps/web` and comma-separated, to
    `pnpm --filter @roundtable/web test:mutation --mutate src/a/A.tsx,src/b/B.ts`. Look at the
    survivors in `apps/web/reports/mutation/mutation.json` (status `Survived` or `NoCoverage`). Each is a small
    change to your code that no test noticed: strengthen a test to catch it, or, if the mutant
@@ -259,7 +263,9 @@ for the owner.
    contradicts the ticket, `CLAUDE.md` or an ADR, change nothing for it and say why in your
    summary, with `file:line`. The reviewer reads your summary on its next pass.
 4. **Push.** Run `pnpm check` (and mutation testing on the web files you changed, as in
-   "Building"), commit with a conventional subject (`fix:`, `test:` …) and push to the same
+   "Building", but list them from the pull request, not `origin/main`, which may be missing
+   or ahead of the branch here: `gh pr view <number> --json files --jq '.files[].path'`, plus
+   any file you added), commit with a conventional subject (`fix:`, `test:` …) and push to the same
    branch once, when everything is done, then return `fixed`: each push starts CI, and a
    failure while you're still running would wait behind you. Don't merge `main` into the branch.
 5. **When you can't.** If you'd change nothing (every finding is wrong), or the fixes need
