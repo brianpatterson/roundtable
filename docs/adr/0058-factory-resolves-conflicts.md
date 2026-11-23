@@ -53,9 +53,11 @@ Option 1, with option 3 as its check.
 
 - **`pnpm check:adrs`** (`scripts/check-adrs.ts`, in `pnpm check` and CI) fails when two ADRs share
   a number, a heading doesn't match its file, or the index doesn't have exactly one row for each
-  ADR.
-- **`.github/workflows/resolve-conflicts.yml`** runs when CI finishes on main (after every merge),
-  and through `workflow_dispatch` for one pull request. A `select` job with no secrets runs
+  ADR. `scripts/test-check-adrs.sh` checks each failure on small fixtures, since main never has one.
+- **`.github/workflows/resolve-conflicts.yml`** runs when CI passes on main (after every merge),
+  and through `workflow_dispatch` for one pull request. Either way it merges nothing until CI has
+  passed on main's head: a broken main would fail every pull request it reached, and the CI fixer
+  would spend their attempts on main's failure. A `select` job with no secrets runs
   `.github/factory/select-conflicts.sh`: open pull requests from this repository labeled `factory`
   and not `needs-human`, waiting up to two minutes for GitHub to work out whether each conflicts.
   `autofix`-only pull requests are left out: Dependabot rebases its own, and the owner's are the
@@ -70,9 +72,11 @@ Option 1, with option 3 as its check.
   lockfile. Those, and anything needing a decision, go to `needs-human` with what it would do.
 - **Checked after the agent, whatever it reports:** main is in the branch, no conflict markers were
   pushed, and the pull request's changes against main touch none of the protected paths.
-  Otherwise, or if the agent fails, it's `needs-human`.
-- **Attempts:** each comment names the main commit it merged. Two attempts against the same main
-  commit, then `needs-human`. A later main commit is a new conflict with two attempts of its own.
+  Otherwise, or if the agent answers `needs-human`, a human takes over at once.
+- **Attempts:** each comment names the main commit it merged. A run that crashes or times out
+  without an answer isn't a verdict: the next run (the next merge, or the sweeper) retries once
+  against the same main commit, and a second crash goes to a human. A later main commit is a new
+  conflict with attempts of its own.
 - **The sweeper** starts the resolver for a conflicting factory pull request instead of labeling it.
   A conflicting `autofix`-only pull request still goes to a human.
 

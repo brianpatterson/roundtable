@@ -55,6 +55,8 @@ jobs:
       # Two pull requests can take the same ADR number without a git conflict (ADR-0058).
       - name: ADR numbers and index
         run: pnpm check:adrs
+      - name: ADR check fixtures
+        run: scripts/test-check-adrs.sh
       # How the factory's denial report classifies refused commands (ADR-0029).
       - name: Denial report fixtures
         run: .github/factory/test-report-denials.sh

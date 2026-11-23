@@ -1,13 +1,16 @@
 # The factory's conflict resolver (ADR-0058): when main moves and a factory pull request now
 # conflicts with it, the implementer merges main into the branch, resolves the conflict and pushes.
-# CI and the reviewer then run again on the merge. Two attempts against the same main commit, then
-# it stops and asks for a human, as the CI fixer does (ADR-0028). A conflict usually comes from
-# two pull requests taking the same ADR number (#105, #149, #155): the later one is renumbered.
+# CI and the reviewer then run again on the merge. A conflict usually comes from two pull requests
+# taking the same ADR number (#105, #149, #155): the later one is renumbered. When the agent
+# can't resolve it, or what it pushed fails the checks, a human takes over. A run that crashes
+# gets one retry against the same main commit, then a human.
 #
-# Started by CI finishing on main (every merge), and by the sweeper (ADR-0040) through
-# workflow_dispatch when it finds a conflict that run missed. Both run this file and the
-# implementer's instructions from `main`, and the `factory` environment, which holds the Claude
-# token, only admits `main`. A branch can't change what the agent is told or reach the token.
+# Started by CI passing on main (every merge), and by the sweeper (ADR-0040) through
+# workflow_dispatch when it finds a conflict that run missed. Only a green main is merged in: a
+# broken one would fail every pull request it reached, and the CI fixer would spend its attempts
+# there on main's failure. Both run this file and the implementer's instructions from `main`, and
+# the `factory` environment, which holds the Claude token, only admits `main`. A branch can't change
+# what the agent is told or reach the token.
 name: Resolve conflicts
 
 on:
@@ -32,13 +35,15 @@ jobs:
     # request from a branch called main could run a workflow called CI. Only main's own push counts.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.path == '.github/workflows/ci.yml' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read # main's latest CI run
       pull-requests: write # labels and comments
       issues: write # labels and comments go through the issues API
     outputs:
@@ -56,6 +61,15 @@ jobs:
         run: |
           # The main every attempt this run makes merges, and counts against.
           main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          # Only once CI has passed on it. If main is red or still running, the run that ends green
+          # (CI on the fix, or this commit's) starts this again.
+          ci=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$main" --event push --limit 1 \
+            --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')
+          if [ "$ci" != "completed success" ]; then
+            echo "CI on main ${main:0:7} hasn't passed (${ci:-no run}); merging nothing."
+            { echo "prs=[]"; echo "main=$main"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           prs=$(MAIN=$main .github/factory/select-conflicts.sh "${PR:-}")
           echo "To resolve: $prs"
           { echo "prs=$prs"; echo "main=$main"; } >> "$GITHUB_OUTPUT"
@@ -172,7 +186,7 @@ jobs:
           prompt: |
             Pull request #${{ env.PR }} (branch ${{ env.BRANCH }}, commit ${{ env.SHA }}) conflicts with main.
             The branch is checked out with main (commit ${{ env.MAIN }}) merged into it but not committed:
-            `git status` shows what conflicts. This is attempt ${{ env.ATTEMPT }} of 2 against this main.
+            `git status` shows what conflicts.
             Follow "Resolving a conflict with main" in your instructions and return the structured output.
           claude_args: >-
             --model claude-opus-5-5
@@ -203,7 +217,7 @@ jobs:
 
       # Deterministic: what the agent pushed, whatever it reported, and one marked comment naming
       # main's commit per attempt (select-conflicts.sh counts them). Runs even when the agent
-      # failed, so a failed attempt counts and the sweeper doesn't start it forever.
+      # failed, so a crash counts: the first is retried by the next run, the second goes to a human.
       - name: Check and report the attempt
         if: always() && steps.current.outputs.stale != 'true'
         env:
@@ -237,6 +251,9 @@ jobs:
 
           case "$outcome" in
             resolved) head="merged main and pushed; CI and the reviewer run again" ;;
+            # A crash (an outage, a timeout) isn't an answer: the next merge or sweep retries once.
+            failed) if [ "$ATTEMPT" -lt 2 ]; then head="the run failed; the next one retries"
+                    else head="the run failed twice, over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human; fi ;;
             *) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
           esac
 
@@ -245,7 +262,7 @@ jobs:
             summary="The resolver's summary was withheld because it matched a credential pattern. See the run, and rotate the credential."
           fi
 
-          body=$(printf '<!-- factory-conflict -->\n### Conflict with main, attempt %s of 2: %s\n\n%s\n\n<sub>[Run](%s), merging main at %s into commit %s. ADR-0058.</sub>\n' \
+          body=$(printf '<!-- factory-conflict -->\n### Conflict with main, attempt %s: %s\n\n%s\n\n<sub>[Run](%s), merging main at %s into commit %s. ADR-0058.</sub>\n' \
             "$ATTEMPT" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$MAIN" "$SHA")
           gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
           [ "$outcome" != protected ] || exit 1

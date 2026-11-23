@@ -16,7 +16,7 @@ pr() { # pr <number> <mergeable> [labels JSON] [state] [fork]
     >"$work/pr-$1.json"
 }
 attempt() { # attempt <pr> <main sha>: a comment the resolver posted
-  jq --arg b "$(printf '<!-- factory-conflict -->\n### Conflict with main, attempt 1 of 2: over to you\n\n<sub>Merging main at %s.</sub>' "$2")" \
+  jq --arg b "$(printf '<!-- factory-conflict -->\n### Conflict with main, attempt 1: the run failed; the next one retries\n\nIt crashed.\n\n<sub>[Run](https://x), merging main at %s into commit abc. ADR-0058.</sub>\n' "$2")" \
     '. + [{user: {login: "github-actions[bot]"}, body: $b}]' "$work/comments-$1.json" >"$work/c" && mv "$work/c" "$work/comments-$1.json"
 }
 
@@ -79,6 +79,15 @@ out=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 "$here/select-conflic
 [ "$out" = '[]' ] || fail "a named pull request without a conflict gives an empty list: $out"
 out=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 MAIN=main0 "$here/select-conflicts.sh" 1 2>/dev/null)
 [ "$(jq -c '[.[].pr]' <<<"$out")" = '[1]' ] || fail "a named pull request is the only one checked, against MAIN: $out"
+
+# select-conflicts.sh finds the resolver's comments by their marker and the main commit they name.
+# If the comment resolve-conflicts.yml posts changes either, attempts stop counting. Pin them.
+workflow="$here/../workflows/resolve-conflicts.yml"
+if ! grep -qF "body=\$(printf '<!-- factory-conflict -->\n###" "$workflow" ||
+  ! grep -qF 'merging main at %s into commit %s.' "$workflow" ||
+  ! grep -qF "marker='<!-- factory-conflict -->'" "$here/select-conflicts.sh"; then
+  fail "the comment resolve-conflicts.yml posts and what select-conflicts.sh counts have drifted apart"
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

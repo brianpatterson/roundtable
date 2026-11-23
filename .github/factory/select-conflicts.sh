@@ -5,8 +5,9 @@
 #
 # Prints a JSON array, one {pr, sha, branch, attempt} per pull request to resolve: open, from this
 # repository, labeled `factory`, not `needs-human`, and conflicting with main. Each gets two
-# attempts against the same main commit; a third conflict there goes to a human instead. A new
-# main commit is a new conflict, with two attempts of its own. MAIN is the commit attempts count
+# attempts against the same main commit: the resolver hands anything but a crash to a human
+# itself, so the second is a crash's retry, and a third goes to a human here. A new main commit is
+# a new conflict, with two attempts of its own. MAIN is the commit attempts count
 # against (the current main if unset). Needs GH_TOKEN and GITHUB_REPOSITORY; GH overrides the gh
 # binary and SLEEP the wait between mergeability checks (tests).
 set -euo pipefail

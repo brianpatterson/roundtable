@@ -4,7 +4,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const dir = join(new URL('..', import.meta.url).pathname, 'docs/adr');
+// Another directory as the first argument is for scripts/test-check-adrs.sh.
+const dir = process.argv[2] ?? join(new URL('..', import.meta.url).pathname, 'docs/adr');
 const problems: string[] = [];
 
 const files = readdirSync(dir).filter((name) => /^\d{4}-.+\.md$/.test(name));
