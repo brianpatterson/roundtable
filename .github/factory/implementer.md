@@ -89,24 +89,10 @@ bug it describes (see above); without the file, it isn't.
    tests hit the real `app_test` database (it's running); web tests query by role and label.
 3. Follow every "Rules for every change" item in `CLAUDE.md`: ADRs for
    hard-to-reverse decisions, `docs/architecture.md`, generated migrations, cross-user tests.
-4. If you changed `apps/web/src`, run Stryker on the source files you changed, never the whole
-   app: a full run has well over a thousand mutants and doesn't finish within one command.
-   Stage your web changes first, so new files count (`git diff` ignores untracked ones), then
-   list them:
-   `git add apps/web/src && git diff --cached --name-only --diff-filter=d origin/main -- 'apps/web/src/*.ts' 'apps/web/src/*.tsx'`.
-   A `--mutate` list replaces the globs in `apps/web/stryker.config.mjs`, so leave out what that
-   config leaves out: tests (`*.test.*`), `index.ts` re-exports, `main.tsx`, `test-setup.ts` and
-   `src/shared/testing/`. Pass the rest, relative to `apps/web` and comma-separated, to
-   `pnpm --filter @roundtable/web test:mutation --mutate src/a/A.tsx,src/b/B.ts`. Look at the
-   survivors in `apps/web/reports/mutation/mutation.json` (status `Survived` or `NoCoverage`). Each is a small
-   change to your code that no test noticed: strengthen a test to catch it, or, if the mutant
-   changes nothing observable, say so in the PR description. This is the only mutation testing a
-   pull request gets: CI runs it nightly on main, not on pull requests
-   ([ADR-0039](../../docs/adr/0039-nightly-mutation-and-security-audit.md)).
-5. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
+4. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
    test to get there. If you can't make it pass, say exactly what fails and why in the PR
    description.
-6. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
+5. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
 
 ### Running commands
 
@@ -262,10 +248,7 @@ for the owner.
 3. **Dispute a wrong finding instead of obeying it.** If a finding misreads the code, or
    contradicts the ticket, `CLAUDE.md` or an ADR, change nothing for it and say why in your
    summary, with `file:line`. The reviewer reads your summary on its next pass.
-4. **Push.** Run `pnpm check` (and mutation testing on the web files you changed, as in
-   "Building", but list them from the pull request, not `origin/main`, which may be missing
-   or ahead of the branch here: `gh pr view <number> --json files --jq '.files[].path'`, plus
-   any file you added), commit with a conventional subject (`fix:`, `test:` …) and push to the same
+4. **Push.** Run `pnpm check`, commit with a conventional subject (`fix:`, `test:` …) and push to the same
    branch once, when everything is done, then return `fixed`: each push starts CI, and a
    failure while you're still running would wait behind you. Don't merge `main` into the branch.
 5. **When you can't.** If you'd change nothing (every finding is wrong), or the fixes need
