@@ -134,6 +134,8 @@ if [ "${1:-}" = --one ]; then
     human)
       "$GH" pr edit "$number" -R "$repo" --add-label needs-human
       "$GH" pr comment "$number" -R "$repo" --body "The factory is stuck on this pull request: $reason. Over to you. $handback"
+      # The pull request page then shows the factory done with this commit (ADR-0063).
+      SHA=$sha GH=$GH "$(dirname "$0")/factory-status.sh" success "Done: over to you, the factory is stuck (needs-human): $reason"
       ;;
   esac
   exit 0

@@ -68,6 +68,8 @@ each module is what a future service or microfrontend would become.
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
   [ADR-0033](docs/adr/0033-review-every-pull-request.md)). `.github/factory/post-review.sh` sets the verdict from the blocking findings ([ADR-0053](docs/adr/0053-review-verdict-from-blocking-findings.md)),
   edits its one comment on each re-review and posts a short new one when it asks for changes, so Auto-fix sees it ([ADR-0046](docs/adr/0046-review-posts-new-comment-on-changes.md)).
+  Review, Rework and the sweeper set the `factory` commit status through `.github/factory/factory-status.sh`:
+  pending while the factory works on a commit, success when it's the owner's turn ([ADR-0063](docs/adr/0063-factory-status-check.md)).
   `.github/workflows/mutation.yml`: Stryker on the web app and the API, nightly on main, advisory;
   not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
   It then tops up to five open tests-only `mutation` tickets, one per file, through `.github/factory/file-mutation-issue.sh`,

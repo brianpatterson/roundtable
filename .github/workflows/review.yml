@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       pull-requests: read
+      statuses: write # the factory status (ADR-0063)
     outputs:
       pr: ${{ steps.pick.outputs.pr }}
       sha: ${{ steps.pick.outputs.sha }}
@@ -71,6 +72,22 @@ jobs:
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
+      # The factory status (ADR-0063): the pull request page shows the factory working on this
+      # commit until the status job below, or Rework after it, says it's done.
+      - uses: actions/checkout@v7
+        if: steps.pick.outputs.pr != ''
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/factory/factory-status.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Mark the commit as under review
+        if: steps.pick.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.pick.outputs.sha }}
+        run: '.github/factory/factory-status.sh pending "Working: reviewing"'
+
   review:
     needs: select
     if: needs.select.outputs.pr != ''
@@ -85,6 +102,9 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+    outputs:
+      verdict: ${{ steps.post.outputs.verdict }}
+      minor: ${{ steps.post.outputs.minor }}
     env:
       PR: ${{ needs.select.outputs.pr }}
       SHA: ${{ needs.select.outputs.sha }}
@@ -195,3 +215,38 @@ jobs:
           name: review-verdict
           path: ${{ runner.temp }}/verdict.json
           retention-days: 7
+
+  # The factory status once the review is over (ADR-0063): done, unless Rework takes the pull
+  # request from here and sets its own, or stopped if the review didn't finish. A job of its own, so
+  # the reviewer's job, which runs the agent, gets no permission to set statuses. A review cancelled
+  # for a newer commit leaves its commit alone: the pull request page shows only the newest.
+  status:
+    needs: [select, review]
+    if: always() && needs.select.outputs.pr != '' && needs.review.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # the labels: does Rework take it from here?
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/factory/factory-status.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Set the factory status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.select.outputs.pr }}
+          SHA: ${{ needs.select.outputs.sha }}
+          RESULT: ${{ needs.review.result }}
+          VERDICT: ${{ needs.review.outputs.verdict }}
+          MINOR: ${{ needs.review.outputs.minor }}
+        run: |
+          if [ "$RESULT" = success ] && [ -n "$VERDICT" ]; then
+            .github/factory/factory-status.sh --reviewed
+          else
+            .github/factory/factory-status.sh error "Stopped: the review didn't finish. See the run, or label the pull request review to rerun it"
+          fi
