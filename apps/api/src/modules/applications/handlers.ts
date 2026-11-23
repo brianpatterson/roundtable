@@ -13,7 +13,8 @@ import {
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { failedByRejection, passedByNewRound } from './inference.js';
+import { passedByNewRound } from './inference.js';
+import { inferOutcomes, statusChanged } from './round-lifecycle.js';
 import { applications, rounds } from './schema.js';
 
 /** A whole schedule as columns: what the request leaves out is cleared. */
@@ -108,29 +109,6 @@ export const ApplicationsLive = HttpApiBuilder.group(
         return result;
       });
 
-    /**
-     * Sets the inferred `outcome` on the Rounds `ids`, in the transaction `tx` that made the change
-     * it follows from. A Round whose Outcome the user set keeps it, even one set since it was read.
-     */
-    const inferOutcomes = (
-      tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-      ids: readonly string[],
-      outcome: 'passed' | 'failed',
-    ) =>
-      ids.length === 0
-        ? Effect.void
-        : tx
-            .update(rounds)
-            .set({ outcome })
-            .where(
-              and(
-                inArray(rounds.id, [...ids]),
-                eq(rounds.outcome, 'pending'),
-                eq(rounds.outcomeSetByUser, false),
-              ),
-            )
-            .pipe(Effect.asVoid);
-
     return handlers.handleAll({
       list: () =>
         Effect.gen(function* () {
@@ -179,7 +157,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
           return row;
         }),
 
-      update: ({ params, payload: { timeZone = 'UTC', ...changes } }) =>
+      update: ({ params, payload: { timeZone, ...changes } }) =>
         Effect.gen(function* () {
           const user = yield* CurrentUser;
 
@@ -213,17 +191,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
                   .where(ownedBy(user.id, params.id))
                   .returning();
 
-                // A change to rejected fails the latest pending Rounds, unless the user set
-                // their Outcome. Setting rejected again changes nothing.
-                if (updated && changes.status === 'rejected' && before.status !== 'rejected') {
-                  const its = yield* tx
-                    .select()
-                    .from(rounds)
-                    .where(eq(rounds.applicationId, updated.id))
-                    .orderBy(asc(rounds.createdAt), asc(rounds.id));
-
-                  yield* inferOutcomes(tx, failedByRejection(its, timeZone), 'failed');
-                }
+                if (updated) yield* statusChanged(tx, before, updated, timeZone);
 
                 return updated;
               }),
