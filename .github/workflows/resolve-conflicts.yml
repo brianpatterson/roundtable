@@ -175,7 +175,7 @@ jobs:
       - name: Resolve
         if: steps.current.outputs.stale != 'true'
         id: claude
-        uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
         env:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' # ADR-0029, as in the Factory workflow
         with:

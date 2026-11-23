@@ -134,7 +134,7 @@ jobs:
 
       - name: Audit
         id: claude
-        uses: anthropics/claude-code-action@d1f58ad5e6f4d2b79547e63e37c2116064135896 # v1.0.277
+        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
         env:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' # ADR-0029; also forces explicit tool rules
         with:
@@ -230,7 +230,7 @@ jobs:
             .github/factory/guard-secrets.sh
             .github/factory/file-advisories.sh
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: audit-findings-encrypted
           path: ${{ runner.temp }}/audit-findings
