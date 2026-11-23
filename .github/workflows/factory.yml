@@ -734,7 +734,9 @@ jobs:
               summary="The fix changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
               ;;
             *)
-              outcome=unchecked
+              # A fix or rerun can't be trusted unchecked; a failure keeps its own heading, and
+              # goes to a human either way.
+              case "$outcome" in fixed | reran) outcome=unchecked ;; esac
               summary=$(printf '%s\n\n_GitHub couldn'"'"'t compare the branch with commit %s, so what the fixer pushed wasn'"'"'t checked for changes to the factory'"'"'s own rules. Check it before merging._' "$summary" "$SHA")
               ;;
           esac

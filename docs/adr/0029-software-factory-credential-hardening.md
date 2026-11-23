@@ -145,4 +145,5 @@ Options 1 and 2 together, plus a guard on what's published:
   It fails closed. Each job used to ask GitHub for the compare inline and read a failed request as
   "nothing changed", so a push went unchecked whenever GitHub didn't answer. Now a compare that
   fails, or that lists 300 files (its limit, so more may be unlisted), sends the pull request or
-  ticket to a human.
+  ticket to a human. A renamed file counts by its old name too: the agents may run `git mv`, and
+  the compare lists a file moved out of `.github/` only under its new name.

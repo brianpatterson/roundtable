@@ -20,7 +20,10 @@ if ! compare=$("$GH" api "repos/$GITHUB_REPOSITORY/compare/$1...$2" 2>/dev/null)
   exit 2
 fi
 
-if files=$(jq -r '.files[].filename' <<<"$compare" | grep -E '^(\.github/|\.claude/|CLAUDE\.md$)'); then
+# A renamed file is listed under its new name, with the old one in `previous_filename`: both
+# count, or `git mv .github/workflows/ci.yml docs/` would pass as a change to `docs/` alone.
+if files=$(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$compare" |
+  grep -E '^(\.github/|\.claude/|CLAUDE\.md$)'); then
   echo "$files"
   exit 1
 fi

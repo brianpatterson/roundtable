@@ -117,6 +117,12 @@ protected '{"files":[{"filename":"docs/a.md"},{"filename":".github/workflows/ci.
   fail "protected files: exit 1, each printed ($code: $out)"
 protected '{"files":[{"filename":"docs/CLAUDE.md"},{"filename":"apps/.github/x"}]}'
 [ "$code" = 0 ] || fail "only paths at the root count ($code)"
+protected '{"files":[{"filename":"docs/ci.yml","previous_filename":".github/workflows/ci.yml","status":"renamed"}]}'
+[ "$code" = 1 ] && [ "$out" = .github/workflows/ci.yml ] || fail "a file moved out of .github/ counts by its old name ($code: $out)"
+protected '{"files":[{"filename":".claude/x.json","previous_filename":"docs/x.json","status":"renamed"}]}'
+[ "$code" = 1 ] && [ "$out" = .claude/x.json ] || fail "a file moved into .claude/ counts by its new name ($code: $out)"
+protected '{"files":[{"filename":"docs/b.md","previous_filename":"docs/a.md","status":"renamed"}]}'
+[ "$code" = 0 ] || fail "a rename outside the protected paths passes ($code)"
 protected fails
 [ "$code" = 2 ] || fail "a failed compare: exit 2, never a pass ($code)"
 protected '{"message":"Not Found"}'

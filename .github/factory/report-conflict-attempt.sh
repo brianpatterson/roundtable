@@ -48,7 +48,8 @@ if compare=$("$GH" api "repos/$GITHUB_REPOSITORY/compare/$MAIN...$BRANCH" 2>/dev
 
   # The agent never changes the factory's rules or CI, with an editor or with git (`git restore`,
   # `git mv`). Against the merged main, a factory pull request's own changes never include them,
-  # whoever pushed them, so the message doesn't say the resolver did.
+  # whoever pushed them, so the message doesn't say the resolver did. protected-changes.sh asks for
+  # the same compare again: one check, shared by every agent job, is worth the extra request.
   code=0
   "$(dirname "$0")/protected-changes.sh" "$MAIN" "$BRANCH" >/dev/null || code=$?
   case "$code" in
