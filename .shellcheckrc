@@ -1,9 +1,7 @@
 # ShellCheck, for every *.sh and every workflow `run:` script (through actionlint). CI runs both.
-# Three notes are off because they flag this repo's idioms, not bugs:
+# Two notes are off because they flag this repo's idioms, not bugs. SC2015 (`A && B || C`) stays
+# on: in a guard it can run C after B fails. The tests that use it on purpose turn it off per file.
 #
-# SC2015: `check && pass || fail`. The tests read this way on purpose: `fail` runs when either
-#   half fails, which is what a test wants.
-disable=SC2015
 # SC2016: single-quoted `$` and backticks. Those are jq filters and Markdown, meant literally.
 disable=SC2016
 # SC2119: calling a function with optional arguments (testlib.sh's `fake_gh`) without any.

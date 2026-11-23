@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015 # `check && pass || fail`: fail runs when either half fails, as a test wants
 # Checks the user-report hand-off (ADR-0041): fetch-report.sh against a stand-in curl, and
 # guard-report-text.sh against text that does and doesn't quote a report.
 # Run from anywhere: .github/factory/test-report-handoff.sh

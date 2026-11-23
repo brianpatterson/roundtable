@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015 # `check && pass || fail`: fail runs when either half fails, as a test wants
 # Checks attempt.sh, the attempt the CI fixer, Rework and the conflict resolver each make on a
 # factory pull request (ADR-0028, ADR-0037, ADR-0053, ADR-0058): which attempt it is and when it
 # goes to a human (next), and how what the agent pushed is judged and reported (report), against a

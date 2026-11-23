@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015 # `check && pass || fail`: fail runs when either half fails, as a test wants
 # Checks the guards every agent job runs after its agent (ADR-0029, ADR-0048):
 # takedown-credentials.sh, flag-suspicious.sh and protected-changes.sh, against a stand-in gh,
 # and explain-failure.sh on a canned output file. Run from anywhere: .github/factory/test-agent-guards.sh
