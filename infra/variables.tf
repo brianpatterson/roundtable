@@ -87,4 +87,10 @@ variable "github_factory_clock_token" {
   description = "Fine-grained GitHub token for the factory's clock: this repository only, Actions read and write, nothing else (see README, Factory clock)."
   type        = string
   sensitive   = true
+
+  # Empty, the Worker would deploy and fail every tick with a 401; fail at plan instead.
+  validation {
+    condition     = startswith(var.github_factory_clock_token, "github_pat_")
+    error_message = "Paste a fine-grained GitHub token (it starts with github_pat_); see README, Factory clock."
+  }
 }

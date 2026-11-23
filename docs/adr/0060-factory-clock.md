@@ -75,8 +75,10 @@ Option 4, with a heartbeat for each sweep:
   run logs. It can't read or push code, secrets or issues. Every job that uses a secret runs in an
   environment that admits only `main` (`production`, `backups`, `factory`,
   `security-advisories`), so a run it starts on another branch gets none, with one exception:
-  the sweeps read their two heartbeat URLs as repository secrets, without an environment. Through
-  them a leaked token could only ping the heartbeats and so hide a stalled factory; a `main`-only
+  the sweeps read their two heartbeat URLs as repository secrets, without an environment, so any
+  workflow run on any branch of this repository can read them (a leaked token's runs, but also CI
+  on a pull request from a branch here). With them, anyone could only ping the heartbeats and so
+  hide a stalled factory; a `main`-only
   environment would close that, at the cost of a deployment record on every sweep. `repository_dispatch`
   would allow narrower triggers but needs **Contents: write**, which is worse. It's a
   `secret_text` binding, set from `terraform.tfvars` into the encrypted state (ADR-0016).
@@ -98,7 +100,7 @@ Option 4, with a heartbeat for each sweep:
   Stack heartbeat (`.github/factory/ping-heartbeat.sh`; URLs in the `SWEEPER_HEARTBEAT_URL` and
   `DISPATCHER_HEARTBEAT_URL` secrets), as the nightly backup already does (ADR-0019). Each
   heartbeat expects a ping every hour, with 5 minutes of grace. Sweeps come every 20 minutes, so
-  two ticks can go missing without an alert, and an hour without a successful sweep opens a Better Stack incident and emails the owner. That covers a dead clock,
+  two ticks can go missing without an alert, and an hour without a successful sweep opens a Better Stack incident and emails the owner. #157 asked for an issue, a label or a failing check; the owner accepted an email instead, since anything inside GitHub would run on the same late scheduler. That covers a dead clock,
   an expired token, an Actions outage and a sweep that keeps failing. The alert has to come from
   outside GitHub, since a check inside it runs only when GitHub runs something (option 2). A
   dry run doesn't ping, and a failed ping only warns: the missing pings raise the alarm. Only
