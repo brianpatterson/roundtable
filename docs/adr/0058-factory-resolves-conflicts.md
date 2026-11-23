@@ -110,3 +110,8 @@ Option 1, with option 3 as its check.
 - Revisit if the resolver's merges start hiding real disagreements between pull requests (the
   reviewer reads each one), or if the repository moves to an organization, where the merge queue
   would test each pull request against the latest main instead.
+
+## Note (2026-11-23)
+
+The checks after the agent moved from `report-conflict-attempt.sh` to `attempt.sh report conflict`,
+shared with the CI fixer and Rework, and are tested by `test-attempt.sh`. The decision is unchanged.

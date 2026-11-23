@@ -9,7 +9,8 @@
 #                                   <n>     attempt n of 2
 #                                   minor   Rework's one pass over minor findings (PASS=minor)
 #                                   limit   two attempts already: labeled needs-human, and said why
-#                                   spent   the minor pass is used: the findings are the owner's
+#                                   spent   the minor pass since a human last pushed is used: the
+#                                           findings are the owner's
 #                                 or nothing, with the reason on stderr, when it isn't the kind's to
 #                                 try (closed, a fork, not its label, waiting for a human, or moved
 #                                 past EXPECT_SHA).
@@ -90,7 +91,9 @@ next() {
     comments=$(jq -c --arg since "$since" '[.[] | select(.created_at > $since)]' <<<"$comments")
   fi
 
-  # Rework's minor pass, one per pull request, doesn't count against the two attempts (ADR-0053).
+  # Rework's minor pass doesn't count against the two attempts (ADR-0053). It's one per human push,
+  # not per pull request: only comments since the last commit a human pushed count (above), as
+  # the minor pass always has.
   if [ "$kind" = rework ]; then
     if [ "${PASS:-}" = minor ]; then
       if jq -e --arg m "$minor_marker" 'any(.body | contains($m))' <<<"$comments" >/dev/null; then

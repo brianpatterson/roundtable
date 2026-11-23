@@ -83,7 +83,7 @@ jobs:
           # Only the factory's own pull requests (a branch of this repository, labeled `factory`),
           # still at the reviewed commit (a newer one gets its own CI run, review and rework), and
           # not waiting for a human. Two reworks since a human last pushed, then a human; the minor
-          # pass, once per pull request, doesn't count against them (ADR-0053).
+          # pass, once per human push, doesn't count against them (ADR-0053).
           pass=
           [ "$kind" != minor ] || pass=minor
           attempt=$(EXPECT_SHA=$reviewed PASS=$pass .github/factory/attempt.sh next rework "$pr")
