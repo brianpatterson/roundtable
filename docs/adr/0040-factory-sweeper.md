@@ -1,6 +1,6 @@
 # 0040. Sweep factory pull requests every 30 minutes so none is stuck without a label
 
-- **Status:** Accepted
+- **Status:** Accepted; what happens to a factory pull request that conflicts with main is amended by [ADR-0058](0058-factory-resolves-conflicts.md)
 - **Date:** 2026-11-20
 
 ## Context

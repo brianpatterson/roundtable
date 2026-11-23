@@ -132,7 +132,7 @@ allowlist refuses most other forms of `git push`, such as `--set-upstream`), the
 `gh pr create --base main --title "<conventional subject>" --body-file .factory/pr-body.md --label factory`.
 Add `--draft` if `pnpm check` still fails. CI runs on it either way, and a human reviews and
 merges; you never merge the pull request. After it's open, merge `main` into your branch again only
-when the owner asks you to resolve a conflict.
+when the owner asks you to resolve a conflict, or you're started to resolve one.
 
 ## Started by the dispatcher
 
@@ -210,8 +210,8 @@ and which attempt this is (you get two). The pull request's branch is checked ou
 3. **Fix the cause, not the check.** Make the smallest change that makes the failing check pass
    for the right reason, in the pull request's own scope. Run `pnpm check`, commit with a
    conventional subject (`fix:`, `test:` …) and push to the same branch. Return `fixed`.
-   Don't merge `main` into the branch to fix CI: you merge `main` only when the owner asks you
-   to resolve a conflict.
+   Don't merge `main` into the branch to fix CI: you merge `main` only to resolve a conflict,
+   when the owner asks or you're started for one.
 4. **Security failures** (dependency review, CodeQL). A failed CodeQL run lists its findings in
    the changed files as `::error file=…,line=…::CodeQL <rule>: …` lines in its log: fix the code
    it flags. An advisory in a dependency needs a lockfile change, which you can't make (see
@@ -257,3 +257,32 @@ for the owner.
 
 Your `summary` is posted on the pull request: one line per finding, saying what you changed or
 why you didn't.
+
+## Resolving a conflict with main
+
+When `main` moves and one of the factory's pull requests conflicts with it, you're started on its
+branch with `main` already merged in but not committed: `git status` lists the files that still
+conflict ([ADR-0058](../../docs/adr/0058-factory-resolves-conflicts.md)). Two pull requests written
+at the same time usually conflict because both took the next ADR number and added its row to
+`docs/adr/README.md`.
+
+1. **Read both sides.** `git diff` shows each conflict. Read the ticket the pull request closes
+   (`gh issue view <number>`, without `--comments`) and `git log` for what came in from `main`.
+2. **Keep both.** A conflict means two changes meant to land together: keep what `main` merged
+   and what this pull request adds. Never drop either side's change to make the conflict go away.
+3. **An ADR number taken by `main`:** `main` keeps it. Renumber this pull request's ADR after the
+   highest in `docs/adr/` with `git mv`, then change its heading, its index row (in order, after
+   `main`'s) and every link to it on the branch. `pnpm check:adrs` confirms it. You can't edit the
+   pull request's description, so give the old and new number in your summary.
+4. **A migration:** never edit `main`'s. If both sides added one, keep `main`'s, remove this pull
+   request's, and generate it again with `pnpm db:generate --name <the same name>` so it comes
+   after `main`'s.
+5. **Commit and push.** Run `pnpm check`. Commit with `git commit --no-edit` (the merge's own
+   message), push to the same branch once, and return `resolved`. Don't change anything the
+   conflict didn't need: CI and the reviewer run again on the merge.
+6. **When you can't.** If both sides changed the same behavior in ways that don't fit together,
+   the lockfile or `.github/`, `.claude/` or `CLAUDE.md` conflicts, or keeping both needs a
+   decision only the owner can make, run `git merge --abort`, push nothing and return
+   `needs-human`, naming each conflict and what you'd do.
+
+Your `summary` is posted on the pull request: each file that conflicted and how you resolved it.

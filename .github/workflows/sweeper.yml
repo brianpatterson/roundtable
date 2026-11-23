@@ -2,8 +2,9 @@
 # `factory` or `autofix`, drafts included, not already `needs-human`) is checked for being stuck in a
 # state no workflow reacts to: CI cancelled or timed out, CI never started or never finished, a
 # conflict with main, a green commit the reviewer never reviewed, a failure the CI fixer never
-# fixed, changes asked for and never reworked. A cancelled CI is rerun once; everything else gets
-# `needs-human` and a comment saying why. The rules live in .github/factory/sweep-prs.sh, pinned
+# fixed, changes asked for and never reworked. A cancelled CI is rerun once; a factory pull
+# request's conflict starts the conflict resolver (ADR-0058); everything else gets `needs-human`
+# and a comment saying why. The rules live in .github/factory/sweep-prs.sh, pinned
 # by test-sweep-prs.sh in CI. No agent runs here.
 name: Factory sweeper
 
@@ -30,7 +31,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      actions: write # rerun a cancelled CI
+      actions: write # rerun a cancelled CI, start the conflict resolver
       pull-requests: write # label and comment
       issues: write # labels and comments go through the issues API
     steps:

@@ -3,7 +3,8 @@
 # `autofix`) is either moving or labeled `needs-human`, never stuck in silence. Each workflow reacts
 # to one event (CI failed, CI passed, the reviewer asked for changes), so a run that ends any other
 # way, or a workflow that never starts, leaves a pull request waiting with nobody told. This looks
-# at each one's state and either waits, reruns a cancelled CI once, or hands it to a human.
+# at each one's state and either waits, reruns a cancelled CI once, starts the conflict resolver
+# (ADR-0058), or hands it to a human.
 #
 #   sweep-prs.sh            sweep every open factory pull request (needs GH_TOKEN, GITHUB_REPOSITORY)
 #   sweep-prs.sh --decide   read one state as JSON on stdin, print the decision (for the tests)
@@ -20,13 +21,16 @@ GH=${GH:-gh}
 # `reviewed` is false for Dependabot's own bumps (labeled `autofix`), which the reviewer skips by
 # design (ADR-0033): green and unreviewed is the owner's turn there, not a stall.
 # `factory` is false for a pull request only labeled `autofix`: it gets no rework (ADR-0037), so a
-# `changes` verdict there is the owner's turn, like `ready`.
-# Prints {action: wait | ok | rerun | human, reason}.
+# `changes` verdict there is the owner's turn, like `ready`, and no conflict resolver (ADR-0058).
+# A factory pull request's conflict goes to the resolver, which every merge to main starts anyway;
+# this catches one that run missed. The resolver counts its attempts and hands over to a human.
+# Prints {action: wait | ok | rerun | resolve | human, reason}.
 # shellcheck disable=SC2016 # jq's own $variables
 decide='
   def out($a; $r): {action: $a, reason: $r};
   if .mergeable == "CONFLICTING" then
-    out("human"; "it conflicts with main, so CI can'"'"'t run on it. Merge main into the branch and resolve the conflict")
+    if .factory == true then out("resolve"; "it conflicts with main, which the conflict resolver hasn'"'"'t fixed")
+    else out("human"; "it conflicts with main, so CI can'"'"'t run on it. Merge main into the branch and resolve the conflict") end
   elif .ci == null then
     if .head_age > 30 then out("human"; "no CI run started for its latest commit in \(.head_age) minutes")
     else out("wait"; "CI hasn'"'"'t started yet") end
@@ -114,6 +118,9 @@ if [ "${1:-}" = --one ]; then
       run=$(jq -r .databaseId <<<"$ci")
       "$GH" run rerun "$run" -R "$repo"
       "$GH" pr comment "$number" -R "$repo" --body "The sweeper reran CI once: $reason. If it ends the same way again, this goes to a human. ADR-0040."
+      ;;
+    resolve)
+      "$GH" workflow run resolve-conflicts.yml -R "$repo" --ref main -f pr="$number"
       ;;
     human)
       "$GH" pr edit "$number" -R "$repo" --add-label needs-human

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks the sweeper's decisions (ADR-0040): each case is a pull request's state and the action it
+# Checks the sweeper's decisions (ADR-0040, ADR-0058): each case is a pull request's state and the action it
 # must get. Run from anywhere: .github/factory/test-sweep-prs.sh
 set -euo pipefail
 
@@ -21,7 +21,8 @@ state() { # state <mergeable> <head age> <ci JSON or null> [review JSON] [factor
   printf '{"factory":%s,"mergeable":"%s","head_age":%s,"ci":%s,"review":%s}' "${5:-true}" "$1" "$2" "$3" "${4:-null}"
 }
 
-check "a conflict goes to a human, whatever CI says" "$(state CONFLICTING 5 "$(ci completed success 1 5)")" human
+check "a factory PR's conflict goes to the resolver, whatever CI says" "$(state CONFLICTING 5 "$(ci completed success 1 5)")" resolve
+check "an autofix-only PR's conflict goes to a human" "$(state CONFLICTING 5 "$(ci completed success 1 5)" null false)" human
 check "no CI yet, just pushed: wait" "$(state MERGEABLE 10 null)" wait
 check "no CI half an hour after the push: human" "$(state MERGEABLE 31 null)" human
 check "CI running: wait" "$(state MERGEABLE 40 "$(ci in_progress '' 1 40)")" wait
