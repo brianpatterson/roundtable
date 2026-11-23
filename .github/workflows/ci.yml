@@ -66,6 +66,9 @@ jobs:
       # When the sweeper reruns CI or hands a stuck factory pull request to a human (ADR-0040).
       - name: Sweeper decisions
         run: .github/factory/test-sweep-prs.sh
+      # The sweeps' dead man's switch (ADR-0060).
+      - name: Heartbeat ping
+        run: .github/factory/test-ping-heartbeat.sh
       # Which conflicting factory pull requests the resolver takes (ADR-0058).
       - name: Conflict resolver selection
         run: .github/factory/test-select-conflicts.sh
@@ -153,5 +156,8 @@ jobs:
           done
           exit 1
       - run: tofu validate
+      # What the factory's clock sends GitHub on each tick (ADR-0060).
+      - name: Factory clock Worker
+        run: node --test factory-clock/worker.test.js
       - name: cloud-init creates the expected users
         run: ./test-cloud-init.sh

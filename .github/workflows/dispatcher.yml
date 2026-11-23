@@ -6,6 +6,11 @@
 # and starts the next ticket that may start, through the Factory workflow's `workflow_dispatch`. The Factory workflow's gate makes the same
 # decision the moment the owner labels a ticket. The rules live in .github/factory/dispatch.sh,
 # pinned by test-dispatch.sh in CI. No agent runs here.
+#
+# GitHub starts this repository's scheduled runs hours late and drops the rest, so the factory's
+# clock (a Cloudflare Worker, infra/factory-clock.tf) dispatches the sweep every 20 minutes, and
+# every successful sweep pings a Better Stack heartbeat, which alerts when an hour passes without
+# one (ADR-0060).
 name: Dispatcher
 
 on:
@@ -17,9 +22,11 @@ on:
     workflows: [Deploy]
     types: [completed]
     branches: [main]
-  # A backstop for an event that was missed or a gate that GitHub dropped.
+  # A backstop for the clock. GitHub runs it every few hours at best (ADR-0060).
   schedule:
     - cron: '15,45 * * * *'
+  # The factory's clock, every 20 minutes: the backstop for an event that was missed or a gate
+  # that GitHub dropped. Also by hand.
   workflow_dispatch:
     inputs:
       dry_run:
@@ -52,3 +59,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: .github/factory/dispatch.sh
+      # The dead man's switch (ADR-0060). A sweep that fails or never runs sends nothing, and
+      # Better Stack alerts when an hour passes without a ping. Skipped until the secret is set.
+      - name: Report to the heartbeat monitor
+        if: inputs.dry_run != true
+        env:
+          HEARTBEAT_URL: ${{ secrets.DISPATCHER_HEARTBEAT_URL }}
+        run: .github/factory/ping-heartbeat.sh

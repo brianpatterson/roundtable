@@ -173,9 +173,13 @@ Building blocks, in order:
    comments, then a human approves (you stay in the loop at first).
    When it asks for changes on a factory PR, the implementer reworks it: two attempts, then
    `needs-human` ([ADR-0037](adr/0037-software-factory-rework.md)).
-   ✅ **Sweeper** ([ADR-0040](adr/0040-factory-sweeper.md)): every 30 minutes, any factory PR
+   ✅ **Sweeper** ([ADR-0040](adr/0040-factory-sweeper.md)): every 20 minutes, any factory PR
    stuck where no workflow reacts (CI cancelled or timed out, a conflict, no review) is rerun once
    or labeled `needs-human` with the reason.
+   ✅ **Factory clock** ([ADR-0060](adr/0060-factory-clock.md)): GitHub ran the sweeps' cron every
+   few hours, not every 30 minutes, so a Cloudflare Cron Trigger starts the sweeper and the
+   dispatcher every 20 minutes, and Better Stack alerts when an hour passes without a successful
+   sweep.
    ✅ **Conflict resolver** ([ADR-0058](adr/0058-factory-resolves-conflicts.md)): after every green
    merge, a factory PR that now conflicts with main gets main merged in and the conflict resolved
    by the implementer (usually a colliding ADR number, renumbered); what it can't resolve goes to

@@ -42,3 +42,15 @@ output "backup_heartbeat_url" {
   value       = betteruptime_heartbeat.backup.url
   sensitive   = true
 }
+
+output "sweeper_heartbeat_url" {
+  description = "Ping URL for the factory sweeper's heartbeat (GitHub secret SWEEPER_HEARTBEAT_URL)."
+  value       = betteruptime_heartbeat.sweeper.url
+  sensitive   = true
+}
+
+output "dispatcher_heartbeat_url" {
+  description = "Ping URL for the dispatcher's heartbeat (GitHub secret DISPATCHER_HEARTBEAT_URL)."
+  value       = betteruptime_heartbeat.dispatcher.url
+  sensitive   = true
+}

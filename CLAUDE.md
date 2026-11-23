@@ -50,8 +50,10 @@ each module is what a future service or microfrontend would become.
   token the agent never sees), and `guard-report-text.sh` takes down what quotes it ([ADR-0041](docs/adr/0041-factory-reads-user-reports.md)).
   `.github/factory/dispatch.sh` (the Factory workflow's gate and `.github/workflows/dispatcher.yml`) builds `ready`
   tickets one at a time, each once the issues blocking it are merged and deployed ([ADR-0047](docs/adr/0047-factory-dispatcher.md)).
-  `.github/workflows/sweeper.yml` checks open factory PRs every 30 minutes: it reruns a cancelled CI
+  `.github/workflows/sweeper.yml` checks open factory PRs every 20 minutes and after each CI and Review run: it reruns a cancelled CI
   once and labels any other stuck PR `needs-human` with the reason ([ADR-0040](docs/adr/0040-factory-sweeper.md)).
+  GitHub's cron runs hours late here, so a Cloudflare Worker (`infra/factory-clock.tf`) starts both sweeps by
+  `workflow_dispatch`, and each pings a Better Stack heartbeat that alerts after an hour without a sweep ([ADR-0060](docs/adr/0060-factory-clock.md)).
   `.github/workflows/resolve-conflicts.yml` merges main into a factory PR that conflicts with it, after
   every merge and when the sweeper finds one, and has the implementer resolve it; `pnpm check:adrs`
   catches two ADRs taking one number, the usual cause ([ADR-0058](docs/adr/0058-factory-resolves-conflicts.md)).

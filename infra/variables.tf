@@ -5,7 +5,7 @@ variable "do_token" {
 }
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Zone:DNS:Edit on this domain and Account:Workers R2 Storage:Edit (see README)."
+  description = "Cloudflare API token with Zone:DNS:Edit on this domain Account:Workers R2 Storage:Edit and Account:Workers Scripts:Edit (see README)."
   type        = string
   sensitive   = true
 }
@@ -73,6 +73,18 @@ variable "resend_dkim_public_key" {
 
 variable "betterstack_api_token" {
   description = "Better Stack Incidents API token (Settings → API tokens → Team-based tokens). See README, Monitoring."
+  type        = string
+  sensitive   = true
+}
+
+variable "github_repository" {
+  description = "The repository whose factory sweeps the clock starts (ADR-0060), as owner/name."
+  type        = string
+  default     = "brianpatterson/roundtable"
+}
+
+variable "github_factory_clock_token" {
+  description = "Fine-grained GitHub token for the factory's clock: this repository only, Actions read and write, nothing else (see README, Factory clock)."
   type        = string
   sensitive   = true
 }

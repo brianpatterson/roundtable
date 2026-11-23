@@ -20,13 +20,16 @@ them means downtime or a new server ([ADR-0020](../docs/adr/0020-rename-to-round
      access to `regions`, `sizes`, `image`, `actions`. If `tofu apply` fails with a 403 naming a
      missing scope, edit the token to add it and apply again.
    - `cloudflare_api_token`: Cloudflare → My Profile → API Tokens → "Edit zone DNS", limited to
-     this zone, plus the permission **Account → Workers R2 Storage → Edit** for your account
-     (for the backup and state buckets)
+     this zone, plus the permissions **Account → Workers R2 Storage → Edit** (for the backup and
+     state buckets) and **Account → Workers Scripts → Edit** (for the [factory clock](#factory-clock))
+     for your account
    - `cloudflare_zone_id`: Cloudflare → the domain → Overview, right-hand column
    - `cloudflare_account_id`: same column, under **Account ID**
    - `domain`
    - `state_passphrase`: encrypts the state. Copy it from your password manager (see below).
    - `resend_dkim_public_key`: from Resend, after adding the sending domain (see [Email](#email)).
+   - `github_factory_clock_token`: a GitHub token that starts the factory's sweeps (see
+     [Factory clock](#factory-clock)).
 4. Credentials for the state bucket, in `~/.aws/credentials` (see below).
 
 ## State
@@ -413,6 +416,49 @@ for the details instead.
 **Rotating it:** run the steps again; each run makes a new token. **If it leaks:** replace it on the server
 and redeploy first. It can only read reports under 30 days old, by id, never who sent them.
 
+## Factory clock
+
+GitHub starts this repository's scheduled workflows hours late and drops most of the runs in
+between, so the factory's sweeps don't rely on GitHub's cron
+([ADR-0060](../docs/adr/0060-factory-clock.md)). A Cloudflare Worker (`factory-clock.tf`,
+`factory-clock/worker.js`) starts the **Factory sweeper** and the **Dispatcher** every 20
+minutes through `workflow_dispatch`. Each sweep pings a Better Stack heartbeat when it succeeds,
+and an hour without one opens an incident and emails you. **Cost:** $0 (Workers free plan: 5 Cron
+Triggers; Better Stack free plan: 10 heartbeats, this uses 3).
+
+### One-time setup
+
+1. **The token.** GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate:
+   resource owner you, **Only select repositories** → this one, **Repository permissions → Actions
+   → Read and write**, nothing else. With an expiry (a year at most); put a reminder in your
+   calendar a week before it. Copy it into `terraform.tfvars` as `github_factory_clock_token`.
+   It can start, rerun and cancel workflow runs here and nothing else: no code, no secrets, no
+   issues.
+2. **The Cloudflare token** needs **Account → Workers Scripts → Edit** (see Setup). Add it to
+   the existing token if it's missing.
+3. **Plan and apply.** Expect 4 to add (the Worker, its Cron Trigger and the two heartbeats) and
+   nothing else:
+
+   ```bash
+   tofu plan -out=tfplan && tofu apply tfplan
+   ```
+
+4. **Connect the sweeps to their heartbeats**, without printing the URLs:
+
+   ```bash
+   tofu output -raw sweeper_heartbeat_url | gh secret set SWEEPER_HEARTBEAT_URL
+   tofu output -raw dispatcher_heartbeat_url | gh secret set DISPATCHER_HEARTBEAT_URL
+   ```
+
+5. **Check it.** Within 20 minutes, **Actions → Factory sweeper** and **Actions → Dispatcher**
+   each show a run whose event is `workflow_dispatch`, and both heartbeats in Better Stack turn
+   green. Cloudflare → Workers → `roundtable-factory-clock` → **Logs** shows each tick.
+
+**Rotating the token:** generate a new one, update `terraform.tfvars`, `tofu apply`, then revoke
+the old one. **If it leaks:** revoke it first; the worst it allows is starting, rerunning or
+cancelling workflow runs, and the sweeps and Factory runs it can start each check their own
+rules before acting.
+
 ## Monitoring
 
 Better Stack watches the site and the backups from outside; Sentry collects API errors
@@ -473,18 +519,19 @@ the app.
 
 ## Runbook
 
-| Situation                                       | Do this                                                                                                                                                                                                                        |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Droplet is unreachable                          | DigitalOcean console → droplet → **Recovery Console** (out-of-band), check status; or `tofu apply -replace=digitalocean_droplet.app`                                                                                           |
-| Out of memory                                   | Check `free -h` and `docker stats`; then `droplet_size = "s-1vcpu-2gb"` and `tofu apply` (replaces the droplet)                                                                                                                |
-| Disk full on `/srv/data`                        | Raise `data_volume_size`, `tofu apply`, then `sudo resize2fs /dev/disk/by-id/scsi-0DO_Volume_interview-app-data`                                                                                                               |
-| Rotate the DigitalOcean token                   | Generate a new token, update `terraform.tfvars`, revoke the old one                                                                                                                                                            |
-| Backup run failed                               | Open the run's log. SSH or R2 errors: check the `backups` environment secrets. Restore check failed: the backup is unusable, so fix it today                                                                                   |
-| `daily email limit reached` in the API log      | 80 emails in 24 hours: an attack or real growth. Check `select kind, count(*) from email_sends where sent_at > now() - interval '1 day' group by 1`. Real users: upgrade Resend, set `EMAIL_LIMIT_PER_DAY` in `.env`, redeploy |
-| Better Stack: site down                         | Open the incident for the failing check. Then `ssh ops@<ipv4>` and `docker compose -f compose.prod.yml --env-file .env ps`, and the API logs (above). `"db":"down"` means Postgres is the problem                              |
-| Better Stack: backup heartbeat missed or failed | Open the latest **Backup** run in GitHub Actions. No run at all: check the workflow isn't disabled (60 days without commits) and run it by hand                                                                                |
-| Sentry: new issue                               | The issue shows the stack trace and the release (image tag). `Email send failed`: check Resend → **Emails** and the API key. `Daily email limit reached`: see the `daily email limit reached` row                              |
-| Emails not arriving                             | Resend → **Emails** shows each send and why it bounced. Not listed: check the API log for `Resend rejected the email`. Spam: check DKIM/DMARC pass in the headers                                                              |
-| Tear everything down                            | `tofu destroy` refuses because the volume and buckets have `prevent_destroy`. Remove those lines deliberately if you really mean it                                                                                            |
+| Situation                                       | Do this                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Droplet is unreachable                          | DigitalOcean console → droplet → **Recovery Console** (out-of-band), check status; or `tofu apply -replace=digitalocean_droplet.app`                                                                                                                                                     |
+| Out of memory                                   | Check `free -h` and `docker stats`; then `droplet_size = "s-1vcpu-2gb"` and `tofu apply` (replaces the droplet)                                                                                                                                                                          |
+| Disk full on `/srv/data`                        | Raise `data_volume_size`, `tofu apply`, then `sudo resize2fs /dev/disk/by-id/scsi-0DO_Volume_interview-app-data`                                                                                                                                                                         |
+| Rotate the DigitalOcean token                   | Generate a new token, update `terraform.tfvars`, revoke the old one                                                                                                                                                                                                                      |
+| Backup run failed                               | Open the run's log. SSH or R2 errors: check the `backups` environment secrets. Restore check failed: the backup is unusable, so fix it today                                                                                                                                             |
+| `daily email limit reached` in the API log      | 80 emails in 24 hours: an attack or real growth. Check `select kind, count(*) from email_sends where sent_at > now() - interval '1 day' group by 1`. Real users: upgrade Resend, set `EMAIL_LIMIT_PER_DAY` in `.env`, redeploy                                                           |
+| Better Stack: site down                         | Open the incident for the failing check. Then `ssh ops@<ipv4>` and `docker compose -f compose.prod.yml --env-file .env ps`, and the API logs (above). `"db":"down"` means Postgres is the problem                                                                                        |
+| Better Stack: backup heartbeat missed or failed | Open the latest **Backup** run in GitHub Actions. No run at all: check the workflow isn't disabled (60 days without commits) and run it by hand                                                                                                                                          |
+| Better Stack: sweeper or dispatcher heartbeat   | No successful sweep for an hour. **Actions → Factory sweeper** (or **Dispatcher**): failing runs, open one. No `workflow_dispatch` runs: Cloudflare → Workers → `roundtable-factory-clock` → **Logs**; a 401 means the token expired (rotate it, above). Run the sweep by hand meanwhile |
+| Sentry: new issue                               | The issue shows the stack trace and the release (image tag). `Email send failed`: check Resend → **Emails** and the API key. `Daily email limit reached`: see the `daily email limit reached` row                                                                                        |
+| Emails not arriving                             | Resend → **Emails** shows each send and why it bounced. Not listed: check the API log for `Resend rejected the email`. Spam: check DKIM/DMARC pass in the headers                                                                                                                        |
+| Tear everything down                            | `tofu destroy` refuses because the volume and buckets have `prevent_destroy`. Remove those lines deliberately if you really mean it                                                                                                                                                      |
 
 Past incidents and what they taught us are in [docs/incidents/](../docs/incidents/).
