@@ -80,3 +80,8 @@ Options 2 and 3, with Strong findings becoming issues the owner accepts by label
   candidate now brings its own acceptance criteria and out-of-scope; only two criteria stay fixed:
   existing tests pass or move to the new interface, and the recommendations are followed. Denied
   tool calls are also printed as log notices, since run summaries can't be read through the API.
+- **2026-11-23:** the fixed test criterion read "existing tests pass or move to the new
+  interface", which an implementer could meet by keeping the shallow modules' tests and adding
+  interface tests on top. Both sets then run in CI and in every mutation run. It now requires the
+  skill's "replace, don't layer": the replaced tests are deleted once tests at the new interface
+  check the same behavior. The nightly mutation run shows whether they do.
