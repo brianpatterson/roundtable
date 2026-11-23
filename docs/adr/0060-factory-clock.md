@@ -69,11 +69,15 @@ Option 4, with option 1's events added for the sweeper, and a heartbeat for each
   whose Cron Trigger fires at minutes 7, 27 and 47 of every hour. Each tick sends
   `workflow_dispatch` on `main` for `sweeper.yml` and `dispatcher.yml`, each regardless of whether
   the other worked. A refused dispatch fails the tick, which shows in the Worker's logs. The
-  token is fine-grained: this repository only, **Actions: read and write**, nothing else. It can
-  start, rerun and cancel workflow runs, and can't read code, secrets or issues. The runs it
-  starts check their own rules before acting (the dispatcher re-verifies every ticket). It's a
+  token is fine-grained: this repository only, **Actions: read and write**, nothing else. GitHub
+  can't narrow that to a branch or a workflow, so the token can start any workflow with a
+  `workflow_dispatch` trigger on any branch, rerun or cancel runs, disable workflows and delete
+  run logs. It can't read or push code, secrets or issues. Every job that uses a secret runs in an
+  environment that admits only `main` (`production`, `backups`, `factory`,
+  `security-advisories`), so a run it starts on another branch gets none. `repository_dispatch`
+  would allow narrower triggers but needs **Contents: write**, which is worse. It's a
   `secret_text` binding, set from `terraform.tfvars` into the encrypted state (ADR-0016).
-- **Events.** The sweeper also runs after every CI and Review run (`workflow_run`), so a
+- **Events.** The sweeper also runs after every CI run on a pull request and every Review run (`workflow_run`, ignoring `main`, where CI already starts the conflict resolver and a sweep at the same moment could start a second one), so a
   cancelled CI is rerun, or a conflict sent to the resolver, within seconds. The clock still
   catches the timeouts. CI → Review → sweeper is three levels of `workflow_run`, GitHub's limit.
   The dispatcher keeps the events it already had (issue closed, Deploy finished).
@@ -109,6 +113,12 @@ threshold (2 hours) plus 20 minutes. ADR-0047's sweep happens every 20 minutes t
 - Until a human applies the OpenTofu change and sets the two secrets, nothing changes: the
   sweeps still run on GitHub's late cron and on events, and the ping step says no heartbeat is
   set.
+- A leaked token could start the agent workflows on `main` and use up Claude usage, or cancel a
+  deploy. Nothing on the token prevents that; revoking it does, and the Factory's `verify` job
+  still builds only tickets the owner approved. The runbook says what to check after a leak.
+- Sweeps started by CI and Review ping the same heartbeats, so in a busy stretch they keep them
+  green while the clock is down; the timeout rules then wait for the first quiet hour's alert. The
+  runbook says to check that recent runs include `workflow_dispatch` ones.
 - Sweeps started by the clock show the token owner as the actor in the Actions tab, with event
   `workflow_dispatch`, the same as a manual run.
 - Revisit if GitHub's scheduled runs come back on time for weeks (the backup's start time shows
