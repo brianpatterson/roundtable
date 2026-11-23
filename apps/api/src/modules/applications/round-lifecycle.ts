@@ -6,8 +6,13 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { Effect } from 'effect';
 import type { ApplicationStatus } from '@roundtable/contract';
 import type { Database } from '../../platform/database/effect.js';
-import { INFERABLE, failedByRejection } from './inference.js';
-import { rounds } from './schema.js';
+import {
+  INFERABLE,
+  failedByRejection,
+  passedByNewRound,
+  type InferenceRound,
+} from './inference.js';
+import { applications, rounds } from './schema.js';
 
 /** A transaction of the Effect `Database`. */
 export type Transaction = Parameters<Parameters<Database['Service']['transaction']>[0]>[0];
@@ -20,11 +25,7 @@ const DEFAULT_TIME_ZONE = 'UTC';
  * it follows from. The guard is the same rule the pure ones use, so a Round whose Outcome the user
  * set keeps it, even one set since it was read.
  */
-export const inferOutcomes = (
-  tx: Transaction,
-  ids: readonly string[],
-  outcome: 'passed' | 'failed',
-) =>
+const inferOutcomes = (tx: Transaction, ids: readonly string[], outcome: 'passed' | 'failed') =>
   ids.length === 0
     ? Effect.void
     : tx
@@ -62,4 +63,35 @@ export const statusChanged = (
       .orderBy(asc(rounds.createdAt), asc(rounds.id));
 
     yield* inferOutcomes(tx, failedByRejection(its, timeZone), 'failed');
+  });
+
+/**
+ * Whether adding a Round moves its Application to interviewing (GLOSSARY.md): only its first, and
+ * only from applied. Any other status was set by the user, and stays.
+ */
+export const movesToInterviewing = (status: ApplicationStatus, earlierRounds: number) =>
+  earlierRounds === 0 && status === 'applied';
+
+/**
+ * What adding `round` to `application` sets off, in the transaction `tx` that inserted it, holding
+ * the application's row: the pending Rounds before it (`earlier`, every Round it had) pass,
+ * unless the user set their Outcome, and a first Round moves an applied Application to
+ * interviewing. `timeZone` is the user's, for the day rule; without one the day is UTC's.
+ */
+export const roundAdded = (
+  tx: Transaction,
+  application: { readonly id: string; readonly status: ApplicationStatus },
+  earlier: readonly InferenceRound[],
+  round: InferenceRound,
+  timeZone: string = DEFAULT_TIME_ZONE,
+) =>
+  Effect.gen(function* () {
+    yield* inferOutcomes(tx, passedByNewRound(earlier, round, timeZone), 'passed');
+
+    if (movesToInterviewing(application.status, earlier.length)) {
+      yield* tx
+        .update(applications)
+        .set({ status: 'interviewing' })
+        .where(eq(applications.id, application.id));
+    }
   });
