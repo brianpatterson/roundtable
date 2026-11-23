@@ -31,7 +31,6 @@ jobs:
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
-          output: sarif-results
       # A finding doesn't fail this workflow on its own, so the factory's fixer, which runs when it
       # fails, never heard of one (ADR-0030). On a pull request, fail on findings in the files it
       # changed, and print them, so the fixer can read them with `gh run view --log-failed`.
