@@ -4,9 +4,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Redacted } from 'effect';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import pg from 'pg';
 import { migrationsFolder, runMigrations } from '../../platform/database/migrate.js';
 import { createDb } from '../../platform/database/promise.js';
@@ -35,10 +35,19 @@ describe('the migration that drops screening', () => {
   const admin = new pg.Client({ connectionString: testDatabase.href });
   const before = mkdtempSync(join(tmpdir(), 'roundtable-migrations-'));
 
-  // Every migration up to this one, as the database stands under the previous release.
+  // Only the migrations before this one, as the database stands under the previous release: a
+  // later migration applied ahead of this one would test something release 2 never left behind.
+  const folder = readdirSync(migrationsFolder).find((entry) => entry.endsWith(`_${MIGRATION}`));
+
+  if (folder === undefined) throw new Error(`No migration named ${MIGRATION}`);
+
   cpSync(migrationsFolder, before, {
     recursive: true,
-    filter: (source) => !basename(source).endsWith(`_${MIGRATION}`),
+    filter: (source) => {
+      const [entry = ''] = relative(migrationsFolder, source).split(sep);
+
+      return entry === '' || entry < folder;
+    },
   });
 
   beforeAll(async () => {
