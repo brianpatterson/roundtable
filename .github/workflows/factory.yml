@@ -289,7 +289,8 @@ jobs:
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
             .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
             .github/factory/takedown-report-quotes.sh .github/factory/explain-failure.sh \
-            .github/factory/flag-suspicious.sh .github/factory/takedown-credentials.sh "$RUNNER_TEMP/"
+            .github/factory/flag-suspicious.sh .github/factory/takedown-credentials.sh \
+            .github/factory/protected-changes.sh "$RUNNER_TEMP/"
           mkdir -p "$RUNNER_TEMP/user-report"
       # The ticket as the label path's agent sees it: the title, the description, and comments from
       # the owner and from github-actions[bot] (the reviewer, the dispatcher); nobody else's.
@@ -445,12 +446,16 @@ jobs:
           # rules, goes to a human whatever it reported. The ticket keeps `building`, so nothing
           # else starts until someone has looked.
           for head in $HEADS; do
-            reason=""
+            reason="" code=0
             if [[ "$head" != "claude/issue-$ISSUE-"* ]]; then
               reason="pushed \`$head\`, which isn't one of this ticket's branches"
-            elif gh api "repos/$GITHUB_REPOSITORY/compare/main...$head" --jq '.files[].filename' 2>/dev/null |
-              grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-              reason="changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\` on \`$head\`, which the implementer may not touch"
+            else
+              "$RUNNER_TEMP/protected-changes.sh" main "$head" >/dev/null || code=$?
+              case "$code" in
+                0) ;;
+                1) reason="changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\` on \`$head\`, which the implementer may not touch" ;;
+                *) reason="pushed \`$head\`, which GitHub couldn't compare with main, so it wasn't checked for changes to the factory's own rules" ;;
+              esac
             fi
             if [ -n "$reason" ]; then
               gh issue edit "$ISSUE" --add-label needs-human
@@ -639,7 +644,8 @@ jobs:
         if: steps.current.outputs.stale != 'true'
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
-            .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh "$RUNNER_TEMP/"
+            .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
+            .github/factory/protected-changes.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -718,15 +724,25 @@ jobs:
           summary=$(jq -r --arg why "${REASON:-}" '.summary // ("The fixer stopped without a summary" + (if $why == "" then "" else ": " + $why end) + ". See the run log.")' <<<"${RESULT:-{\}}")
 
           # The fixer never changes its own rules or CI, whatever the pull request itself touches.
-          if gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...$BRANCH" --jq '.files[].filename' 2>/dev/null |
-            grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-            outcome=protected
-            summary="The fix changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
-          fi
+          # If GitHub can't say what it pushed, a human checks: a check that can't run mustn't pass.
+          code=0
+          "$RUNNER_TEMP/protected-changes.sh" "$SHA" "$BRANCH" >/dev/null || code=$?
+          case "$code" in
+            0) ;;
+            1)
+              outcome=protected
+              summary="The fix changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
+              ;;
+            *)
+              outcome=unchecked
+              summary=$(printf '%s\n\n_GitHub couldn'"'"'t compare the branch with commit %s, so what the fixer pushed wasn'"'"'t checked for changes to the factory'"'"'s own rules. Check it before merging._' "$summary" "$SHA")
+              ;;
+          esac
 
           case "$outcome" in
             fixed) head="pushed a fix" ;;
             reran) head="re-ran the failed jobs: the failure wasn't caused by this pull request" ;;
+            unchecked) head="couldn't check what it pushed"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
             *) head="couldn't fix it"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
           esac
 

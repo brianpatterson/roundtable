@@ -169,7 +169,9 @@ jobs:
           persist-credentials: false
       - name: Load the implementer's instructions and the secret guard from main
         if: steps.current.outputs.stale != 'true'
-        run: cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
+        run: |
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+            .github/factory/protected-changes.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -278,11 +280,21 @@ jobs:
             summary=$(printf '%s\n\n_The agent reported a fix but pushed no commits._' "$summary")
           fi
 
-          # The agent never changes its own rules or CI.
-          if jq -r '.files[]?.filename' <<<"$compare" | grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-            outcome=protected
-            summary="The rework changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
-          fi
+          # The agent never changes its own rules or CI. If GitHub can't say what it pushed, a human
+          # checks: a check that can't run mustn't pass.
+          code=0
+          "$RUNNER_TEMP/protected-changes.sh" "$SHA" "$BRANCH" >/dev/null || code=$?
+          case "$code" in
+            0) ;;
+            1)
+              outcome=protected
+              summary="The rework changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
+              ;;
+            *)
+              outcome=unchecked
+              summary=$(printf '%s\n\n_GitHub couldn'"'"'t compare the branch with commit %s, so what the rework pushed wasn'"'"'t checked for changes to the factory'"'"'s own rules. Check it before merging._' "$summary" "$SHA")
+              ;;
+          esac
 
           # On the minor pass the pull request is already the owner's turn: nothing pushed leaves
           # the findings for them, without asking for a human.
@@ -290,7 +302,7 @@ jobs:
             title='Rework, minor findings' extra="$MINOR_MARKER"$'\n'
             case "$outcome" in
               fixed) head="pushed changes; CI and the reviewer run again" ;;
-              protected) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
+              protected | unchecked) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
               *) head="pushed nothing; the minor findings are yours" ;;
             esac
           else
