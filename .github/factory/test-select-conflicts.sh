@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 # Checks which pull requests the conflict resolver takes (ADR-0058), against a stand-in gh that
 # answers from canned JSON. Run from anywhere: .github/factory/test-select-conflicts.sh
-set -euo pipefail
-
-here=$(cd "$(dirname "$0")" && pwd)
-failures=0
-fail() { echo "FAIL: $1"; failures=$((failures + 1)); }
-
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
 pr() { # pr <number> <mergeable> [labels JSON] [state] [fork]
   jq -n --argjson n "$1" --arg m "$2" --argjson l "${3:-[\"factory\"]}" --arg s "${4:-OPEN}" --argjson f "${5:-false}" \
@@ -37,28 +31,19 @@ attempt 4 main0
 attempt 4 main0
 jq -n '[{user: {login: "someone"}, body: "<!-- factory-conflict --> main1"}, {user: {login: "someone"}, body: "<!-- factory-conflict --> main1"}]' >"$work/comments-1.json"
 
-cat >"$work/gh" <<'GH'
-#!/usr/bin/env bash
-filter=.
-prev=
-for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
-case "$*" in
-  "api repos/o/r/commits/main"*) echo main1; exit 0 ;;
-  "pr list"*) echo '1 2 3 4 5 6 7 8 9' | tr ' ' '\n'; exit 0 ;;
+fake_gh <<'ROUTES'
+  "api repos/o/r/commits/main"*) echo main1 ;;
+  "pr list"*) printf '%s\n' 1 2 3 4 5 6 7 8 9 ;;
   "pr view 9"*)
     # UNKNOWN the first time, CONFLICTING after.
-    if [ -f "$WORK/seen-9" ]; then jq '.mergeable = "CONFLICTING"' "$WORK/pr-9.json"; else touch "$WORK/seen-9"; cat "$WORK/pr-9.json"; fi
-    exit 0 ;;
-  "pr view "*) cat "$WORK/pr-$3.json"; exit 0 ;;
-  "api repos/o/r/issues/"*"/comments"*) n=${2#repos/o/r/issues/}; jq -c "$filter" "$WORK/comments-${n%%/*}.json"; exit 0 ;;
-  *) echo "$*" >>"$WORK/writes" ;;
-esac
-GH
-chmod +x "$work/gh"
-: >"$work/writes"
+    if [ -f "$GH_FIXTURES/seen-9" ]; then answer pr-9.json | jq -c '.mergeable = "CONFLICTING"'; else touch "$GH_FIXTURES/seen-9"; answer pr-9.json; fi ;;
+  "pr view "*) answer "pr-$3.json" ;;
+  "api repos/o/r/issues/"*"/comments"*) n=${2#repos/o/r/issues/}; answer "comments-${n%%/*}.json" ;;
+ROUTES
+: >"$work/calls"
 
-out=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 "$here/select-conflicts.sh" 2>"$work/log")
-writes=$(cat "$work/writes")
+out=$(GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 "$here/select-conflicts.sh" 2>"$work/log")
+writes=$(cat "$work/calls")
 picked=$(jq -c 'map({(.pr | tostring): .attempt}) | add // {}' <<<"$out")
 
 [ "$(jq -r '."1"' <<<"$picked")" = 1 ] || fail "a conflicting factory pull request is taken, attempt 1 (others' comments don't count): $picked"
@@ -75,9 +60,9 @@ done
 [ "$(jq -r '.[0] | "\(.sha) \(.branch)"' <<<"$out")" = "sha1 claude/issue-1-x" ] || fail "the head and branch are passed on: $out"
 
 # One pull request, named by the sweeper.
-out=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 "$here/select-conflicts.sh" 5 2>/dev/null)
+out=$(GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 "$here/select-conflicts.sh" 5 2>/dev/null)
 [ "$out" = '[]' ] || fail "a named pull request without a conflict gives an empty list: $out"
-out=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 MAIN=main0 "$here/select-conflicts.sh" 1 2>/dev/null)
+out=$(GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 MAIN=main0 "$here/select-conflicts.sh" 1 2>/dev/null)
 [ "$(jq -c '[.[].pr]' <<<"$out")" = '[1]' ] || fail "a named pull request is the only one checked, against MAIN: $out"
 
 # select-conflicts.sh finds the resolver's comments by their marker and the main commit they name.
@@ -89,8 +74,4 @@ if ! grep -qF "body=\$(printf '<!-- factory-conflict -->\n###" "$reporter" ||
   fail "the comment report-conflict-attempt.sh posts and what select-conflicts.sh counts have drifted apart"
 fi
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures failed."
-  exit 1
-fi
-echo "All conflict selections pass."
+finish "All conflict selections pass."

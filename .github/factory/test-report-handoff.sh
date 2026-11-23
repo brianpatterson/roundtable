@@ -2,17 +2,8 @@
 # Checks the user-report hand-off (ADR-0041): fetch-report.sh against a stand-in curl, and
 # guard-report-text.sh against text that does and doesn't quote a report.
 # Run from anywhere: .github/factory/test-report-handoff.sh
-set -euo pipefail
-
-here=$(cd "$(dirname "$0")" && pwd)
-failures=0
-fail() {
-  echo "FAIL: $1"
-  failures=$((failures + 1))
-}
-
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
 ID=0b6e7c1a-1111-4222-8333-444455556666
 
@@ -87,31 +78,18 @@ application" || fail "a quote is caught across case and line breaks"
 printf 'it broke\n' >"$work/description"
 guard <<<"it broke" || fail "a description too short to check passes"
 
-# The take-down, against a stand-in gh that answers from canned JSON in $CASE, applies --jq as gh
-# would, and logs every call that changes something.
-cat >"$work/gh" <<'GH'
-#!/usr/bin/env bash
-filter=.
-prev=
-for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
-case "$1 $2 $3" in
-  "api -X DELETE"* | "pr edit"* | "pr comment"* | "issue edit"* | "issue comment"*)
-    printf '%s\n' "$*" >>"$CASE/calls"
-    exit 0 ;;
-esac
-case "$1 $2" in
-  "api repos/o/r/issues/7/comments") file=comments.json ;;
-  "api repos/o/r/issues/comments/"*) file=comment-${2##*/}.json ;;
-  "pr list") file=prs.json ;;
-  "pr view") file=pr.json ;;
-  "issue view") file=issue.json ;;
-  "api repos/o/r/compare/"*) file=compare.json ;;
+# The take-down, against a stand-in gh that answers from canned JSON in $CASE and logs every call
+# that changes something.
+fake_gh <<'ROUTES'
+  "api -X DELETE"* | "pr edit"* | "pr comment"* | "issue edit"* | "issue comment"*) record ;;
+  "api repos/o/r/issues/7/comments"*) answer comments.json ;;
+  "api repos/o/r/issues/comments/"*) id=${2##*/}; answer "comment-$id.json" ;;
+  "pr list"*) answer prs.json ;;
+  "pr view"*) answer pr.json ;;
+  "issue view"*) answer issue.json ;;
+  "api repos/o/r/compare/"*) answer compare.json ;;
   *) echo "unexpected: $*" >&2; exit 1 ;;
-esac
-[ -f "$CASE/$file" ] || { echo "GitHub says no" >&2; exit 1; }
-jq -r "$filter" "$CASE/$file"
-GH
-chmod +x "$work/gh"
+ROUTES
 printf 'The list is empty after I add an application, my landlord Jane Doe\n' >"$work/description"
 
 QUOTE="The user wrote: the list is empty after I add an application"
@@ -129,7 +107,7 @@ newcase() { # newcase <name>: canned answers for a run where nothing quotes the 
           commits: [{commit: {message: "fix: show new applications"}}]}' >"$CASE/compare.json"
 }
 takedown() { # takedown [branch]: runs the take-down for issue 7, returns its exit status
-  GH="$work/gh" CASE=$CASE GITHUB_REPOSITORY=o/r NUMBER=7 BRANCH=${1-claude/issue-7} \
+  GH="$work/gh" GH_FIXTURES=$CASE GITHUB_REPOSITORY=o/r NUMBER=7 BRANCH=${1-claude/issue-7} \
     DESCRIPTION="$work/description" "$here/takedown-report-quotes.sh" >/dev/null 2>&1
 }
 called() { grep -qF -- "$1" "$CASE/calls"; }
@@ -181,8 +159,4 @@ takedown || fail "a branch GitHub can't compare isn't a quote"
 newcase no-branch
 takedown "" || fail "no branch: only the comments are checked"
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures failed."
-  exit 1
-fi
-echo "All report hand-off checks pass."
+finish "All report hand-off checks pass."

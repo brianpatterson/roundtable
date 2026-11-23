@@ -2,17 +2,11 @@
 # Checks the dispatcher's decisions (ADR-0047): each case is a ticket's state and the action it must
 # get, then a gate and a sweep end to end against a stand-in gh. Run from anywhere:
 # .github/factory/test-dispatch.sh
-set -euo pipefail
-
-here=$(cd "$(dirname "$0")" && pwd)
-failures=0
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
 check() { # check <name> <state JSON> <expected action>
-  got=$("$here/dispatch.sh" --decide <<<"$2" | jq -r .action)
-  if [ "$got" != "$3" ]; then
-    echo "FAIL: $1: expected $3, got $got"
-    failures=$((failures + 1))
-  fi
+  expect "$1" "$3" "$("$here/dispatch.sh" --decide <<<"$2" | jq -r .action)"
 }
 
 # A ready ticket the owner labeled, nothing blocking it, nothing in flight. Cases change one thing.
@@ -49,13 +43,11 @@ check "closed and never building: ignore" "$(with '.open = false | .closed = "de
 
 reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null},{"number":4,"open":false,"closed":"deployed"}]')" | jq -r .reason)
 case "$reason" in *"#3"*"merged and deployed"*) ;; *)
-  echo "FAIL: the reason names the blockers still waited on: got [$reason]"
-  failures=$((failures + 1))
+  fail "the reason names the blockers still waited on: got [$reason]"
   ;;
 esac
 case "$reason" in *"#4"*)
-  echo "FAIL: the reason leaves out a deployed blocker: got [$reason]"
-  failures=$((failures + 1))
+  fail "the reason leaves out a deployed blocker: got [$reason]"
   ;;
 esac
 
@@ -64,19 +56,16 @@ esac
 check "an open blocker nothing will finish: still wait" "$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false}]')" wait
 reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false},{"number":4,"open":true,"closed":null,"active":true},{"number":5,"open":false,"closed":"merged","active":false}]')" | jq -r .reason)
 case "$reason" in *"Nothing will finish #3:"*"remove the dependency"*) ;; *)
-  echo "FAIL: the reason names the blocker nothing will finish: got [$reason]"
-  failures=$((failures + 1))
+  fail "the reason names the blocker nothing will finish: got [$reason]"
   ;;
 esac
 case "$reason" in *"finish #3, #4"* | *"finish #3, #5"* | *"finish #4"* | *"finish #5"*)
-  echo "FAIL: the reason calls an active or closed blocker idle: got [$reason]"
-  failures=$((failures + 1))
+  fail "the reason calls an active or closed blocker idle: got [$reason]"
   ;;
 esac
 reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":true}]')" | jq -r .reason)
 case "$reason" in *"Nothing will finish"*)
-  echo "FAIL: an active blocker is reported as idle: got [$reason]"
-  failures=$((failures + 1))
+  fail "an active blocker is reported as idle: got [$reason]"
   ;;
 esac
 
@@ -85,13 +74,11 @@ esac
 reason=$("$here/dispatch.sh" --decide <<<"$(with '.blockers = [{"number":3,"open":true,"closed":null,"active":false,"held":"needs-human"},{"number":4,"open":true,"closed":null,"active":true,"held":"needs-info"}]')" | jq -r .reason)
 # shellcheck disable=SC2016 # backticks are Markdown
 case "$reason" in *'Waiting on you: #3 (`needs-human`), #4 (`needs-info`). Settle each first'*) ;; *)
-  echo "FAIL: the reason names held blockers with their label: got [$reason]"
-  failures=$((failures + 1))
+  fail "the reason names held blockers with their label: got [$reason]"
   ;;
 esac
 case "$reason" in *"Nothing will finish"*)
-  echo "FAIL: a held blocker is told to be labeled ready: got [$reason]"
-  failures=$((failures + 1))
+  fail "a held blocker is told to be labeled ready: got [$reason]"
   ;;
 esac
 
@@ -104,8 +91,6 @@ esac
 #   #12: ready, but labeled by someone else.
 #   #13: ready (by o), then its description was edited by "stranger".
 #   #14: building, closed by a pull request merged as "new", which "dep" doesn't include yet.
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
 labeled() { printf '{"__typename":"LabeledEvent","createdAt":"%s","label":{"name":"%s"},"actor":{"login":"%s"}}' "$1" "$2" "$3"; }
 closed_by() { printf '{"nodes":[{"__typename":"ClosedEvent","closer":{"__typename":"PullRequest","merged":true,"mergeCommit":{"oid":"%s"}}}]}' "$1"; }
 issue() { # issue <number> <state> <labels JSON> <timeline nodes JSON> <blockers JSON> [edits JSON] [author]
@@ -152,209 +137,181 @@ echo '[{"number":14}]' >"$work/building.json"
 # The dispatcher's last comment on #11 already says it waits on #4: a sweep doesn't repeat it.
 jq -n --arg b "$(printf '<!-- factory-dispatch -->\nThe factory will build this later: it is blocked by #4, until each is merged and deployed. It says here when it starts. ADR-0047.')" \
   '[{user:{login:"github-actions[bot]"},body:$b}]' >"$work/comments-11.json"
-cat >"$work/gh" <<'GH'
-#!/usr/bin/env bash
-filter=.
-prev=
-number=
-for arg in "$@"; do
-  [ "$prev" = --jq ] && filter=$arg
-  case "$arg" in number=*) number=${arg#number=} ;; esac
-  prev=$arg
-done
-case "$*" in
-  "api graphql"*) [ "$number" != "$FAIL_READ" ] || { echo "GitHub says no" >&2; exit 1; }; file=issue-$number.json ;;
-  "run list"*) file=deploy.json ;;
-  "issue list"*"--label ready"*) file=ready.json ;;
-  "issue list"*"--label building"*) file=building.json ;;
-  "api repos/o/r/compare/old...dep"*) echo ahead; exit 0 ;;
-  "api repos/o/r/issues/11/comments"*) file=comments-11.json ;;
-  "issue comment $FAIL_COMMENT "*) echo "$*" >>"$WORK/writes"; exit 1 ;;
-  "workflow run"*"issue=$FAIL_DISPATCH") echo "$*" >>"$WORK/writes"; exit 1 ;;
-  "api repos/o/r/compare/"*) echo behind; exit 0 ;;
-  *) echo "$*" >>"$WORK/writes"; exit 0 ;;
-esac
-jq -rc "$filter" "$WORK/$file"
-GH
-chmod +x "$work/gh"
-run() { FAIL_COMMENT=${FAIL_COMMENT:-none} FAIL_READ=${FAIL_READ:-none} FAIL_DISPATCH=${FAIL_DISPATCH:-none} WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
-expect() { # expect <name> <output> <text it must contain>
-  case "$2" in *"$3"*) ;; *)
-    echo "FAIL: $1: no [$3] in [$2]"
-    failures=$((failures + 1))
-    ;;
-  esac
-}
+fake_gh <<'ROUTES'
+  "api graphql"*)
+    number=$(printf '%s\n' "$@" | sed -n 's/^number=//p')
+    [ "$number" != "$FAIL_READ" ] || refuse
+    answer "issue-$number.json" ;;
+  "run list"*) answer deploy.json ;;
+  "issue list"*"--label ready"*) answer ready.json ;;
+  "issue list"*"--label building"*) answer building.json ;;
+  "api repos/o/r/compare/old...dep"*) echo ahead ;;
+  "api repos/o/r/issues/11/comments"*) answer comments-11.json ;;
+  "issue comment $FAIL_COMMENT "*) record; exit 1 ;;
+  "workflow run"*"issue=$FAIL_DISPATCH") record; exit 1 ;;
+  "api repos/o/r/compare/"*) echo behind ;;
+ROUTES
+run() { FAIL_COMMENT=${FAIL_COMMENT:-none} FAIL_READ=${FAIL_READ:-none} FAIL_DISPATCH=${FAIL_DISPATCH:-none} GH=$work/gh GITHUB_REPOSITORY=o/r "$here/dispatch.sh" "$@" 2>&1; }
 
 # #14 is merged but not deployed, so it's in flight: #10 would start but queues behind it.
 output=$(DRY_RUN=true run)
-expect "a merged, undeployed ticket stays in flight" "$output" "#14: ok"
-expect "an unblocked ticket queues behind the one in flight" "$output" "#10: queue"
-expect "an open blocker means wait" "$output" "#11: wait"
-case "$output" in *"#11: wait"*"Nothing will finish"*) echo "FAIL: a blocker labeled ready counted as idle: [$output]"; failures=$((failures + 1)) ;; esac
-expect "someone else's ready label is ignored" "$output" "#12: ignore"
-expect "an edit by someone else after the label sends it back" "$output" "#13: unlabel"
-expect "a title change by someone else after the label sends it back" "$output" "#17: unlabel"
+expect_in "a merged, undeployed ticket stays in flight" "$output" "#14: ok"
+expect_in "an unblocked ticket queues behind the one in flight" "$output" "#10: queue"
+expect_in "an open blocker means wait" "$output" "#11: wait"
+case "$output" in *"#11: wait"*"Nothing will finish"*) fail "a blocker labeled ready counted as idle: [$output]" ;; esac
+expect_in "someone else's ready label is ignored" "$output" "#12: ignore"
+expect_in "an edit by someone else after the label sends it back" "$output" "#13: unlabel"
+expect_in "a title change by someone else after the label sends it back" "$output" "#17: unlabel"
 
 # A real sweep: #18's work is deployed, so it's released; #19 has built for hours with no pull
 # request, so it goes to a human and stops holding the queue; #11 isn't told again what it was told.
 echo '[{"number":18},{"number":19}]' >"$work/building.json"
 echo '[{"number":11}]' >"$work/ready.json"
-: >"$work/writes"
+: >"$work/calls"
 output=$(run)
-expect "a deployed ticket is released" "$(cat "$work/writes")" "issue edit 18 -R o/r --remove-label building"
-expect "a stuck ticket goes to a human and leaves the queue" "$(cat "$work/writes")" "issue edit 19 -R o/r --remove-label building --add-label needs-human"
-if grep -q "issue comment 11" "$work/writes"; then
-  echo "FAIL: a waiting ticket was told the same thing twice"
-  failures=$((failures + 1))
+expect_in "a deployed ticket is released" "$(cat "$work/calls")" "issue edit 18 -R o/r --remove-label building"
+expect_in "a stuck ticket goes to a human and leaves the queue" "$(cat "$work/calls")" "issue edit 19 -R o/r --remove-label building --add-label needs-human"
+if grep -q "issue comment 11" "$work/calls"; then
+  fail "a waiting ticket was told the same thing twice"
 fi
 echo '[{"number":10},{"number":11},{"number":12},{"number":13},{"number":17}]' >"$work/ready.json"
 
 # Once #14 is deployed, it's released and the gate starts #10, labeling it building.
 echo '[]' >"$work/building.json"
-: >"$work/writes"
+: >"$work/calls"
 output=$(GITHUB_OUTPUT=$work/out run --gate 10)
-expect "the gate starts an unblocked ticket" "$output" "#10: start"
-expect "the gate starts the build through a dispatch, not the tag-mode job" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=10"
-expect "a started ticket is labeled building" "$(cat "$work/writes")" "issue edit 10 -R o/r --add-label building"
+expect_in "the gate starts an unblocked ticket" "$output" "#10: start"
+expect_in "the gate starts the build through a dispatch, not the tag-mode job" "$(cat "$work/calls")" "workflow run factory.yml -R o/r --ref main -f issue=10"
+expect_in "a started ticket is labeled building" "$(cat "$work/calls")" "issue edit 10 -R o/r --add-label building"
 
 # The gate refuses a blocked ticket and always says why, so the owner sees an answer.
-: >"$work/writes"
+: >"$work/calls"
 : >"$work/out"
 output=$(GITHUB_OUTPUT=$work/out run --gate 11)
-expect "the gate holds a blocked ticket" "$output" "#11: wait"
-expect "the gate comments on a held ticket" "$(cat "$work/writes")" "issue comment 11"
-if grep -q "issue=11" "$work/writes"; then
-  echo "FAIL: the gate started a blocked ticket"
-  failures=$((failures + 1))
+expect_in "the gate holds a blocked ticket" "$output" "#11: wait"
+expect_in "the gate comments on a held ticket" "$(cat "$work/calls")" "issue comment 11"
+if grep -q "issue=11" "$work/calls"; then
+  fail "the gate started a blocked ticket"
 fi
 
 # Read from GitHub: #5 has neither label nor pull request, so the wait names it; #6 has a pull
 # request that closes it, so it doesn't.
 output=$(DRY_RUN=true run --gate 26)
-expect "a blocker nothing will finish is named" "$output" "Nothing will finish #5:"
+expect_in "a blocker nothing will finish is named" "$output" "Nothing will finish #5:"
 case "$output" in *"finish #5, #6"* | *"finish #6"*)
-  echo "FAIL: a blocker an open pull request closes counted as idle: [$output]"
-  failures=$((failures + 1))
+  fail "a blocker an open pull request closes counted as idle: [$output]"
   ;;
 esac
 
 output=$(DRY_RUN=true run --gate 27)
 # shellcheck disable=SC2016 # backticks are Markdown
-expect "a blocker held for a human is named with its label" "$output" 'Waiting on you: #7 (`needs-human`).'
+expect_in "a blocker held for a human is named with its label" "$output" 'Waiting on you: #7 (`needs-human`).'
 
 # Relabeling `ready` after answering `needs-info` starts it again, and clears `needs-info`.
-: >"$work/writes"
+: >"$work/calls"
 : >"$work/out"
 output=$(GITHUB_OUTPUT=$work/out run --gate 15)
-expect "an answered needs-info ticket starts when relabeled" "$output" "#15: start"
-expect "starting it clears needs-info" "$(cat "$work/writes")" "issue edit 15 -R o/r --add-label building --remove-label needs-info"
+expect_in "an answered needs-info ticket starts when relabeled" "$output" "#15: start"
+expect_in "starting it clears needs-info" "$(cat "$work/calls")" "issue edit 15 -R o/r --add-label building --remove-label needs-info"
 
 # A label the gate won't act on is never silent.
-: >"$work/writes"
+: >"$work/calls"
 output=$(GITHUB_OUTPUT=$work/out run --gate 16)
-expect "the gate ignores a ticket held for a human" "$output" "#16: ignore"
-expect "and says why" "$(cat "$work/writes")" "issue comment 16"
+expect_in "the gate ignores a ticket held for a human" "$output" "#16: ignore"
+expect_in "and says why" "$(cat "$work/calls")" "issue comment 16"
 
 # The sweep starts the oldest free ticket itself, and the next free one queues behind it.
 echo '[]' >"$work/building.json"
 echo '[{"number":20},{"number":10}]' >"$work/ready.json"
-: >"$work/writes"
+: >"$work/calls"
 output=$(run)
-expect "the sweep starts the oldest free ticket" "$output" "#10: start"
-expect "and marks it building" "$(cat "$work/writes")" "issue edit 10 -R o/r --add-label building"
-expect "by dispatching the implementer from main" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=10"
-expect "the next free ticket queues behind it" "$output" "#20: queue"
-if grep -q "issue=20" "$work/writes"; then
-  echo "FAIL: the sweep started two tickets at once"
-  failures=$((failures + 1))
+expect_in "the sweep starts the oldest free ticket" "$output" "#10: start"
+expect_in "and marks it building" "$(cat "$work/calls")" "issue edit 10 -R o/r --add-label building"
+expect_in "by dispatching the implementer from main" "$(cat "$work/calls")" "workflow run factory.yml -R o/r --ref main -f issue=10"
+expect_in "the next free ticket queues behind it" "$output" "#20: queue"
+if grep -q "issue=20" "$work/calls"; then
+  fail "the sweep started two tickets at once"
 fi
 
 # A dispatch that fails takes `building` back off and leaves the ticket out of flight, so the next
 # free ticket starts in the same sweep, and the failed one is tried again next time.
-: >"$work/writes"
+: >"$work/calls"
 output=$(FAIL_DISPATCH=10 run) || true
-expect "a failed dispatch releases the ticket" "$(cat "$work/writes")" "issue edit 10 -R o/r --remove-label building"
-expect "and the next free ticket starts instead" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=20"
+expect_in "a failed dispatch releases the ticket" "$(cat "$work/calls")" "issue edit 10 -R o/r --remove-label building"
+expect_in "and the next free ticket starts instead" "$(cat "$work/calls")" "workflow run factory.yml -R o/r --ref main -f issue=20"
 
 # A started ticket stays in flight even if the comment saying so fails, so nothing starts beside it.
-: >"$work/writes"
+: >"$work/calls"
 output=$(FAIL_COMMENT=10 run) || true
-expect "a started ticket whose comment failed" "$(cat "$work/writes")" "workflow run factory.yml -R o/r --ref main -f issue=10"
-if grep -q "issue=20" "$work/writes"; then
-  echo "FAIL: a failed comment let a second ticket start"
-  failures=$((failures + 1))
+expect_in "a started ticket whose comment failed" "$(cat "$work/calls")" "workflow run factory.yml -R o/r --ref main -f issue=10"
+if grep -q "issue=20" "$work/calls"; then
+  fail "a failed comment let a second ticket start"
 fi
 
 # The dispatched run checks the rules again before its agent runs.
 : >"$work/out"
 output=$(GITHUB_OUTPUT=$work/out run --verify 21)
-expect "a ticket the dispatcher started is verified" "$(cat "$work/out")" "ok=true"
+expect_in "a ticket the dispatcher started is verified" "$(cat "$work/out")" "ok=true"
 : >"$work/out"
-: >"$work/writes"
+: >"$work/calls"
 output=$(GITHUB_OUTPUT=$work/out run --verify 22)
-expect "an edit since the label refuses the dispatched run" "$output" "#22: refused"
-expect "and releases it" "$(cat "$work/writes")" "issue edit 22 -R o/r --remove-label building"
+expect_in "an edit since the label refuses the dispatched run" "$output" "#22: refused"
+expect_in "and releases it" "$(cat "$work/calls")" "issue edit 22 -R o/r --remove-label building"
 : >"$work/out"
 output=$(GITHUB_OUTPUT=$work/out run --verify 20)
-expect "a ticket the dispatcher didn't mark is refused" "$output" "#20: refused"
+expect_in "a ticket the dispatcher didn't mark is refused" "$output" "#20: refused"
 if grep -q ok=true "$work/out"; then
-  echo "FAIL: verify passed a ticket that isn't building"
-  failures=$((failures + 1))
+  fail "verify passed a ticket that isn't building"
 fi
 
 # The approval runs from the owner's first label: relabeling yourself doesn't wash out an edit made
 # in between, but a label the workflow removed starts a fresh one.
-expect "an edit before the owner's own relabel still counts" "$(run --state 23 | jq -c .edited_after_ready)" true
-expect "an edit before the workflow removed the label doesn't" "$(run --state 24 | jq -c .edited_after_ready)" false
+expect_in "an edit before the owner's own relabel still counts" "$(run --state 23 | jq -c .edited_after_ready)" true
+expect_in "an edit before the workflow removed the label doesn't" "$(run --state 24 | jq -c .edited_after_ready)" false
 
 # The gate answers a relabel on a ticket that's already building (#26: #21 with its pull request open).
 jq '.data.repository.issue.number = 26 | .data.repository.issue.closedByPullRequestsReferences.nodes = [{number: 99}]' \
   "$work/issue-21.json" >"$work/issue-26.json"
-: >"$work/writes"
+: >"$work/calls"
 output=$(GITHUB_OUTPUT=$work/out run --gate 26)
-expect "relabeling a building ticket is ok" "$output" "#26: ok"
-expect "and gets an answer" "$(cat "$work/writes")" "issue comment 26"
+expect_in "relabeling a building ticket is ok" "$output" "#26: ok"
+expect_in "and gets an answer" "$(cat "$work/calls")" "issue comment 26"
 
 # What closed an issue is its last close: a pull request's earlier close doesn't count.
-expect "a reopened issue closed by hand counts as unmerged" "$(run --state 25 | jq -r .closed)" unmerged
+expect_in "a reopened issue closed by hand counts as unmerged" "$(run --state 25 | jq -r .closed)" unmerged
 
 # A ticket that can't be read doesn't stop the sweep, and turns the run red. One that's building
 # stays in flight, so nothing starts beside it.
 echo '[]' >"$work/building.json"
 echo '[{"number":11},{"number":10}]' >"$work/ready.json"
-: >"$work/writes"
+: >"$work/calls"
 status=0
 output=$(FAIL_READ=11 run) || status=$?
-expect "an unreadable ready ticket is skipped" "$output" "Couldn't read #11"
-expect "and the rest are still decided" "$output" "#10: start"
-[ "$status" -ne 0 ] || { echo "FAIL: a sweep with an unreadable ticket exits 0"; failures=$((failures + 1)); }
+expect_in "an unreadable ready ticket is skipped" "$output" "Couldn't read #11"
+expect_in "and the rest are still decided" "$output" "#10: start"
+[ "$status" -ne 0 ] || fail "a sweep with an unreadable ticket exits 0"
 echo '[{"number":21}]' >"$work/building.json"
 echo '[{"number":10}]' >"$work/ready.json"
 output=$(FAIL_READ=21 run) || true
-expect "an unreadable building ticket stays in flight" "$output" "#10: queue"
+expect_in "an unreadable building ticket stays in flight" "$output" "#10: queue"
 
 # The nightly mutation run's own ticket is approved by its own label; no other workflow label is.
-expect "a mutation ticket the workflow opened and labeled is approved" "$(run --state 47 | jq -c .ready.approved)" true
-expect "and an edit by someone else after that label still counts" "$(run --state 48 | jq -c .edited_after_ready)" true
-expect "the workflow's label on another kind of issue is not approval" "$(run --state 49 | jq -c .ready.approved)" false
-expect "nor on a mutation ticket someone else opened" "$(run --state 50 | jq -c .ready.approved)" false
+expect_in "a mutation ticket the workflow opened and labeled is approved" "$(run --state 47 | jq -c .ready.approved)" true
+expect_in "and an edit by someone else after that label still counts" "$(run --state 48 | jq -c .edited_after_ready)" true
+expect_in "the workflow's label on another kind of issue is not approval" "$(run --state 49 | jq -c .ready.approved)" false
+expect_in "nor on a mutation ticket someone else opened" "$(run --state 50 | jq -c .ready.approved)" false
 echo '[]' >"$work/building.json"
 echo '[{"number":47}]' >"$work/ready.json"
-expect "a sweep starts the mutation ticket" "$(DRY_RUN=true run)" "#47: start"
+expect_in "a sweep starts the mutation ticket" "$(DRY_RUN=true run)" "#47: start"
 echo '[{"number":49}]' >"$work/ready.json"
-expect "and ignores the other workflow-labeled issue" "$(DRY_RUN=true run)" "#49: ignore"
+expect_in "and ignores the other workflow-labeled issue" "$(DRY_RUN=true run)" "#49: ignore"
 # The owner's tickets start before the nightly run's, even one labeled later (ADR-0052): #47's
 # label is from 10:00, #20's from 12:00.
-expect "a mutation ticket is marked nightly" "$(run --state 47 | jq -c .ready.nightly)" true
-expect "an owner's ticket isn't" "$(run --state 20 | jq -c .ready.nightly)" false
+expect_in "a mutation ticket is marked nightly" "$(run --state 47 | jq -c .ready.nightly)" true
+expect_in "an owner's ticket isn't" "$(run --state 20 | jq -c .ready.nightly)" false
 echo '[{"number":47},{"number":20}]' >"$work/ready.json"
 output=$(DRY_RUN=true run)
-expect "the owner's ticket starts first" "$output" "#20: start"
-expect "and the mutation ticket queues behind it" "$output" "#47: queue"
+expect_in "the owner's ticket starts first" "$output" "#20: start"
+expect_in "and the mutation ticket queues behind it" "$output" "#47: queue"
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures failed."
-  exit 1
-fi
-echo "All dispatcher decisions pass."
+finish "All dispatcher decisions pass."

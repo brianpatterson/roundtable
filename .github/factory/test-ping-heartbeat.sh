@@ -1,17 +1,8 @@
 #!/usr/bin/env bash
 # Checks the sweeps' heartbeat ping (ADR-0060) against a stand-in curl. Run from anywhere:
 # .github/factory/test-ping-heartbeat.sh
-set -euo pipefail
-
-here=$(cd "$(dirname "$0")" && pwd)
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-failures=0
-
-fail() {
-  echo "FAIL: $1"
-  failures=$((failures + 1))
-}
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
 # The stand-in records its arguments and exits with $CURL_EXIT.
 cat >"$work/curl" <<'STUB'
@@ -46,8 +37,4 @@ run "" 0
 [ ! -e "$work/log" ] || fail "no URL sends nothing"
 [[ "$out" == *"::notice::"* ]] || fail "no URL says nothing watches the sweeps"
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures heartbeat check(s) failed"
-  exit 1
-fi
-echo "All heartbeat checks passed"
+finish "All heartbeat checks passed"

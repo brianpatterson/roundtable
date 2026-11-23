@@ -2,28 +2,14 @@
 # Checks how the conflict resolver judges an attempt (ADR-0058): report-conflict-attempt.sh against
 # a stand-in gh that answers the compare with canned JSON, or fails. Run from anywhere:
 # .github/factory/test-report-conflict-attempt.sh
-set -euo pipefail
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
-here=$(cd "$(dirname "$0")" && pwd)
-failures=0
-fail() { echo "FAIL: $1"; failures=$((failures + 1)); }
-
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-cat >"$work/gh" <<'GH'
-#!/usr/bin/env bash
-case "$1 $2" in
-  "api repos/o/r/compare/"*)
-    [ -f "$WORK/compare.json" ] || { echo "GitHub says no" >&2; exit 1; }
-    cat "$WORK/compare.json" ;;
-  "pr comment") printf '%s\n' "$*" >>"$WORK/comments" ;;
-  "pr view")
-    [ "${HEAD_NOW:-abc}" != unreadable ] || { echo "GitHub says no" >&2; exit 1; }
-    echo "${HEAD_NOW:-abc}" ;;
-  *) echo "$*" >>"$WORK/writes" ;;
-esac
-GH
-chmod +x "$work/gh"
+fake_gh <<'ROUTES'
+  "api repos/o/r/compare/"*) answer compare.json ;;
+  "pr comment"*) printf '%s\n' "$*" >>"$GH_FIXTURES/comments" ;;
+  "pr view"*) [ "${HEAD_NOW:-abc}" != unreadable ] || refuse; echo "${HEAD_NOW:-abc}" ;;
+ROUTES
 
 compare() { # compare <behind_by> [file JSON objects…]: what GitHub answers; none at all with "fails"
   if [ "$1" = fails ]; then rm -f "$work/compare.json"; return; fi
@@ -41,14 +27,14 @@ file() { # file <name> [patch, with \n for newlines]
 }
 status=0
 run() { # run <attempt> <agent result JSON or "">: sets status, writes, comments
-  : >"$work/writes"
+  : >"$work/calls"
   : >"$work/comments"
   status=0
-  WORK=$work GH=$work/gh GUARD=$here/guard-secrets.sh RESULT=$2 REASON='' PR=7 SHA=abc BRANCH=b MAIN=m1 \
+  GH=$work/gh GUARD=$here/guard-secrets.sh RESULT=$2 REASON='' PR=7 SHA=abc BRANCH=b MAIN=m1 \
     ATTEMPT=$1 GITHUB_REPOSITORY=o/r GITHUB_SERVER_URL=https://x GITHUB_RUN_ID=9 \
     "$here/report-conflict-attempt.sh" >/dev/null 2>&1 || status=$?
 }
-labeled() { grep -q "pr edit 7 -R o/r --add-label needs-human" "$work/writes"; }
+labeled() { grep -q "pr edit 7 -R o/r --add-label needs-human" "$work/calls"; }
 said() { grep -qF -- "$1" "$work/comments"; }
 resolved='{"outcome":"resolved","summary":"Renumbered ADR-0057 to 0059."}'
 
@@ -141,8 +127,4 @@ run 1 ''
 labeled && said "wasn't checked for changes to the factory's own rules" ||
   fail "a crash that pushed nothing still goes to a human when protected paths can't be ruled out"
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures failed."
-  exit 1
-fi
-echo "All conflict attempt reports pass."
+finish "All conflict attempt reports pass."
