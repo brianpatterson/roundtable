@@ -281,9 +281,10 @@ practice. The words are defined in [`GLOSSARY.md`](../GLOSSARY.md); documents ar
 ([ADR-0043](adr/0043-markdown-documents.md)); a new `personas` module links to `applications`
 by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships something usable:
 
-1. **Application status rework**: a `saved` status for postings not yet sent, an applied date
-   separate from the creation date, and `screening` folded into `interviewing` (expand/contract,
-   since a deploy rollback can't undo a migration).
+1. ✅ **Application status rework**: a `saved` status for postings not yet sent, an applied date
+   separate from the creation date, and `screening` folded into `interviewing` (expand/contract
+   over three releases, since a deploy rollback can't undo a migration;
+   [ADR-0045](adr/0045-saved-status-and-applied-date.md)).
 2. ✅ **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
    self-rating, and an outcome inferred from the next round or a rejection
    ([ADR-0061](adr/0061-inferred-round-outcomes.md)).

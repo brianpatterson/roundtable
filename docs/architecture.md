@@ -291,8 +291,8 @@ erDiagram
 - `application_status` is a Postgres enum: `saved → applied → interviewing → offer → accepted`,
   plus the terminal states `rejected` and `withdrawn`. Transitions aren't enforced
   ([ADR-0006](adr/0006-status-enum-and-dates.md)). `saved` is a posting not yet sent. The enum
-  still holds `screening`, folded into `interviewing`: no request sets it, the API reads a stored
-  one as `interviewing`, and a later release drops it
+  is made from the contract's `APPLICATION_STATUSES`, so the database and the API share one list.
+  `screening` was folded into `interviewing` and then dropped from the enum, over three releases
   ([ADR-0045](adr/0045-saved-status-and-applied-date.md)).
 - `applied_at` is when the application was sent, set by the server from Postgres's clock: on
   insert by its default (null for a `saved` one), and on a status change if it was still null.
