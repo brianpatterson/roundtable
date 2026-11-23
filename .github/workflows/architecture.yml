@@ -124,7 +124,7 @@ jobs:
               (.questions | map("- **\(.question)** Recommended: \(.recommendation)") | join("\n")) + "\n\n" +
               "### Acceptance criteria\n\n" +
               (.acceptance_criteria | map("- \(.)") | join("\n")) + "\n" +
-              "- Given the full test suite, then every existing test passes, or is replaced by one at the new interface that covers the same behavior, and the deepened module is tested through its interface.\n" +
+              "- Given the deepened module, then it is tested through its interface, and the tests of the shallow modules it replaces are deleted, not kept alongside: each behavior they checked is checked by a test at the new interface. Every other existing test still passes.\n" +
               "- Given the decisions above, then the change follows each recommendation unless a comment from the owner changes it.\n\n" +
               "### Out of scope\n\n\(.out_of_scope)\n\n" +
               "### Docs impact\n\nAn ADR if this changes a module'"'"'s interface across modules or departs from an existing ADR; `docs/architecture.md` if components move." +
