@@ -59,9 +59,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: .github/factory/dispatch.sh
-      # The dead man's switch (ADR-0060). Only sweeps the clock (or GitHub's cron) started ping,
-      # so the heartbeat shows the clock is alive: event-started sweeps would keep it green while
-      # the clock is down. A sweep that fails or never runs sends nothing, and Better Stack alerts
+      # The dead man's switch (ADR-0060). Only sweeps the clock, GitHub's cron or a person started
+      # ping, so the heartbeat shows the clock is alive: sweeps after a closed issue or a deploy
+      # would keep it green while the clock is down. A sweep that fails or never runs sends nothing, and Better Stack alerts
       # when an hour passes without a ping. Skipped until the secret is set.
       - name: Report to the heartbeat monitor
         if: >-

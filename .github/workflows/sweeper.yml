@@ -9,9 +9,10 @@
 #
 # What starts it (ADR-0060): GitHub starts this repository's scheduled runs hours late and drops
 # the rest, so the factory's clock (a Cloudflare Worker, infra/factory-clock.tf) dispatches it
-# every 20 minutes. It also runs after every CI run on a pull request and every Review run, which is when most stuck states
-# begin, and on GitHub's own cron as a backstop. Every successful sweep the clock or the cron
-# started pings a Better Stack heartbeat, which alerts when an hour passes without one.
+# every 20 minutes, with GitHub's own cron as a backstop. Every successful sweep pings a Better
+# Stack heartbeat, which alerts when an hour passes without one. It doesn't also run on events
+# (after CI or Review): an event-started run would replace a waiting clock run in the concurrency
+# group, losing its ping, and could start the conflict resolver beside the one CI on main starts.
 name: Factory sweeper
 
 on:
@@ -21,12 +22,6 @@ on:
         description: Print what it would do and change nothing
         type: boolean
         default: false
-  # Not after CI on main: that starts the conflict resolver (ADR-0058), and a sweep at the same
-  # moment might not see its run yet and start a second, replacing a pending fix or rework.
-  workflow_run:
-    workflows: [CI, Review]
-    types: [completed]
-    branches-ignore: [main]
   # A backstop for the clock. GitHub runs it every few hours at best (ADR-0060).
   schedule:
     - cron: '*/30 * * * *'
@@ -34,8 +29,8 @@ on:
 permissions:
   contents: read
 
-# Extra triggers queue rather than race: one sweep at a time, and at most one waiting (a newer
-# one replaces it), which is all that's needed, since each sweep reads the current state.
+# One sweep at a time, and at most one waiting (a newer one replaces it), which is all that's
+# needed, since each sweep reads the current state.
 concurrency:
   group: factory-sweeper
   cancel-in-progress: false
@@ -58,14 +53,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: .github/factory/sweep-prs.sh
-      # The dead man's switch (ADR-0060). Only sweeps the clock (or GitHub's cron) started ping,
-      # so the heartbeat shows the clock is alive: event-started sweeps would keep it green while
-      # the clock is down. A sweep that fails or never runs sends nothing, and Better Stack alerts
-      # when an hour passes without a ping. Skipped until the secret is set.
+      # The dead man's switch (ADR-0060). A sweep that fails or never runs sends nothing, and
+      # Better Stack alerts when an hour passes without a ping. Skipped until the secret is set.
       - name: Report to the heartbeat monitor
-        if: >-
-          contains(fromJSON('["workflow_dispatch", "schedule"]'), github.event_name) &&
-          inputs.dry_run != true
+        if: inputs.dry_run != true
         env:
           HEARTBEAT_URL: ${{ secrets.SWEEPER_HEARTBEAT_URL }}
         run: .github/factory/ping-heartbeat.sh
