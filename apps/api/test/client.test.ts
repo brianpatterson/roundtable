@@ -104,6 +104,22 @@ describe('the web client', () => {
     ).rejects.toThrow('A duration needs a start time');
   });
 
+  it('rates a Round, and refuses a rating outside 1–5 before it is sent', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'coding' });
+
+    const rated = await api.rateRound(application.id, round.id, {
+      selfRating: 2,
+      ratingNote: 'Froze on recursion',
+    });
+
+    expect(rated).toMatchObject({ selfRating: 2, ratingNote: 'Froze on recursion' });
+    expect(await api.listRounds(application.id)).toEqual([rated]);
+    await expect(api.rateRound(application.id, round.id, { selfRating: 6 })).rejects.toThrow(
+      ApiError,
+    );
+  });
+
   it('reads the public auth config without a session', async () => {
     expect(await clientFor().authConfig()).toEqual({ providers: [] });
   });
