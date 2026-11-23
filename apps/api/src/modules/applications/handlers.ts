@@ -13,8 +13,7 @@ import {
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { passedByNewRound } from './inference.js';
-import { inferOutcomes, statusChanged } from './round-lifecycle.js';
+import { roundAdded, statusChanged } from './round-lifecycle.js';
 import { applications, rounds } from './schema.js';
 
 /** A whole schedule as columns: what the request leaves out is cleared. */
@@ -270,21 +269,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
                 if (!round) return yield* Effect.die(new Error('insert returned no row'));
 
-                // The pending Rounds before it passed, unless the user set their Outcome.
-                yield* inferOutcomes(
-                  tx,
-                  passedByNewRound(earlier, round, payload.timeZone ?? 'UTC'),
-                  'passed',
-                );
-
-                // Its first Round moves an applied application to interviewing (GLOSSARY.md). Any
-                // other status was set by the user, and stays.
-                if (earlier.length === 0 && application.status === 'applied') {
-                  yield* tx
-                    .update(applications)
-                    .set({ status: 'interviewing' })
-                    .where(eq(applications.id, application.id));
-                }
+                yield* roundAdded(tx, application, earlier, round, payload.timeZone);
 
                 return round;
               }),

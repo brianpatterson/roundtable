@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { failedByRejection, type InferenceRound } from './inference.js';
+import { failedByRejection, passedByNewRound, type InferenceRound } from './inference.js';
 
 // The pure inference rules, with no database: the Round lifecycle's HTTP tests in rounds.test.ts
 // keep one case per behaviour, and the day and order rules are pinned here.
@@ -147,5 +147,104 @@ describe('the Rounds a rejection fails', () => {
     },
   ])('fails $name', ({ rounds, timeZone, failed }) => {
     expect(failedByRejection(rounds, timeZone)).toEqual(failed);
+  });
+});
+
+describe('the Rounds a new Round passes', () => {
+  it.each<{
+    name: string;
+    earlier: InferenceRound[];
+    added: InferenceRound;
+    timeZone: string;
+    passed: string[];
+  }>([
+    {
+      name: 'none, without earlier Rounds',
+      earlier: [],
+      added: round('added', { startsAt: '2026-12-05T17:00:00Z' }),
+      timeZone: 'UTC',
+      passed: [],
+    },
+    {
+      name: 'the ones dated before it, leaving the later ones',
+      earlier: [
+        round('later', { startsAt: '2026-12-10T17:00:00Z' }),
+        round('before', { startsAt: '2026-12-01T17:00:00Z' }),
+        round('takeHome', { dueOn: '2026-12-03' }),
+      ],
+      added: round('added', { startsAt: '2026-12-05T17:00:00Z' }),
+      timeZone: 'UTC',
+      passed: ['before', 'takeHome'],
+    },
+    {
+      name: 'the unscheduled ones, though they’re listed after it',
+      earlier: [round('unscheduled'), round('later', { startsAt: '2026-12-10T17:00:00Z' })],
+      added: round('added', { startsAt: '2026-12-05T17:00:00Z' }),
+      timeZone: 'UTC',
+      passed: ['unscheduled'],
+    },
+    {
+      name: 'every one, when it isn’t scheduled',
+      earlier: [round('later', { startsAt: '2026-12-10T17:00:00Z' }), round('unscheduled')],
+      added: round('added'),
+      timeZone: 'UTC',
+      passed: ['later', 'unscheduled'],
+    },
+    {
+      name: 'the ones on the same date: a take-home due that day, or a start at the same time',
+      earlier: [
+        round('takeHome', { dueOn: '2026-12-05' }),
+        round('sameStart', { startsAt: '2026-12-05T00:00:00Z' }),
+        round('laterThatDay', { startsAt: '2026-12-05T17:00:00Z' }),
+      ],
+      added: round('added', { dueOn: '2026-12-05' }),
+      timeZone: 'UTC',
+      passed: ['takeHome', 'sameStart'],
+    },
+    {
+      // 01:00 on 2 December in Tokyo, still 1 December in UTC.
+      name: 'not a Round already on its due day, east of UTC',
+      earlier: [round('night', { startsAt: '2026-12-01T16:00:00Z' })],
+      added: round('takeHome', { dueOn: '2026-12-02' }),
+      timeZone: 'Asia/Tokyo',
+      passed: [],
+    },
+    {
+      name: 'the same Round, the day before the due day in UTC',
+      earlier: [round('night', { startsAt: '2026-12-01T16:00:00Z' })],
+      added: round('takeHome', { dueOn: '2026-12-02' }),
+      timeZone: 'UTC',
+      passed: ['night'],
+    },
+    {
+      // 20:00 on 1 December in New York, already 2 December in UTC.
+      name: 'a Round the day before its due day, west of UTC',
+      earlier: [round('evening', { startsAt: '2026-12-02T01:00:00Z' })],
+      added: round('takeHome', { dueOn: '2026-12-02' }),
+      timeZone: 'America/New_York',
+      passed: ['evening'],
+    },
+    {
+      name: 'not the same Round, already on the due day in UTC',
+      earlier: [round('evening', { startsAt: '2026-12-02T01:00:00Z' })],
+      added: round('takeHome', { dueOn: '2026-12-02' }),
+      timeZone: 'UTC',
+      passed: [],
+    },
+    {
+      name: 'only the pending ones the user hasn’t set, passing over theirs, pending included',
+      earlier: [
+        round('setPending', {}, { outcomeSetByUser: true }),
+        round('setFailed', {}, { outcome: 'failed', outcomeSetByUser: true }),
+        round('inferredFailed', {}, { outcome: 'failed' }),
+        round('unknown', {}, { outcome: 'unknown' }),
+        round('pending'),
+      ],
+      added: round('added'),
+      timeZone: 'UTC',
+      passed: ['pending'],
+    },
+  ])('passes $name', ({ earlier, added, timeZone, passed }) => {
+    expect(passedByNewRound(earlier, added, timeZone)).toEqual(passed);
   });
 });

@@ -151,6 +151,8 @@ describe('rounds API', () => {
   });
 });
 
+// Every status is pinned without a database in round-lifecycle.test.ts; these check the Round
+// lifecycle's wiring: one case per behaviour.
 describe('the first Round and the application’s status', () => {
   it('moves an applied application to interviewing', async () => {
     const application = await createApplication('applied');
@@ -160,16 +162,13 @@ describe('the first Round and the application’s status', () => {
     expect(await statusOf(application.id)).toBe('interviewing');
   });
 
-  it.each(['saved', 'interviewing', 'offer', 'accepted', 'rejected', 'withdrawn'])(
-    'leaves a %s application alone',
-    async (status) => {
-      const application = await createApplication(status);
+  it('leaves an application in any other status alone', async () => {
+    const application = await createApplication('saved');
 
-      await addRound(application.id);
+    await addRound(application.id);
 
-      expect(await statusOf(application.id)).toBe(status);
-    },
-  );
+    expect(await statusOf(application.id)).toBe('saved');
+  });
 
   it('leaves an applied application with Rounds alone: only the first Round moves it', async () => {
     const application = await createApplication('applied');
@@ -821,6 +820,9 @@ describe('Outcomes inferred from the next Round', () => {
   const addAt = async (applicationId: string, schedule: Record<string, Json>) =>
     (await addRoundWith(applicationId, schedule)).json<RoundJson>().id;
 
+  // The day and order rules are pinned without a database in inference.test.ts; these check the
+  // Round lifecycle's wiring: one case per behaviour.
+
   it('passes the pending Rounds dated before the new one, and the unscheduled ones', async () => {
     const application = await createApplication();
 
@@ -843,40 +845,26 @@ describe('Outcomes inferred from the next Round', () => {
     });
   });
 
-  it('passes every pending Round when the new one isn’t scheduled', async () => {
-    const application = await createApplication();
-
-    const [dated = '', unscheduled = ''] = await seedRounds(
-      application.id,
-      { startsAt: '2026-12-10T17:00:00Z' },
-      {},
-    );
-
-    const added = await addAt(application.id, {});
-
-    expect(await outcomesOf(application.id)).toEqual({
-      [dated]: INFERRED_PASSED,
-      [unscheduled]: INFERRED_PASSED,
-      [added]: PENDING,
-    });
-  });
+  // 01:00 on 2 December in Tokyo, still 1 December in UTC: before a take-home due on 2 December
+  // only in UTC.
+  const night = { startsAt: '2026-12-01T16:00:00Z' };
 
   it('places a take-home’s due day in the user’s time zone', async () => {
-    // 01:00 on 2 December in Tokyo, still 1 December in UTC.
-    const startsAt = '2026-12-01T16:00:00Z';
+    const application = await createApplication();
+    const [round = ''] = await seedRounds(application.id, night);
 
-    const inTokyo = await createApplication();
-    const tokyoRound = await addAt(inTokyo.id, { startsAt });
+    await addRoundWith(application.id, { dueOn: '2026-12-02', timeZone: 'Asia/Tokyo' });
 
-    await addRoundWith(inTokyo.id, { dueOn: '2026-12-02', timeZone: 'Asia/Tokyo' });
+    expect((await outcomesOf(application.id))[round]).toEqual(PENDING);
+  });
 
-    const inUtc = await createApplication();
-    const utcRound = await addAt(inUtc.id, { startsAt });
+  it('uses UTC’s day when the request sends no time zone', async () => {
+    const application = await createApplication();
+    const [round = ''] = await seedRounds(application.id, night);
 
-    await addRoundWith(inUtc.id, { dueOn: '2026-12-02', timeZone: 'UTC' });
+    await addRoundWith(application.id, { dueOn: '2026-12-02' });
 
-    expect((await outcomesOf(inTokyo.id))[tokyoRound]).toEqual(PENDING);
-    expect((await outcomesOf(inUtc.id))[utcRound]).toEqual(INFERRED_PASSED);
+    expect((await outcomesOf(application.id))[round]).toEqual(INFERRED_PASSED);
   });
 
   it('leaves alone an Outcome the user set, pending included', async () => {
