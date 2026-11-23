@@ -1,4 +1,4 @@
-# 0060. Infer Round Outcomes in the API, in the user's time zone, without a new column
+# 0061. Infer Round Outcomes in the API, in the user's time zone, without a new column
 
 - **Status:** Accepted
 - **Date:** 2026-11-23

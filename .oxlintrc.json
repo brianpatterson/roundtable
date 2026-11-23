@@ -229,7 +229,7 @@
       }
     },
     {
-      "files": ["apps/api/**", "scripts/**", "deploy/**"],
+      "files": ["apps/api/**", "scripts/**", "deploy/**", "infra/factory-clock/**"],
       "env": {
         "node": true
       }

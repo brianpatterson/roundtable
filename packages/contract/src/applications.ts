@@ -403,7 +403,7 @@ export type Round = typeof Round.Type;
 
 /**
  * Whether a Round's Outcome was inferred (GLOSSARY.md): one the user didn't set that isn't the
- * pending every Round starts with. Only inference writes such a value (ADR-0060).
+ * pending every Round starts with. Only inference writes such a value (ADR-0061).
  */
 export const isInferredOutcome = (round: Pick<Round, 'outcome' | 'outcomeSetByUser'>) =>
   !round.outcomeSetByUser && round.outcome !== 'pending';

@@ -72,7 +72,8 @@ run 1 "$resolved"
 
 compare 0 "$(file docs/a.md)" "$(file .github/workflows/ci.yml)"
 run 1 "$resolved"
-[ "$status" -eq 1 ] && labeled && said "may not touch" || fail "a change to .github/ fails the step and goes to a human"
+[ "$status" -eq 1 ] && labeled && said "whoever made the change" || fail "a change to .github/ fails the step and goes to a human"
+! said "resolver" || fail "the protected-path message doesn't blame the resolver"
 compare 0 "$(file CLAUDE.md)"
 run 1 "$resolved"
 [ "$status" -eq 1 ] || fail "a change to CLAUDE.md fails the step"
@@ -132,6 +133,13 @@ labeled && said "showed no diff" || fail "a compare listing 300 files counts as 
 compare 0 "$(nopatch docs/big.md 4000)"
 run 1 ''
 ! labeled && said "the next one retries" || fail "a crash that pushed nothing isn't judged on the pull request's own files"
+
+# 300 files is the compare's limit: protected paths past it can't be ruled out, even when the agent
+# pushed nothing.
+jq -n '{behind_by: 0, files: [range(300) | {filename: "f\(.).md", patch: "@@ -1 +1 @@\n+fine", changes: 1}]}' >"$work/compare.json"
+run 1 ''
+labeled && said "wasn't checked for changes to the factory's own rules" ||
+  fail "a crash that pushed nothing still goes to a human when protected paths can't be ruled out"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

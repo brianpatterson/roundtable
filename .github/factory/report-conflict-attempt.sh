@@ -47,11 +47,22 @@ if compare=$("$GH" api "repos/$GITHUB_REPOSITORY/compare/$MAIN...$BRANCH" 2>/dev
   fi
 
   # The agent never changes the factory's rules or CI, with an editor or with git (`git restore`,
-  # `git mv`). Against the merged main, a factory pull request's own changes never include them.
-  if jq -r '.files[]?.filename' <<<"$compare" | grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-    outcome=protected
-    summary="The branch changes \`.github/\`, \`.claude/\` or \`CLAUDE.md\` against main, which the factory may not touch. Don't merge it until a human has looked."
-  fi
+  # `git mv`). Against the merged main, a factory pull request's own changes never include them,
+  # whoever pushed them, so the message doesn't say the resolver did. protected-changes.sh asks for
+  # the same compare again: one check, shared by every agent job, is worth the extra request.
+  code=0
+  "$(dirname "$0")/protected-changes.sh" "$MAIN" "$BRANCH" >/dev/null || code=$?
+  case "$code" in
+    0) ;;
+    1)
+      outcome=protected
+      summary="The branch changes \`.github/\`, \`.claude/\` or \`CLAUDE.md\` against main. A factory pull request never should, whoever made the change: don't merge it until a human has looked."
+      ;;
+    *)
+      outcome=needs-human
+      note "GitHub couldn't list every file the branch changes against main, so it wasn't checked for changes to the factory's own rules."
+      ;;
+  esac
 else
   outcome=needs-human
   note "GitHub couldn't compare the branch with main, so what was pushed wasn't checked."

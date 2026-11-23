@@ -7,7 +7,7 @@ import styles from './Rounds.module.css';
 
 // A Round's Outcome (GLOSSARY.md): whether the user advanced past it. Picking one saves it at
 // once, and the API records that the user set it, so an inferred one never replaces it. One the
-// API inferred is marked as such (ADR-0060).
+// API inferred is marked as such (ADR-0061).
 
 const outcomeOptions = [
   { value: 'pending', label: 'Pending' },

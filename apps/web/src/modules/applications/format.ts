@@ -7,7 +7,7 @@ import {
 
 /**
  * The user's time zone, as the browser reports it, for a request the API infers Outcomes from
- * (ADR-0060). Nothing when the browser reports one the API wouldn't accept: the API then uses UTC.
+ * (ADR-0061). Nothing when the browser reports one the API wouldn't accept: the API then uses UTC.
  */
 export function inUserTimeZone(): { timeZone?: string } {
   const { timeZone } = new Intl.DateTimeFormat().resolvedOptions();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Checks the guards every agent job in factory.yml runs after its agent (ADR-0029, ADR-0048):
-# takedown-credentials.sh and flag-suspicious.sh, against a stand-in gh, and explain-failure.sh on
-# a canned output file. Run from anywhere: .github/factory/test-agent-guards.sh
+# Checks the guards every agent job runs after its agent (ADR-0029, ADR-0048):
+# takedown-credentials.sh, flag-suspicious.sh and protected-changes.sh, against a stand-in gh,
+# and explain-failure.sh on a canned output file. Run from anywhere: .github/factory/test-agent-guards.sh
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -95,6 +95,40 @@ rm "$work/claude-execution-output.json"
 : >"$work/out"
 RUNNER_TEMP=$work GITHUB_OUTPUT=$work/out "$here/explain-failure.sh" agent >/dev/null
 grep -qx "reason=it failed before writing its output" "$work/out" || fail "no output file still gives a reason"
+
+# protected-changes.sh, which every agent job runs on what its agent pushed (ADR-0029).
+cat >"$work/gh-compare" <<'GH'
+#!/usr/bin/env bash
+[ -f "$COMPARE" ] || { echo "GitHub says no" >&2; exit 1; }
+cat "$COMPARE"
+GH
+chmod +x "$work/gh-compare"
+protected() { # protected <compare JSON, or "fails">: sets code and out
+  if [ "$1" = fails ]; then rm -f "$work/compare.json"; else echo "$1" >"$work/compare.json"; fi
+  code=0
+  out=$(COMPARE=$work/compare.json GH=$work/gh-compare GITHUB_REPOSITORY=o/r "$here/protected-changes.sh" a b 2>/dev/null) || code=$?
+}
+protected '{"files":[{"filename":"docs/a.md"},{"filename":"apps/web/x.ts"}]}'
+[ "$code" = 0 ] && [ -z "$out" ] || fail "no protected file: exit 0, nothing printed ($code: $out)"
+protected '{"files":[]}'
+[ "$code" = 0 ] || fail "no changes at all: exit 0 ($code)"
+protected '{"files":[{"filename":"docs/a.md"},{"filename":".github/workflows/ci.yml"},{"filename":"CLAUDE.md"},{"filename":".claude/settings.json"}]}'
+[ "$code" = 1 ] && [ "$out" = $'.github/workflows/ci.yml\nCLAUDE.md\n.claude/settings.json' ] ||
+  fail "protected files: exit 1, each printed ($code: $out)"
+protected '{"files":[{"filename":"docs/CLAUDE.md"},{"filename":"apps/.github/x"}]}'
+[ "$code" = 0 ] || fail "only paths at the root count ($code)"
+protected '{"files":[{"filename":"docs/ci.yml","previous_filename":".github/workflows/ci.yml","status":"renamed"}]}'
+[ "$code" = 1 ] && [ "$out" = .github/workflows/ci.yml ] || fail "a file moved out of .github/ counts by its old name ($code: $out)"
+protected '{"files":[{"filename":".claude/x.json","previous_filename":"docs/x.json","status":"renamed"}]}'
+[ "$code" = 1 ] && [ "$out" = .claude/x.json ] || fail "a file moved into .claude/ counts by its new name ($code: $out)"
+protected '{"files":[{"filename":"docs/b.md","previous_filename":"docs/a.md","status":"renamed"}]}'
+[ "$code" = 0 ] || fail "a rename outside the protected paths passes ($code)"
+protected fails
+[ "$code" = 2 ] || fail "a failed compare: exit 2, never a pass ($code)"
+protected '{"message":"Not Found"}'
+[ "$code" = 2 ] || fail "an answer without files: exit 2 ($code)"
+protected "$(jq -n '{files: [range(300) | {filename: "f\(.)"}]}')"
+[ "$code" = 2 ] || fail "300 files, the compare's limit: exit 2, since more may be unlisted ($code)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

@@ -1,4 +1,4 @@
-// Inferred Outcomes (GLOSSARY.md, ADR-0060): adding a Round passes the pending Rounds before it,
+// Inferred Outcomes (GLOSSARY.md, ADR-0061): adding a Round passes the pending Rounds before it,
 // and a rejection fails the latest pending ones. Pure, so the handlers run it inside the
 // transaction that makes the change, on the Rounds they read there.
 

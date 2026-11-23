@@ -139,3 +139,11 @@ Options 1 and 2 together, plus a guard on what's published:
   allowed only with those two packages' `test` script, not as a prefix: `pnpm --filter x exec …`
   would not match the deny list's `pnpm exec`. `pnpm vitest` runs test files, which `pnpm test`
   already does.
+- **2026-11-23:** every agent job checks what its agent pushed for changes to `.github/`,
+  `.claude/` or `CLAUDE.md` through one script from main, `.github/factory/protected-changes.sh`
+  (pinned by `test-agent-guards.sh`): the build, the CI fixer, rework and the conflict resolver.
+  It fails closed. Each job used to ask GitHub for the compare inline and read a failed request as
+  "nothing changed", so a push went unchecked whenever GitHub didn't answer. Now a compare that
+  fails, or that lists 300 files (its limit, so more may be unlisted), sends the pull request or
+  ticket to a human. A renamed file counts by its old name too: the agents may run `git mv`, and
+  the compare lists a file moved out of `.github/` only under its new name.

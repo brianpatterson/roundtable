@@ -12,6 +12,9 @@ resend_dkim_public_key = "p=..."
 # Better Stack → Settings → API tokens → Team-based tokens → Incidents API token (monitoring.tf).
 betterstack_api_token = ""
 
+# Fine-grained GitHub token, this repository only, Actions read and write (factory-clock.tf).
+github_factory_clock_token = ""
+
 # Optional overrides:
 # region                    = "nyc3"
 # droplet_size              = "s-1vcpu-1gb"
