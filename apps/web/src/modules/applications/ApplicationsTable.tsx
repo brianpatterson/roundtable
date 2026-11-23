@@ -10,7 +10,7 @@ import { ApiError } from '@roundtable/contract/client';
 import { Alert, Button, Dialog, Link, Select } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './ApplicationsTable.module.css';
-import { appliedLabel, formatDate, statusLabel } from './format';
+import { appliedLabel, formatDate, inUserTimeZone, statusLabel } from './format';
 import { applicationsQueryKey } from './queries';
 
 /**
@@ -39,10 +39,11 @@ export function ApplicationsTable() {
 
   // A failure goes in a snackbar (the shell shows it), so the table doesn't move. The list is asked
   // again either way, so each row's select shows the status the server has. Each attempt is its
-  // own mutation, so two failures in a row show two messages.
+  // own mutation, so two failures in a row show two messages. A rejection can fail Rounds of the
+  // user's day, so it goes with their time zone; invalidating the list refreshes the Rounds too.
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: ApplicationStatus }) =>
-      api.updateApplication(id, { status }),
+      api.updateApplication(id, { status, ...inUserTimeZone() }),
     meta: { errorSnackbar: true },
     onSettled: invalidate,
   });

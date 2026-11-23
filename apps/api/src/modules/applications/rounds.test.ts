@@ -110,13 +110,16 @@ describe('rounds API', () => {
 
   it('deletes a Round', async () => {
     const application = await createApplication();
-    const kept = (await addRound(application.id, 'coding')).json<RoundJson>();
+    await addRound(application.id, 'coding');
     const deleted = (await addRound(application.id, 'behavioral')).json<RoundJson>();
+    const before = (await request('GET', roundsOf(application.id))).json<RoundJson[]>();
 
     const res = await request('DELETE', `${roundsOf(application.id)}/${deleted.id}`);
 
     expect(res.statusCode).toBe(204);
-    expect((await request('GET', roundsOf(application.id))).json<RoundJson[]>()).toEqual([kept]);
+    expect((await request('GET', roundsOf(application.id))).json<RoundJson[]>()).toEqual(
+      before.filter((r) => r.id !== deleted.id),
+    );
 
     const again = await request('DELETE', `${roundsOf(application.id)}/${deleted.id}`);
 
@@ -774,6 +777,322 @@ describe('a Round’s Outcome', () => {
   });
 });
 
+/** Each Round's Outcome, in the list's order, by id. */
+async function outcomesOf(applicationId: string) {
+  const list = (await request('GET', roundsOf(applicationId))).json<RoundJson[]>();
+
+  return Object.fromEntries(list.map((r) => [r.id, outcomeIn(r)]));
+}
+
+const PENDING = { outcome: 'pending', outcomeSetByUser: false };
+
+const INFERRED_PASSED = { outcome: 'passed', outcomeSetByUser: false };
+
+const INFERRED_FAILED = { outcome: 'failed', outcomeSetByUser: false };
+
+/**
+ * Pending Rounds of `applicationId`, written straight to the table in the order given, so adding
+ * them infers nothing. Answers their ids, in that order.
+ */
+async function seedRounds(
+  applicationId: string,
+  ...schedules: { startsAt?: string; dueOn?: string }[]
+) {
+  const ids: string[] = [];
+
+  for (const { startsAt, dueOn } of schedules) {
+    const [row] = await t.db
+      .insert(rounds)
+      .values({
+        applicationId,
+        interviewType: 'coding',
+        startsAt: startsAt === undefined ? null : new Date(startsAt),
+        dueOn: dueOn ?? null,
+      })
+      .returning({ id: rounds.id });
+
+    ids.push(row?.id ?? '');
+  }
+
+  return ids;
+}
+
+describe('Outcomes inferred from the next Round', () => {
+  const addAt = async (applicationId: string, schedule: Record<string, Json>) =>
+    (await addRoundWith(applicationId, schedule)).json<RoundJson>().id;
+
+  it('passes the pending Rounds dated before the new one, and the unscheduled ones', async () => {
+    const application = await createApplication();
+
+    const [early = '', unscheduled = '', takeHome = '', later = ''] = await seedRounds(
+      application.id,
+      { startsAt: '2026-12-01T17:00:00Z' },
+      {},
+      { dueOn: '2026-12-03' },
+      { startsAt: '2026-12-10T17:00:00Z' },
+    );
+
+    const added = await addAt(application.id, { startsAt: '2026-12-05T17:00:00Z' });
+
+    expect(await outcomesOf(application.id)).toEqual({
+      [early]: INFERRED_PASSED,
+      [unscheduled]: INFERRED_PASSED,
+      [takeHome]: INFERRED_PASSED,
+      [added]: PENDING,
+      [later]: PENDING,
+    });
+  });
+
+  it('passes every pending Round when the new one isn’t scheduled', async () => {
+    const application = await createApplication();
+
+    const [dated = '', unscheduled = ''] = await seedRounds(
+      application.id,
+      { startsAt: '2026-12-10T17:00:00Z' },
+      {},
+    );
+
+    const added = await addAt(application.id, {});
+
+    expect(await outcomesOf(application.id)).toEqual({
+      [dated]: INFERRED_PASSED,
+      [unscheduled]: INFERRED_PASSED,
+      [added]: PENDING,
+    });
+  });
+
+  it('places a take-home’s due day in the user’s time zone', async () => {
+    // 01:00 on 2 December in Tokyo, still 1 December in UTC.
+    const startsAt = '2026-12-01T16:00:00Z';
+
+    const inTokyo = await createApplication();
+    const tokyoRound = await addAt(inTokyo.id, { startsAt });
+
+    await addRoundWith(inTokyo.id, { dueOn: '2026-12-02', timeZone: 'Asia/Tokyo' });
+
+    const inUtc = await createApplication();
+    const utcRound = await addAt(inUtc.id, { startsAt });
+
+    await addRoundWith(inUtc.id, { dueOn: '2026-12-02', timeZone: 'UTC' });
+
+    expect((await outcomesOf(inTokyo.id))[tokyoRound]).toEqual(PENDING);
+    expect((await outcomesOf(inUtc.id))[utcRound]).toEqual(INFERRED_PASSED);
+  });
+
+  it('leaves alone an Outcome the user set, pending included', async () => {
+    const application = await createApplication();
+    const ids: string[] = [];
+
+    for (const outcome of ['pending', 'failed', 'unknown']) {
+      const round = (await addRound(application.id)).json<RoundJson>();
+
+      await request('PUT', outcomeOf(round), { outcome });
+      ids.push(round.id);
+    }
+
+    await addRound(application.id);
+
+    const outcomes = await outcomesOf(application.id);
+
+    expect(ids.map((id) => outcomes[id])).toEqual([
+      { outcome: 'pending', outcomeSetByUser: true },
+      { outcome: 'failed', outcomeSetByUser: true },
+      { outcome: 'unknown', outcomeSetByUser: true },
+    ]);
+  });
+
+  it('refuses a time zone it doesn’t know with 400, adding nothing', async () => {
+    const application = await createApplication();
+    const first = await addAt(application.id, {});
+
+    const res = await addRoundWith(application.id, { timeZone: '+05:30' });
+
+    expect(res.statusCode).toBe(400);
+    expect(await outcomesOf(application.id)).toEqual({ [first]: PENDING });
+  });
+});
+
+describe('Outcomes inferred from a rejection', () => {
+  const reject = (applicationId: string, timeZone?: string) =>
+    request('PATCH', `/api/applications/${applicationId}`, {
+      status: 'rejected',
+      ...(timeZone && { timeZone }),
+    });
+
+  /** An interviewing application with pending Rounds as given, added in that order. */
+  async function withRounds(...schedules: { startsAt?: string; dueOn?: string }[]) {
+    const application = await createApplication('interviewing');
+
+    return { application, ids: await seedRounds(application.id, ...schedules) };
+  }
+
+  it('fails the latest pending Round, leaving the earlier ones', async () => {
+    const {
+      application,
+      ids: [first, second],
+    } = await withRounds(
+      { startsAt: '2026-12-01T17:00:00Z' },
+      { startsAt: '2026-12-03T17:00:00Z' },
+    );
+
+    const res = await reject(application.id);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<ApplicationJson>().status).toBe('rejected');
+    expect(await outcomesOf(application.id)).toEqual({
+      [first ?? '']: PENDING,
+      [second ?? '']: INFERRED_FAILED,
+    });
+  });
+
+  it('fails every pending Round on the latest one’s day, in the user’s time zone', async () => {
+    // Noon on 30 November, then 10:00, a take-home and 20:00 on 1 December, in New York. The
+    // evening Round is already 2 December in UTC.
+    const schedules = [
+      { startsAt: '2026-11-30T17:00:00Z' },
+      { startsAt: '2026-12-01T15:00:00Z' },
+      { dueOn: '2026-12-01' },
+      { startsAt: '2026-12-02T01:00:00Z' },
+    ];
+
+    const inNewYork = await withRounds(...schedules);
+
+    await reject(inNewYork.application.id, 'America/New_York');
+
+    const [dayBefore, morning, takeHome, evening] = inNewYork.ids;
+
+    expect(await outcomesOf(inNewYork.application.id)).toEqual({
+      [dayBefore ?? '']: PENDING,
+      [morning ?? '']: INFERRED_FAILED,
+      [takeHome ?? '']: INFERRED_FAILED,
+      [evening ?? '']: INFERRED_FAILED,
+    });
+
+    // Without a time zone the day is UTC's: the evening Round is alone on 2 December.
+    const inUtc = await withRounds(...schedules);
+
+    await reject(inUtc.application.id);
+
+    const outcomes = await outcomesOf(inUtc.application.id);
+
+    expect(inUtc.ids.map((id) => outcomes[id])).toEqual([
+      PENDING,
+      PENDING,
+      PENDING,
+      INFERRED_FAILED,
+    ]);
+  });
+
+  it('fails only the latest when it isn’t scheduled', async () => {
+    const {
+      application,
+      ids: [dated, firstUnscheduled, lastUnscheduled],
+    } = await withRounds({ startsAt: '2026-12-01T17:00:00Z' }, {}, {});
+
+    // The unscheduled ones list as they were added, after the dated one.
+    await reject(application.id);
+
+    expect(await outcomesOf(application.id)).toEqual({
+      [dated ?? '']: PENDING,
+      [firstUnscheduled ?? '']: PENDING,
+      [lastUnscheduled ?? '']: INFERRED_FAILED,
+    });
+  });
+
+  it('passes over Rounds whose Outcome the user set, pending included', async () => {
+    const {
+      application,
+      ids: [earlier, setPending, setPassed],
+    } = await withRounds(
+      { startsAt: '2026-12-01T17:00:00Z' },
+      { startsAt: '2026-12-03T17:00:00Z' },
+      { startsAt: '2026-12-03T19:00:00Z' },
+    );
+
+    const roundPath = (id = '') => `${roundsOf(application.id)}/${id}/outcome`;
+
+    await request('PUT', roundPath(setPending), { outcome: 'pending' });
+    await request('PUT', roundPath(setPassed), { outcome: 'passed' });
+    await reject(application.id);
+
+    expect(await outcomesOf(application.id)).toEqual({
+      [earlier ?? '']: INFERRED_FAILED,
+      [setPending ?? '']: { outcome: 'pending', outcomeSetByUser: true },
+      [setPassed ?? '']: { outcome: 'passed', outcomeSetByUser: true },
+    });
+  });
+
+  it('infers only when the status changes to rejected', async () => {
+    const application = await createApplication('rejected');
+    const round = (await addRound(application.id)).json<RoundJson>();
+
+    await reject(application.id);
+    await request('PATCH', `/api/applications/${application.id}`, { company: 'Acme Corp' });
+    await request('PATCH', `/api/applications/${application.id}`, { status: 'offer' });
+
+    expect((await outcomesOf(application.id))[round.id]).toEqual(PENDING);
+  });
+
+  it('keeps Outcomes it inferred when the application moves away from rejected', async () => {
+    const application = await createApplication();
+    const round = (await addRound(application.id)).json<RoundJson>();
+
+    await reject(application.id);
+    await request('PATCH', `/api/applications/${application.id}`, { status: 'interviewing' });
+
+    expect((await outcomesOf(application.id))[round.id]).toEqual(INFERRED_FAILED);
+  });
+
+  it('refuses a time zone it doesn’t know with 400, changing nothing', async () => {
+    const application = await createApplication();
+    const round = (await addRound(application.id)).json<RoundJson>();
+
+    const res = await reject(application.id, 'Not/AZone');
+
+    expect(res.statusCode).toBe(400);
+    expect(await statusOf(application.id)).toBe('interviewing');
+    expect((await outcomesOf(application.id))[round.id]).toEqual(PENDING);
+  });
+
+  it('leaves another user’s Rounds alone, answering their application as not found', async () => {
+    const application = await createApplication();
+    const round = (await addRound(application.id)).json<RoundJson>();
+    const { cookie: someoneElse } = await signUp(t);
+
+    const res = await request(
+      'PATCH',
+      `/api/applications/${application.id}`,
+      { status: 'rejected' },
+      someoneElse,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect((await outcomesOf(application.id))[round.id]).toEqual(PENDING);
+  });
+});
+
+describe('changing an inferred Outcome', () => {
+  it('keeps the user’s value, marked as theirs, through later inferences', async () => {
+    const application = await createApplication();
+    const round = (await addRound(application.id)).json<RoundJson>();
+
+    await addRound(application.id);
+    expect((await outcomesOf(application.id))[round.id]).toEqual(INFERRED_PASSED);
+
+    const res = await request('PUT', outcomeOf(round), { outcome: 'failed' });
+
+    expect(outcomeIn(res.json<RoundJson>())).toEqual({ outcome: 'failed', outcomeSetByUser: true });
+
+    await addRound(application.id);
+    await request('PATCH', `/api/applications/${application.id}`, { status: 'rejected' });
+
+    expect((await outcomesOf(application.id))[round.id]).toEqual({
+      outcome: 'failed',
+      outcomeSetByUser: true,
+    });
+  });
+});
+
 describe('the order Rounds are listed in', () => {
   it('lists dated Rounds by date, a take-home by its due date, then the rest as added', async () => {
     const application = await createApplication();
@@ -836,7 +1155,7 @@ describe('another user’s Rounds', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('adds as not found, adding nothing', async () => {
+  it('adds as not found, adding nothing and inferring nothing', async () => {
     const res = await addRound(theirs.id, 'coding', mine);
 
     expect(res.statusCode).toBe(404);

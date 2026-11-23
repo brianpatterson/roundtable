@@ -53,7 +53,7 @@ jobs:
   # one ticket at a time. Holds no secrets and runs no agent. Shares its group with the Dispatcher
   # workflow, so two decisions never read the same in-flight state. GitHub keeps one pending run per
   # group and cancels the others, silently skipping that label's build. The dispatcher's next sweep
-  # (within 30 minutes) decides every `ready` ticket again, and starts it then.
+  # (within 20 minutes, ADR-0060) decides every `ready` ticket again, and starts it then.
   #
   # A ticket it lets through is started the way the sweep starts one, through workflow_dispatch:
   # `build` re-checks the ticket after loading it, so an edit made after this decision never

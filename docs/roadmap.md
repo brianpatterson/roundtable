@@ -173,9 +173,13 @@ Building blocks, in order:
    comments, then a human approves (you stay in the loop at first).
    When it asks for changes on a factory PR, the implementer reworks it: two attempts, then
    `needs-human` ([ADR-0037](adr/0037-software-factory-rework.md)).
-   ✅ **Sweeper** ([ADR-0040](adr/0040-factory-sweeper.md)): every 30 minutes, any factory PR
+   ✅ **Sweeper** ([ADR-0040](adr/0040-factory-sweeper.md)): every 20 minutes, any factory PR
    stuck where no workflow reacts (CI cancelled or timed out, a conflict, no review) is rerun once
    or labeled `needs-human` with the reason.
+   ✅ **Factory clock** ([ADR-0060](adr/0060-factory-clock.md)): GitHub ran the sweeps' cron every
+   few hours, not every 30 minutes, so a Cloudflare Cron Trigger starts the sweeper and the
+   dispatcher every 20 minutes, and Better Stack alerts when an hour passes without a successful
+   sweep.
    ✅ **Conflict resolver** ([ADR-0058](adr/0058-factory-resolves-conflicts.md)): after every green
    merge, a factory PR that now conflicts with main gets main merged in and the conflict resolved
    by the implementer (usually a colliding ADR number, renumbered); what it can't resolve goes to
@@ -280,8 +284,9 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
 1. **Application status rework**: a `saved` status for postings not yet sent, an applied date
    separate from the creation date, and `screening` folded into `interviewing` (expand/contract,
    since a deploy rollback can't undo a migration).
-2. **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
-   self-rating, and an outcome inferred from the next round or a rejection.
+2. ✅ **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
+   self-rating, and an outcome inferred from the next round or a rejection
+   ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
 3. **Agenda**: upcoming rounds in date order, with time left and prep progress.
 4. **Skills and prep**: starts the `personas` module with a skill library per user (ADR-0044
    puts Skills there, so they never have to move); notes and prep tasks on a round, each task

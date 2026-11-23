@@ -1,6 +1,6 @@
 # 0040. Sweep factory pull requests every 30 minutes so none is stuck without a label
 
-- **Status:** Accepted; what happens to a factory pull request that conflicts with main is amended by [ADR-0058](0058-factory-resolves-conflicts.md)
+- **Status:** Accepted; what happens to a factory pull request that conflicts with main is amended by [ADR-0058](0058-factory-resolves-conflicts.md), and what starts the sweep (a Cloudflare Cron Trigger every 20 minutes, not GitHub's cron) by [ADR-0060](0060-factory-clock.md)
 - **Date:** 2026-11-20
 
 ## Context

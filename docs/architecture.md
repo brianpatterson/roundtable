@@ -129,7 +129,10 @@ that day wherever the user is. Adding or removing a Round's Tag invalidates only
 so does rating one: a dialog sets, changes or clears its Self-rating and note together
 (`PUT …/rounds/:roundId/rating`), and the list shows them under the Round's name. Each Round
 also has a menu with its Outcome, which saves as soon as one is picked
-(`PUT …/rounds/:roundId/outcome`) and refetches its Rounds.
+(`PUT …/rounds/:roundId/outcome`) and refetches its Rounds. An Outcome the API inferred reads
+`Passed (inferred)` until the user picks one. Adding a Round and changing an application's status
+send the browser's time zone, so the API infers by the user's day
+([ADR-0061](adr/0061-inferred-round-outcomes.md)).
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
@@ -322,7 +325,10 @@ erDiagram
   bounds as the contract; a blank note is stored as null. `outcome` is the Round's Outcome, a
   Postgres enum `round_outcome` made from the contract's `OUTCOMES` (pending, passed, failed,
   unknown), pending until set; `outcome_set_by_user` records that the user set it, so a later
-  inferred Outcome never overrides theirs ([ADR-0059](adr/0059-round-outcome.md)).
+  inferred Outcome never overrides theirs ([ADR-0059](adr/0059-round-outcome.md)). Adding a
+  Round passes the pending Rounds before it, and a change to `rejected` fails the latest pending
+  ones of one day, each in the transaction that makes the change; a passed or failed Outcome with
+  the flag unset is an inferred one ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
@@ -358,10 +364,10 @@ are rejected at the API rather than left to React and the CSP.
 | GET      | `/api/applications`                               | session                   | 200             | 401                                                                                                                |
 | GET      | `/api/applications/:id`                           | session                   | 200             | 400 (malformed id), 401, 404 (unknown or not yours)                                                                |
 | POST     | `/api/applications`                               | session                   | 201             | 400, 401                                                                                                           |
-| PATCH    | `/api/applications/:id`                           | session                   | 200             | 400 (body or id), 401, 404                                                                                         |
+| PATCH    | `/api/applications/:id`                           | session                   | 200             | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                            |
 | DELETE   | `/api/applications/:id`                           | session                   | 204             | 400 (malformed id), 401, 404                                                                                       |
 | GET      | `/api/applications/:id/rounds`                    | session                   | 200             | 400 (malformed id), 401, 404 (application unknown or not yours)                                                    |
-| POST     | `/api/applications/:id/rounds`                    | session                   | 201             | 400 (body, e.g. an unknown interview type, or id), 401, 404                                                        |
+| POST     | `/api/applications/:id/rounds`                    | session                   | 201             | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                          |
 | PUT      | `/api/applications/:id/rounds/:roundId/schedule`  | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`) |
 | PUT      | `/api/applications/:id/rounds/:roundId/rating`    | session                   | 200 (the Round) | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)      |
 | PUT      | `/api/applications/:id/rounds/:roundId/outcome`   | session                   | 200 (the Round) | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                 |
@@ -479,6 +485,9 @@ flowchart LR
   le[Let's Encrypt] -.certificates.-> caddy
   gha[GitHub Actions<br/>nightly backup] -.SSH: pg_dump.-> db
   gha -.encrypted dump.-> r2[(Cloudflare R2<br/>30-day backups)]
+  clock[Cloudflare Worker<br/>factory clock, every 20 min] -.workflow_dispatch.-> gha
+  gha -.sweep and backup pings.-> bs[Better Stack<br/>uptime + heartbeats]
+  bs -.checks /api/health.-> caddy
 ```
 
 - **Edge:** Caddy terminates TLS with automatic Let's Encrypt certificates, redirects HTTP and
@@ -486,6 +495,11 @@ flowchart LR
   never cached), and sets HSTS, CSP, frame-deny and related headers.
 - **Startup order:** `db` healthy → `migrate` exits 0 → `api` healthy → `web` starts. A failed
   migration means the new API never starts.
+- **Factory clock:** a Cloudflare Worker whose Cron Trigger starts the factory's sweeper and
+  dispatcher through `workflow_dispatch` every 20 minutes, with a fine-grained GitHub token
+  limited to Actions on this repository. GitHub can't narrow it further, so it could start any
+  dispatchable workflow on any branch, but every job holding a secret runs in an environment that
+  admits only `main`, except the sweeps' two heartbeat URLs ([ADR-0060](adr/0060-factory-clock.md)).
 - **DNS:** records point straight at the reserved IP (Cloudflare's proxy is off). The CAA record
   allows Let's Encrypt; Cloudflare automatically adds its own CAs to that set.
 - **Backups:** nightly, a GitHub Actions job streams `pg_dump` over SSH, encrypts it with age,
@@ -504,7 +518,7 @@ flowchart LR
   reported to Sentry as `IssueOpenFailed` with GitHub's status only (`modules/support/`).
 - **Monitoring:** Better Stack checks `/api/health` (must report the database up) every 3
   minutes from outside, and opens an incident only if it's still failing 60 seconds later, so a
-  deploy's ~10-second gap doesn't page anyone, and expects a ping from every nightly backup. Sentry receives unexpected
+  deploy's ~10-second gap doesn't page anyone, and expects a ping from every nightly backup and from every successful factory sweep (sweeper and dispatcher), alerting after an hour without one ([ADR-0060](adr/0060-factory-clock.md)). Sentry receives unexpected
   API errors, failed email sends and the daily-email-limit alarm, with cookies, bodies, query
   strings and database query parameters (a failed session lookup's would be the session token)
   stripped, and no console breadcrumbs
@@ -572,7 +586,7 @@ pre-upgrade branch fails to migrate.
 Every Monday, the Architecture review workflow runs Matt Pocock's `improve-codebase-architecture`
 skill (vendored in `.github/factory/skills/`) unattended over recently changed code, uploads its
 HTML report, and opens an `architecture` issue for each Strong candidate; the owner labels it
-`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets through the dispatcher's `workflow_dispatch` (`verify`, then `build`), and on the owner's `@claude` on a pull request ([ADR-0025](adr/0025-software-factory-implementer.md), [ADR-0047](adr/0047-factory-dispatcher.md), [ADR-0048](adr/0048-claude-mentions-on-pull-requests-only.md)). `Dispatcher`: on issue close, after each deploy and every 30 minutes, starts the next `ready` ticket in dependency order ([ADR-0047](adr/0047-factory-dispatcher.md)). `Factory sweeper`: every 30 minutes, reruns a cancelled CI on a factory pull request once, starts the conflict resolver on one that conflicts with main, and labels any other stuck one `needs-human` with the reason ([ADR-0040](adr/0040-factory-sweeper.md)). `Resolve conflicts`: after CI on main (every merge) and when the sweeper asks, the implementer merges main into each factory pull request that now conflicts with it and resolves the conflict, renumbering a colliding ADR ([ADR-0058](adr/0058-factory-resolves-conflicts.md)). `Security audit`: nightly when main changed ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)), an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)). `Rework`: the implementer again, when the reviewer asks for changes on a factory PR ([ADR-0037](adr/0037-software-factory-rework.md)) |
+`ready` or closes it with a reason ([ADR-0031](adr/0031-weekly-architecture-review.md)). `Factory`: the implementer agent, on `ready` tickets through the dispatcher's `workflow_dispatch` (`verify`, then `build`), and on the owner's `@claude` on a pull request ([ADR-0025](adr/0025-software-factory-implementer.md), [ADR-0047](adr/0047-factory-dispatcher.md), [ADR-0048](adr/0048-claude-mentions-on-pull-requests-only.md)). `Dispatcher`: on issue close, after each deploy and every 20 minutes, starts the next `ready` ticket in dependency order ([ADR-0047](adr/0047-factory-dispatcher.md)). `Factory sweeper`: every 20 minutes, reruns a cancelled CI on a factory pull request once, starts the conflict resolver on one that conflicts with main, and labels any other stuck one `needs-human` with the reason ([ADR-0040](adr/0040-factory-sweeper.md)). The 20-minute sweeps of both are started by the factory's clock, a Cloudflare Cron Trigger calling `workflow_dispatch`, because GitHub starts this repository's scheduled runs hours late and drops most of them; each successful sweep pings a Better Stack heartbeat, which alerts after an hour without one ([ADR-0060](adr/0060-factory-clock.md)). `Resolve conflicts`: after CI on main (every merge) and when the sweeper asks, the implementer merges main into each factory pull request that now conflicts with it and resolves the conflict, renumbering a colliding ADR ([ADR-0058](adr/0058-factory-resolves-conflicts.md)). `Security audit`: nightly when main changed ([ADR-0039](adr/0039-nightly-mutation-and-security-audit.md)), an agent runs throwaway fault-injection tests and files each finding as a private draft security advisory ([ADR-0036](adr/0036-weekly-security-audit.md)). `Review`: the reviewer agent, after green CI on every PR but Dependabot's own bumps ([ADR-0026](adr/0026-software-factory-reviewer.md), [ADR-0033](adr/0033-review-every-pull-request.md)). `Rework`: the implementer again, when the reviewer asks for changes on a factory PR ([ADR-0037](adr/0037-software-factory-rework.md)) |
 | Production | ✅ live at https://roundtableapp.us | DigitalOcean + Cloudflare via OpenTofu ([ADR-0012](adr/0012-hosting-single-vps.md), [ADR-0013](adr/0013-digitalocean-instead-of-hetzner.md)); every green CI run on `main` deploys with health-checked rollback ([ADR-0014](adr/0014-push-based-deploys.md)) |
 
 ### Software factory
