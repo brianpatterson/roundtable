@@ -61,10 +61,11 @@ if GH=$work/gh GITHUB_REPOSITORY=o/r SHA=abc "$here/factory-status.sh" failure "
   fail "a state other than pending, success or error is refused"
 fi
 
-# Rework's minor pass, and Rework itself, run on the same test as --reviewed: pin them together.
-if ! grep -qF "jq -e 'any(. == \"factory\")' <<<\"\$labels\"" "$here/../workflows/rework.yml" ||
-  ! grep -qF "any(. == \"needs-human\")' <<<\"\$labels\"" "$here/../workflows/rework.yml"; then
-  fail "rework.yml no longer selects factory pull requests without needs-human, as --reviewed assumes"
+# Rework's minor pass, and Rework itself, take what --reviewed assumes: a factory pull request
+# without needs-human (attempt.sh next rework). Pin them together.
+if ! grep -qF "rework) marker='<!-- factory-rework -->' labels='[\"factory\"]'" "$here/attempt.sh" ||
+  ! grep -qF 'elif $l | index("needs-human") then "is waiting for a human"' "$here/attempt.sh"; then
+  fail "attempt.sh no longer takes factory pull requests without needs-human for Rework, as --reviewed assumes"
 fi
 
 finish "All factory status checks pass."

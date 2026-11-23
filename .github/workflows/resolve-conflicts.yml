@@ -139,7 +139,7 @@ jobs:
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
-            .github/factory/report-conflict-attempt.sh .github/factory/protected-changes.sh "$RUNNER_TEMP/"
+            .github/factory/attempt.sh .github/factory/protected-changes.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -216,13 +216,13 @@ jobs:
         run: '"$RUNNER_TEMP/flag-suspicious.sh"'
 
       # Deterministic: what the agent pushed, whatever it reported, and one marked comment naming
-      # main's commit per attempt (select-conflicts.sh counts them). Runs even when the agent
-      # failed, so a crash counts: the first is retried by the next run, the second goes to a human.
-      # From main, like the guards: pinned by test-report-conflict-attempt.sh.
+      # main's commit per attempt (attempt.sh counts them). Runs even when the agent failed, so a
+      # crash counts: the first is retried by the next run, the second goes to a human. From main,
+      # like the guards: pinned by test-attempt.sh.
       - name: Check and report the attempt
         if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
           REASON: ${{ steps.failure.outputs.reason }}
-        run: '"$RUNNER_TEMP/report-conflict-attempt.sh"'
+        run: '"$RUNNER_TEMP/attempt.sh" report conflict'
