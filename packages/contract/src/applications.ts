@@ -325,7 +325,7 @@ export const Outcome = Schema.Literals(OUTCOMES);
 
 export type Outcome = typeof Outcome.Type;
 
-/** Sets a Round's Outcome, by the user: an inferred one never replaces it (ADR-0057). */
+/** Sets a Round's Outcome, by the user: an inferred one never replaces it (ADR-0059). */
 export const RoundOutcome = Schema.Struct({ outcome: Outcome });
 
 export type RoundOutcome = typeof RoundOutcome.Type;

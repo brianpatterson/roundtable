@@ -84,7 +84,7 @@ export const rounds = pgTable(
     selfRating: smallint('self_rating'),
     ratingNote: text('rating_note'),
     // Its Outcome (GLOSSARY.md), and whether the user set it: one they set is never replaced by
-    // an inferred one (ADR-0057). Defaulted, so existing Rounds and the release before them read
+    // an inferred one (ADR-0059). Defaulted, so existing Rounds and the release before them read
     // and insert pending, not set by the user.
     outcome: roundOutcome().notNull().default('pending'),
     outcomeSetByUser: boolean('outcome_set_by_user').notNull().default(false),

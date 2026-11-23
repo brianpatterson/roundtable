@@ -1,4 +1,4 @@
-# 0057. Store a Round's Outcome as an enum on the Round, with a flag for one the user set
+# 0059. Store a Round's Outcome as an enum on the Round, with a flag for one the user set
 
 - **Status:** Accepted
 - **Date:** 2026-11-23

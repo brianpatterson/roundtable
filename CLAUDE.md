@@ -52,6 +52,9 @@ each module is what a future service or microfrontend would become.
   tickets one at a time, each once the issues blocking it are merged and deployed ([ADR-0047](docs/adr/0047-factory-dispatcher.md)).
   `.github/workflows/sweeper.yml` checks open factory PRs every 30 minutes: it reruns a cancelled CI
   once and labels any other stuck PR `needs-human` with the reason ([ADR-0040](docs/adr/0040-factory-sweeper.md)).
+  `.github/workflows/resolve-conflicts.yml` merges main into a factory PR that conflicts with it, after
+  every merge and when the sweeper finds one, and has the implementer resolve it; `pnpm check:adrs`
+  catches two ADRs taking one number, the usual cause ([ADR-0058](docs/adr/0058-factory-resolves-conflicts.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
   publish only through `.github/factory/guard-secrets.sh` ([ADR-0029](docs/adr/0029-software-factory-credential-hardening.md)).
   That isolation leaves the lockfile and `node_modules/.bin` read-only, so agents never add a package:
@@ -80,10 +83,11 @@ pnpm dev            # web :5173 + api :3001
 pnpm db:generate    # after editing schema.ts: writes a SQL migration to apps/api/drizzle/
 pnpm db:migrate     # apply migrations to the dev db
 pnpm check:boundaries # imports respect module boundaries (ADR-0023)
+pnpm check:adrs     # every ADR has its own number and one row in docs/adr/README.md (ADR-0058)
 pnpm check:effect   # Effect diagnostics (mistakes tsc can't see, e.g. an Effect that is never run)
 pnpm --filter @roundtable/web test:mutation # Stryker: which web code no test really checks (ADR-0027)
 pnpm --filter @roundtable/api test:mutation # the same for the API: minutes, a test database per worker
-pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + boundaries + tests: run before every commit
+pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + ADRs + boundaries + tests: run before every commit
 ```
 
 ## Rules for every change
