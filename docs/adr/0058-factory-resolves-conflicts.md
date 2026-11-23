@@ -92,14 +92,6 @@ Option 1, with option 3 as its check.
 
 ## Consequences
 
-- While main is red, a conflicting factory pull request waits without a label: the resolver merges
-  nothing until main is green, and says so only in its run log. The `main-broken` issue
-  ([ADR-0035](0035-merge-without-updating-branches.md)) is the signal then, and the first green CI
-  on main starts the resolver.
-- A resolver started by a merge can still replace a fix or rework pending on the same branch; the
-  sweeper then hands that pull request to a human as "changes asked and never reworked". Rare: it
-  needs a merge to main while that branch's job is already queued behind a running one.
-
 - A factory pull request that falls behind main is merged up and reviewed again without the owner,
   usually within minutes of the merge that caused it. ADR collisions, the usual cause, are
   renumbered.
@@ -108,6 +100,13 @@ Option 1, with option 3 as its check.
 - A pull request's description can still mention its old ADR number: the agent can't edit it, so
   its summary gives the old and new number.
 - Two ADRs can no longer share a number on main, whichever path led there.
+- While main is red, a conflicting factory pull request waits without a label: the resolver merges
+  nothing until main is green, and says so only in its run log. The `main-broken` issue
+  ([ADR-0035](0035-merge-without-updating-branches.md)) is the signal then, and the first green CI
+  on main starts the resolver.
+- A resolver started by a merge can still replace a fix or rework pending on the same branch; the
+  sweeper then hands that pull request to a human as "changes asked and never reworked". Rare: it
+  needs a merge to main while that branch's job is already queued behind a running one.
 - Revisit if the resolver's merges start hiding real disagreements between pull requests (the
   reviewer reads each one), or if the repository moves to an organization, where the merge queue
   would test each pull request against the latest main instead.

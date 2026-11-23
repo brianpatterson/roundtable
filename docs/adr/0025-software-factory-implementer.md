@@ -89,3 +89,9 @@ setup-token`), stored in a `factory` GitHub Environment that admits only `main`.
   (`explain-failure.sh`) now recovers a finished agent's answer from the run's output and gives the
   reason for a real failure, for the summary. The implementer also merges `main` before it pushes:
   #149 conflicted with an ADR number merged meanwhile, and a conflicting pull request gets no CI.
+- **2026-11-23:** the Claude App can push workflow files. The conflict resolver
+  ([ADR-0058](0058-factory-resolves-conflicts.md)) merged main into #155 as `f04b681`, bringing in
+  changes to `.github/workflows/`, and GitHub accepted the push, which it refuses to an app without
+  the `workflows` permission. This settles the open question above. The agents still may not
+  change those files: the tool deny list and each job's check of what was pushed stop them, not
+  the App's permissions.
