@@ -139,7 +139,7 @@ jobs:
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
-            .github/factory/report-conflict-attempt.sh "$RUNNER_TEMP/"
+            .github/factory/report-conflict-attempt.sh .github/factory/protected-changes.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
