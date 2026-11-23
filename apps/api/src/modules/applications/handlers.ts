@@ -305,6 +305,22 @@ export const ApplicationsLive = HttpApiBuilder.group(
           return row;
         }),
 
+      setRoundOutcome: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const user = yield* CurrentUser;
+
+          const [row] = yield* db
+            .update(rounds)
+            .set({ outcome: payload.outcome, outcomeSetByUser: true })
+            .where(ownedRound(user.id, params.id, params.roundId))
+            .returning()
+            .pipe(Effect.orDie);
+
+          if (!row) return yield* new RoundNotFound();
+
+          return row;
+        }),
+
       deleteRound: ({ params }) =>
         Effect.gen(function* () {
           const user = yield* CurrentUser;

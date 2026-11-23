@@ -1,0 +1,113 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "9a2a0657-3418-4b08-92db-969bc0c97245",
+  "prevIds": [
+    "bcbd9ccd-2b4a-4dae-9e62-bb94f9bb3f10"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_enum",
+      "statementTarget": [
+        "enum",
+        "public",
+        "round_outcome"
+      ],
+      "writes": [
+        "s|enum|public.round_outcome",
+        "n|enum|public.round_outcome",
+        "e|enum|public.round_outcome",
+        "n|type|public.round_outcome"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "outcome"
+      ],
+      "writes": [
+        "s|col|public.rounds.outcome",
+        "n|col|public.rounds.outcome",
+        "e|col|public.rounds.outcome"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|enum|public.round_outcome"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "outcome_set_by_user"
+      ],
+      "writes": [
+        "s|col|public.rounds.outcome_set_by_user",
+        "n|col|public.rounds.outcome_set_by_user",
+        "e|col|public.rounds.outcome_set_by_user"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "round_outcome",
+        "values": [
+          "pending",
+          "passed",
+          "failed",
+          "unknown"
+        ],
+        "entityType": "enums"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "outcome",
+        "type": "round_outcome",
+        "typeSchema": "public",
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'pending'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "outcome_set_by_user",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

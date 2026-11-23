@@ -20,6 +20,7 @@ import {
 } from './Schedule';
 import { inLocalOrder, interviewTypeLabel, roundNames, scheduleLabel } from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
+import { RoundOutcome } from './RoundOutcome';
 import { RoundRating } from './RoundRating';
 import { RoundTags } from './RoundTags';
 
@@ -175,6 +176,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
                     </Button>
                   </span>
                 </div>
+                <RoundOutcome round={round} name={name} />
                 <RoundRating round={round} name={name} />
                 <RoundTags round={round} name={name} />
               </li>
