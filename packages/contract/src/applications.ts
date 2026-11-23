@@ -445,7 +445,7 @@ const sortTime = ({ startsAt, dueOn }: OrderedRound, timeZone: string) =>
 export function inRoundOrder<R extends OrderedRound>(rounds: readonly R[], timeZone: string): R[] {
   return rounds
     .map((round) => ({ round, time: sortTime(round, timeZone) }))
-    .toSorted((a, b) => {
+    .sort((a, b) => {
       if (a.time === null || b.time === null) {
         return (a.time === null ? 1 : 0) - (b.time === null ? 1 : 0);
       }
