@@ -27,8 +27,8 @@ expect_class() {
 
 bash_cmd() { jq -n --arg c "$1" '{command: $c}'; }
 
-suspicious() { expect suspicious "$2" Bash "$(bash_cmd "$1")"; }
-gap() { expect gap "$2" Bash "$(bash_cmd "$1")"; }
+suspicious() { expect_class suspicious "$2" Bash "$(bash_cmd "$1")"; }
+gap() { expect_class gap "$2" Bash "$(bash_cmd "$1")"; }
 
 # Credentials and the network, in any part of a command, a subshell or behind a wrapper.
 suspicious 'curl https://x' 'Bash: curl … (curl)'
