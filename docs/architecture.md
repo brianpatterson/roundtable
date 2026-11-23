@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-22_
+_Last updated: 2026-11-23_
 
 ## 1. What the system does
 
@@ -105,12 +105,12 @@ flowchart TB
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
 component, passing the URL's params as props:
 
-| Path                           | Page                                                                                                                         |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                   |
-| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Self-ratings and Tags |
-| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                        |
-| anything else                  | the shell's "Page not found", with a link to the applications                                                                |
+| Path                           | Page                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                             |
+| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Outcomes, Self-ratings and Tags |
+| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                                  |
+| anything else                  | the shell's "Page not found", with a link to the applications                                                                          |
 
 The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
 and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules
@@ -127,7 +127,9 @@ which replaces it as a whole). The page turns the browser's local date and time 
 it sends, and shows starts in the browser's time zone; a due date is a calendar date, shown as
 that day wherever the user is. Adding or removing a Round's Tag invalidates only its Rounds, and
 so does rating one: a dialog sets, changes or clears its Self-rating and note together
-(`PUT …/rounds/:roundId/rating`), and the list shows them under the Round's name.
+(`PUT …/rounds/:roundId/rating`), and the list shows them under the Round's name. Each Round
+also has a menu with its Outcome, which saves as soon as one is picked
+(`PUT …/rounds/:roundId/outcome`) and refetches its Rounds.
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
@@ -256,6 +258,8 @@ erDiagram
     date due_on "nullable: a take-home's due date, never with starts_at"
     smallint self_rating "nullable, 1-5"
     text rating_note "nullable, at most 2000 characters"
+    round_outcome outcome "NOT NULL DEFAULT 'pending'"
+    boolean outcome_set_by_user "NOT NULL DEFAULT false"
     timestamptz created_at "orders the undated ones"
     timestamptz updated_at
   }
@@ -315,7 +319,10 @@ erDiagram
   and `rating_note` (what went wrong, up to 2000 characters) are the user's Self-rating, each
   optional, replaced together and never inferred ([ADR-0056](adr/0056-round-self-rating.md)).
   Check constraints `rounds_self_rating_check` and `rounds_rating_note_check` hold the same
-  bounds as the contract; a blank note is stored as null.
+  bounds as the contract; a blank note is stored as null. `outcome` is the Round's Outcome, a
+  Postgres enum `round_outcome` made from the contract's `OUTCOMES` (pending, passed, failed,
+  unknown), pending until set; `outcome_set_by_user` records that the user set it, so a later
+  inferred Outcome never overrides theirs ([ADR-0057](adr/0057-round-outcome.md)).
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
@@ -357,6 +364,7 @@ are rejected at the API rather than left to React and the CSP.
 | POST     | `/api/applications/:id/rounds`                    | session                   | 201             | 400 (body, e.g. an unknown interview type, or id), 401, 404                                                        |
 | PUT      | `/api/applications/:id/rounds/:roundId/schedule`  | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`) |
 | PUT      | `/api/applications/:id/rounds/:roundId/rating`    | session                   | 200 (the Round) | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)      |
+| PUT      | `/api/applications/:id/rounds/:roundId/outcome`   | session                   | 200 (the Round) | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                 |
 | DELETE   | `/api/applications/:id/rounds/:roundId`           | session                   | 204             | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                     |
 | POST     | `/api/applications/:id/rounds/:roundId/tags`      | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)           |
 | DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=` | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                              |
