@@ -1,6 +1,6 @@
 # 0047. Dispatch ready tickets in dependency order, one at a time, once their blockers are deployed
 
-- **Status:** Accepted, amended by [0048](0048-claude-mentions-on-pull-requests-only.md) and [0051](0051-nightly-mutation-tickets.md)
+- **Status:** Accepted, amended by [0048](0048-claude-mentions-on-pull-requests-only.md), [0051](0051-nightly-mutation-tickets.md) and [0060](0060-factory-clock.md) (what starts the sweep)
 - **Date:** 2026-11-21
 
 ## Context
