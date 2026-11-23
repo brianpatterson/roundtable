@@ -72,6 +72,9 @@ jobs:
       # Which conflicting factory pull requests the resolver takes (ADR-0058).
       - name: Conflict resolver selection
         run: .github/factory/test-select-conflicts.sh
+      # How the resolver judges what its agent pushed (ADR-0058).
+      - name: Conflict resolver attempts
+        run: .github/factory/test-report-conflict-attempt.sh
       # The guards every factory agent job runs after its agent (ADR-0029, ADR-0048).
       - name: Agent guards
         run: .github/factory/test-agent-guards.sh

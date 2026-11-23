@@ -13,6 +13,7 @@ import {
   type CreateApplication,
   type CreateReport,
   type CreateRound,
+  type RoundOutcome,
   type RoundRating,
   type RoundSchedule,
   type UpdateApplication,
@@ -63,6 +64,10 @@ export function makeApiClient(options: ApiClientOptions) {
     rateRound: (applicationId: string, roundId: string, payload: RoundRating) =>
       run((client) =>
         client.applications.rateRound({ params: { id: applicationId, roundId }, payload }),
+      ),
+    setRoundOutcome: (applicationId: string, roundId: string, payload: RoundOutcome) =>
+      run((client) =>
+        client.applications.setRoundOutcome({ params: { id: applicationId, roundId }, payload }),
       ),
     deleteRound: (applicationId: string, roundId: string) =>
       run((client) => client.applications.deleteRound({ params: { id: applicationId, roundId } })),

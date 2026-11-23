@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   index,
@@ -14,6 +15,7 @@ import {
 import {
   INTERVIEW_TYPES,
   MAX_RATING_NOTE,
+  OUTCOMES,
   ROUND_DURATION_MINUTES,
   SELF_RATING,
   STORED_APPLICATION_STATUSES,
@@ -52,6 +54,8 @@ const durationRange = sql.raw(
   `${ROUND_DURATION_MINUTES.minimum} and ${ROUND_DURATION_MINUTES.maximum}`,
 );
 
+export const roundOutcome = pgEnum('round_outcome', OUTCOMES);
+
 const ratingRange = sql.raw(`${SELF_RATING.minimum} and ${SELF_RATING.maximum}`);
 
 // An application owns its Rounds: they go when it does. Whose they are is the application's
@@ -79,6 +83,11 @@ export const rounds = pgTable(
     // The user's Self-rating (GLOSSARY.md): 1 to 5 and a note on what went wrong, each optional.
     selfRating: smallint('self_rating'),
     ratingNote: text('rating_note'),
+    // Its Outcome (GLOSSARY.md), and whether the user set it: one they set is never replaced by
+    // an inferred one (ADR-0059). Defaulted, so existing Rounds and the release before them read
+    // and insert pending, not set by the user.
+    outcome: roundOutcome().notNull().default('pending'),
+    outcomeSetByUser: boolean('outcome_set_by_user').notNull().default(false),
     ...timestamps,
   },
   (t) => [

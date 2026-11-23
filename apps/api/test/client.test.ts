@@ -120,6 +120,18 @@ describe('the web client', () => {
     );
   });
 
+  it('sets a Round’s Outcome, recording that the user set it', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'coding' });
+
+    expect(round).toMatchObject({ outcome: 'pending', outcomeSetByUser: false });
+
+    const passed = await api.setRoundOutcome(application.id, round.id, { outcome: 'passed' });
+
+    expect(passed).toMatchObject({ outcome: 'passed', outcomeSetByUser: true });
+    expect(await api.listRounds(application.id)).toEqual([passed]);
+  });
+
   it('reads the public auth config without a session', async () => {
     expect(await clientFor().authConfig()).toEqual({ providers: [] });
   });

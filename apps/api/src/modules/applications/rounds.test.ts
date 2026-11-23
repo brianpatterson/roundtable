@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Schema } from 'effect';
 import {
   Application,
@@ -673,6 +673,107 @@ describe('rating a Round', () => {
   });
 });
 
+const outcomeOf = (round: RoundJson) => `${roundsOf(round.applicationId)}/${round.id}/outcome`;
+
+/** The Outcome fields of a Round as the API returns it. */
+const outcomeIn = (round: RoundJson) => ({
+  outcome: round.outcome,
+  outcomeSetByUser: round.outcomeSetByUser,
+});
+
+describe('a Round’s Outcome', () => {
+  it('starts a Round pending, not set by the user', async () => {
+    const round = await newRound();
+
+    expect(outcomeIn(round)).toEqual({ outcome: 'pending', outcomeSetByUser: false });
+  });
+
+  // Rows from before the column: the migration's default makes them pending.
+  it('reads a Round inserted without an Outcome as pending, not set by the user', async () => {
+    const application = await createApplication();
+
+    await t.db.insert(rounds).values({ applicationId: application.id, interviewType: 'coding' });
+
+    const [listed] = (await request('GET', roundsOf(application.id))).json<RoundJson[]>();
+
+    expect(listed && outcomeIn(listed)).toEqual({ outcome: 'pending', outcomeSetByUser: false });
+  });
+
+  it('sets it to passed, failed, unknown and back to pending, each saved and listed', async () => {
+    const round = await newRound();
+
+    for (const outcome of ['passed', 'failed', 'unknown', 'pending']) {
+      const res = await request('PUT', outcomeOf(round), { outcome });
+
+      expect(res.statusCode).toBe(200);
+      expect(outcomeIn(res.json<RoundJson>())).toEqual({ outcome, outcomeSetByUser: true });
+
+      const [listed] = (await request('GET', roundsOf(round.applicationId))).json<RoundJson[]>();
+
+      expect(listed && outcomeIn(listed)).toEqual({ outcome, outcomeSetByUser: true });
+    }
+  });
+
+  it('changes nothing else on the Round', async () => {
+    const round = await newRound();
+
+    await request('PUT', ratingOf(round), { selfRating: 4, ratingNote: 'Fine' });
+
+    const res = await request('PUT', outcomeOf(round), { outcome: 'passed' });
+
+    expect(res.json<RoundJson>()).toMatchObject({
+      interviewType: round.interviewType,
+      selfRating: 4,
+      ratingNote: 'Fine',
+    });
+  });
+
+  it.each([
+    ['an Outcome outside the four', { outcome: 'advanced' }],
+    ['an Outcome in another case', { outcome: 'Passed' }],
+    ['no Outcome', {}],
+    ['a null Outcome', { outcome: null }],
+  ])('refuses %s with 400, keeping the old one', async (_name, body) => {
+    const round = await newRound();
+
+    await request('PUT', outcomeOf(round), { outcome: 'failed' });
+
+    const res = await request('PUT', outcomeOf(round), body);
+
+    expect(res.statusCode).toBe(400);
+
+    const [listed] = (await request('GET', roundsOf(round.applicationId))).json<RoundJson[]>();
+
+    expect(listed && outcomeIn(listed)).toEqual({ outcome: 'failed', outcomeSetByUser: true });
+  });
+
+  it('refuses an Outcome outside the four in the database itself', async () => {
+    const application = await createApplication();
+
+    await expect(
+      t.db.execute(
+        sql`insert into rounds (application_id, interview_type, outcome) values (${application.id}, 'coding', 'advanced')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('answers 404 for a missing Round, or one under another of the user’s applications', async () => {
+    const round = await newRound();
+    const other = await createApplication();
+
+    const elsewhere = await request('PUT', outcomeOf({ ...round, applicationId: other.id }), {
+      outcome: 'passed',
+    });
+
+    const missing = await request('PUT', outcomeOf({ ...round, id: MISSING_ID }), {
+      outcome: 'passed',
+    });
+
+    expect([elsewhere.statusCode, missing.statusCode]).toEqual([404, 404]);
+    expect((await request('GET', roundsOf(round.applicationId))).json()).toEqual([round]);
+  });
+});
+
 describe('the order Rounds are listed in', () => {
   it('lists dated Rounds by date, a take-home by its due date, then the rest as added', async () => {
     const application = await createApplication();
@@ -767,6 +868,14 @@ describe('another user’s Rounds', () => {
     expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
   });
 
+  it('sets their Outcome as not found, changing nothing', async () => {
+    const res = await request('PUT', outcomeOf(theirRound), { outcome: 'failed' }, mine);
+
+    expect(res.statusCode).toBe(404);
+    expect(Schema.decodeUnknownSync(RoundNotFound)(res.json())).toBeInstanceOf(RoundNotFound);
+    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
+  });
+
   it('deletes as not found, deleting nothing', async () => {
     const res = await request('DELETE', `${roundsOf(theirs.id)}/${theirRound.id}`, undefined, mine);
 
@@ -803,8 +912,12 @@ describe('another user’s Rounds', () => {
       await request('PUT', scheduleOf(theirs.id, 'abc'), {}),
       await request('PUT', ratingOf({ ...theirRound, applicationId: 'abc' }), {}),
       await request('PUT', ratingOf({ ...theirRound, id: 'abc' }), {}),
+      await request('PUT', outcomeOf({ ...theirRound, applicationId: 'abc' }), {
+        outcome: 'passed',
+      }),
+      await request('PUT', outcomeOf({ ...theirRound, id: 'abc' }), { outcome: 'passed' }),
     ];
 
-    expect(malformed.map((res) => res.statusCode)).toEqual(Array(10).fill(400));
+    expect(malformed.map((res) => res.statusCode)).toEqual(Array(12).fill(400));
   });
 });

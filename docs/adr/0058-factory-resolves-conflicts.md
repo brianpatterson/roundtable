@@ -70,17 +70,35 @@ Option 1, with option 3 as its check.
   with the Claude App's token, so CI and the reviewer run again.
 - **What it can't do:** edit `.github/`, `.claude/` or `CLAUDE.md`, or resolve a conflicted
   lockfile. Those, and anything needing a decision, go to `needs-human` with what it would do.
-- **Checked after the agent, whatever it reports:** main is in the branch, no conflict markers were
-  pushed, and the pull request's changes against main touch none of the protected paths.
-  Otherwise, or if the agent answers `needs-human`, a human takes over at once.
+- **Checked after the agent, whatever it reports** (`.github/factory/report-conflict-attempt.sh`,
+  tested by `test-report-conflict-attempt.sh`): main is in the branch, no conflict markers were
+  pushed, and the pull request's changes against main touch none of the protected paths, which
+  the agent could still reach with `git restore` or `git mv`. Otherwise, or if the agent answers
+  `needs-human`, a human takes over at once. If GitHub can't compare the branch with main, nothing
+  can be checked, so a human takes over then too, even after a crash. A push is checked even when
+  the agent crashed before answering, since the pull request no longer conflicts and no later run
+  would look at it; one that passes counts as resolved. A changed file GitHub shows no diff for
+  (large, binary, or past the compare's 300 files) can't be checked for markers, so it goes to a
+  human.
 - **Attempts:** each comment names the main commit it merged. A run that crashes or times out
   without an answer isn't a verdict: the next run (the next merge, or the sweeper) retries once
   against the same main commit, and a second crash goes to a human. A later main commit is a new
   conflict with attempts of its own.
-- **The sweeper** starts the resolver for a conflicting factory pull request instead of labeling it.
-  A conflicting `autofix`-only pull request still goes to a human.
+- **The sweeper** starts the resolver for a conflicting factory pull request instead of labeling it,
+  unless a resolver run is already queued or running. GitHub keeps one pending job per concurrency
+  group and cancels the one before it, so a resolver queued every 30 minutes could replace a
+  pending fix or rework on the same branch. A conflicting `autofix`-only pull request still goes to
+  a human.
 
 ## Consequences
+
+- While main is red, a conflicting factory pull request waits without a label: the resolver merges
+  nothing until main is green, and says so only in its run log. The `main-broken` issue
+  ([ADR-0035](0035-merge-without-updating-branches.md)) is the signal then, and the first green CI
+  on main starts the resolver.
+- A resolver started by a merge can still replace a fix or rework pending on the same branch; the
+  sweeper then hands that pull request to a human as "changes asked and never reworked". Rare: it
+  needs a merge to main while that branch's job is already queued behind a running one.
 
 - A factory pull request that falls behind main is merged up and reviewed again without the owner,
   usually within minutes of the merge that caused it. ADR collisions, the usual cause, are

@@ -314,6 +314,22 @@ export const RoundRating = Schema.Struct({
 
 export type RoundRating = typeof RoundRating.Type;
 
+/**
+ * A Round's Outcome (GLOSSARY.md): whether the user advanced past it. `unknown` is never told.
+ * The Postgres enum is made from it (apps/api/src/modules/applications/schema.ts), like
+ * `INTERVIEW_TYPES`.
+ */
+export const OUTCOMES = ['pending', 'passed', 'failed', 'unknown'] as const;
+
+export const Outcome = Schema.Literals(OUTCOMES);
+
+export type Outcome = typeof Outcome.Type;
+
+/** Sets a Round's Outcome, by the user: an inferred one never replaces it (ADR-0059). */
+export const RoundOutcome = Schema.Struct({ outcome: Outcome });
+
+export type RoundOutcome = typeof RoundOutcome.Type;
+
 /** A field in a response. A server from before the field leaves it out: null. */
 const ResponseField = <S extends Schema.Top>(schema: S) =>
   Schema.NullOr(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null)));
@@ -338,6 +354,13 @@ export const Round = Schema.Struct({
   selfRating: ResponseField(Schema.Int),
   /** Their note on what went wrong, if they wrote one. */
   ratingNote: ResponseField(Schema.String),
+  /** Whether the user advanced past it. A server from before Outcomes leaves it out: pending. */
+  outcome: Outcome.pipe(Schema.withDecodingDefaultKey(Effect.succeed('pending' as const))),
+  /**
+   * Whether the user set the Outcome (true) or it's still the one the Round started with or was
+   * inferred (false). A server from before Outcomes leaves it out: false.
+   */
+  outcomeSetByUser: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 });
@@ -413,6 +436,13 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
     HttpApiEndpoint.put('rateRound', '/:id/rounds/:roundId/rating', {
       params: RoundParams,
       payload: RoundRating,
+      success: Round,
+      error: RoundNotFound,
+    }),
+    // Sets a Round's Outcome, and records that the user set it.
+    HttpApiEndpoint.put('setRoundOutcome', '/:id/rounds/:roundId/outcome', {
+      params: RoundParams,
+      payload: RoundOutcome,
       success: Round,
       error: RoundNotFound,
     }),
