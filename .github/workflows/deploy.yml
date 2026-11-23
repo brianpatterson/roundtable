@@ -148,7 +148,9 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           # Log in to the registry with this run's short-lived token, in a throwaway Docker config,
-          # so no registry credential is ever stored on the server.
+          # so no registry credential is ever stored on the server. $ACTOR, $IMAGE_PREFIX and $SHA
+          # expand here, on the runner, on purpose.
+          # shellcheck disable=SC2029
           printf '%s' "$TOKEN" | ssh prod "
             set -e
             export DOCKER_CONFIG=\$(mktemp -d); trap 'rm -rf \$DOCKER_CONFIG' EXIT
