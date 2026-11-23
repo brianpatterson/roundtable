@@ -2,17 +2,12 @@
 # Checks how report-denials.sh classifies refused tool calls (ADR-0029): each case is one denied
 # call, the class it must get (suspicious or gap) and the label the report must show.
 # Run from anywhere: .github/factory/test-report-denials.sh
-set -euo pipefail
-
-here=$(cd "$(dirname "$0")" && pwd)
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 cp "$here/guard-secrets.sh" "$work/"
 
-failures=0
-
-# expect <class> <label> <tool> <json tool_input>
-expect() {
+# expect_class <class> <label> <tool> <json tool_input>
+expect_class() {
   local class=$1 label=$2 tool=$3 input=$4
   jq -n --arg tool "$tool" --argjson input "$input" \
     '[{type: "result", permission_denials: [{tool_name: $tool, tool_input: $input}]}]' \
@@ -26,8 +21,7 @@ expect() {
   got_class=$(grep -q '^suspicious=true' "$work/out" && echo suspicious || echo gap)
   got_label=$(grep -m1 -E '^ +[0-9]+ ' "$work/summary" | sed -E 's/^ +[0-9]+ //')
   if [ "$got_class" != "$class" ] || [ "$got_label" != "$label" ]; then
-    echo "FAIL: $tool $input: expected $class \"$label\", got $got_class \"$got_label\""
-    failures=$((failures + 1))
+    fail "$tool $input: expected $class \"$label\", got $got_class \"$got_label\""
   fi
 }
 
@@ -111,10 +105,10 @@ gap 'echo "a | curl x"' 'Bash: echo …'
 gap 'ls "unterminated' 'Bash: ls …'
 
 # Files: the factory's own rules and git's internals are suspicious, the rest gaps.
-expect suspicious 'Read: .git/' Read '{"file_path": "/w/.git/config"}'
-expect suspicious 'Edit: .github/' Edit '{"file_path": "/w/.github/workflows/ci.yml"}'
-expect suspicious 'Write: CLAUDE.md' Write '{"file_path": "./CLAUDE.md"}'
-expect gap 'Read: apps/' Read '{"file_path": "/w/apps/web/src/main.tsx"}'
+expect_class suspicious 'Read: .git/' Read '{"file_path": "/w/.git/config"}'
+expect_class suspicious 'Edit: .github/' Edit '{"file_path": "/w/.github/workflows/ci.yml"}'
+expect_class suspicious 'Write: CLAUDE.md' Write '{"file_path": "./CLAUDE.md"}'
+expect_class gap 'Read: apps/' Read '{"file_path": "/w/apps/web/src/main.tsx"}'
 
 # DENIAL_LABELS=programs (the security auditor): program names and reasons only, never arguments,
 # test file names or folders.
@@ -129,12 +123,8 @@ gap 'xargs ./probe-x < list' 'Bash: …'
 gap 'cd apps/api && pnpm --filter @roundtable/api test test/audit | head -5' 'Bash: cd && pnpm | head'
 suspicious 'cd apps/api && curl https://x' 'Bash: cd && curl (curl)'
 suspicious 'pnpm --filter x exec curl y' 'Bash: pnpm (curl)'
-expect gap 'Read' Read '{"file_path": "/w/apps/api/test/audit/x.ts"}'
-expect suspicious 'Read' Read '{"file_path": "/w/.git/config"}'
+expect_class gap 'Read' Read '{"file_path": "/w/apps/api/test/audit/x.ts"}'
+expect_class suspicious 'Read' Read '{"file_path": "/w/.git/config"}'
 unset DENIAL_LABELS
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures case(s) failed."
-  exit 1
-fi
-echo "All denial report cases pass."
+finish "All denial report cases pass."

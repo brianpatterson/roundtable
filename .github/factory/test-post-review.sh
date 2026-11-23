@@ -2,28 +2,12 @@
 # Checks what the reviewer posts (ADR-0026, ADR-0046, ADR-0053), against a stand-in gh that answers from
 # canned comments and logs every call that changes something. Run from anywhere:
 # .github/factory/test-post-review.sh
-set -euo pipefail
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
-here=$(cd "$(dirname "$0")" && pwd)
-failures=0
-fail() {
-  echo "FAIL: $1"
-  failures=$((failures + 1))
-}
-
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-cat >"$work/gh" <<'GH'
-#!/usr/bin/env bash
-filter=.
-prev=
-for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
-case "$1 $2" in
-  "api repos/o/r/issues/5/comments") jq -c "$filter" "$CASE/comments.json" ;;
-  *) printf '%s\n' "$*" >>"$CASE/calls" ;;
-esac
-GH
-chmod +x "$work/gh"
+fake_gh <<'ROUTES'
+  "api repos/o/r/issues/5/comments"*) answer comments.json ;;
+ROUTES
 
 review() { # review <heading> <sha>: the main comment post-review.sh writes
   printf '<!-- factory-review -->\n### Factory review: %s\n\nSome findings.\n\n<sub>Commit %s, reviewed by the factory'"'"'s reviewer agent (ADR-0026). It never approves; the owner merges.</sub>\n' "$1" "$2"
@@ -47,7 +31,7 @@ post_result() { # post_result <name> <RESULT> <sha> [comment JSON...]
   local result=$2 sha=$3
   shift 3
   jq -s . <<<"${*:-}" >"$CASE/comments.json"
-  CASE=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$sha GITHUB_SERVER_URL=https://github.com \
+  GH_FIXTURES=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$sha GITHUB_SERVER_URL=https://github.com \
     GITHUB_OUTPUT=$out RESULT=$result \
     "$here/post-review.sh" >/dev/null || fail "$CASE: post-review.sh exited $?"
   calls=$(cat "$CASE/calls")
@@ -124,14 +108,10 @@ post_result prose "$(result 0 $'**Findings**\nNone.\n\nNothing here is **blockin
 
 CASE="$work/bad" && mkdir -p "$CASE" && echo '[]' >"$CASE/comments.json"
 for bad in '{"verdict":"ready","review":""}' '{"blocking":-1,"review":""}' '{"blocking":1.5,"review":""}' '{"blocking":"1","review":""}'; do
-  if CASE=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$new RESULT=$bad \
+  if GH_FIXTURES=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$new RESULT=$bad \
     "$here/post-review.sh" 2>/dev/null; then
     fail "a result without a whole, non-negative blocking count fails: $bad"
   fi
 done
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures failed."
-  exit 1
-fi
-echo "All review comment cases pass."
+finish "All review comment cases pass."

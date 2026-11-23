@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
 # Checks the sweeper's decisions (ADR-0040, ADR-0058): each case is a pull request's state and the action it
 # must get. Run from anywhere: .github/factory/test-sweep-prs.sh
-set -euo pipefail
-
-here=$(cd "$(dirname "$0")" && pwd)
-failures=0
-fail() { echo "FAIL: $1"; failures=$((failures + 1)); }
+# shellcheck source=.github/factory/testlib.sh
+. "$(dirname "$0")/testlib.sh"
 
 check() { # check <name> <state JSON> <expected action>
-  got=$("$here/sweep-prs.sh" --decide <<<"$2" | jq -r .action)
-  if [ "$got" != "$3" ]; then
-    echo "FAIL: $1: expected $3, got $got"
-    failures=$((failures + 1))
-  fi
+  expect "$1" "$3" "$("$here/sweep-prs.sh" --decide <<<"$2" | jq -r .action)"
 }
 
 ci() { # ci <status> <conclusion> <attempt> <age>
@@ -49,11 +42,7 @@ check "changes asked on an autofix-only PR: the owner's turn, not stuck" "$(stat
 check "an autofix-only PR still gets a cancelled CI rerun" "$(state MERGEABLE 40 "$(ci completed cancelled 1 5)" null false)" rerun
 
 reason=$("$here/sweep-prs.sh" --decide <<<"$(state MERGEABLE 40 "$(ci completed cancelled 1 5)")" | jq -r .reason)
-case "$reason" in *cancelled*) ;; *)
-  echo "FAIL: the reason names the conclusion: got [$reason]"
-  failures=$((failures + 1))
-  ;;
-esac
+case "$reason" in *cancelled*) ;; *) fail "the reason names the conclusion: got [$reason]" ;; esac
 
 # The sweeper reads the verdict from the heading post-review.sh writes, and finds the review of the
 # head commit by the SHA in its footer. If either changes, every reviewed pull request would read as
@@ -62,16 +51,13 @@ poster="$here/post-review.sh"
 if ! grep -qF "verdict=ready heading='✅ Ready for you'" "$poster" ||
   ! grep -qF "printf '%s\n### Factory review: %s\n\n%s\n\n<sub>Commit %s," "$poster" ||
   ! grep -qF '<!-- factory-review -->\\n### Factory review: ✅ Ready for you' "$here/sweep-prs.sh"; then
-  echo "FAIL: the review comment post-review.sh writes and what sweep-prs.sh matches have drifted apart"
-  failures=$((failures + 1))
+  fail "the review comment post-review.sh writes and what sweep-prs.sh matches have drifted apart"
 fi
 
 # The sweep end to end, against a stand-in gh that answers from canned JSON and applies --jq as
 # gh would. #1's commit lookup fails, which mustn't stop the rest. #2 is green and the reviewer's
 # comment names its head commit, in the footer post-review.sh writes. #3 is green and its only review
 # is of an older commit, which doesn't count.
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
 long_ago=$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-3H +%Y-%m-%dT%H:%M:%SZ)
 review() { # review <sha>: the comment post-review.sh posts, verdict ready
   printf '<!-- factory-review -->\n### Factory review: %s\n\nLooks right.\n\n<sub>Commit %s, reviewed by the factory'"'"'s reviewer agent (ADR-0026). It never approves; the owner merges.</sub>\n' \
@@ -84,80 +70,50 @@ jq -n --arg t "$long_ago" '[{databaseId:9,status:"completed",conclusion:"success
 jq -n --arg t "$long_ago" --arg b "$(review bbb)" '[{user:{login:"github-actions[bot]"},body:$b,updated_at:$t}]' >"$work/comments-2.json"
 jq -n --arg t "$long_ago" --arg b "$(review old)" '[{user:{login:"github-actions[bot]"},body:$b,updated_at:$t}]' >"$work/comments-3.json"
 jq -n --arg t "$long_ago" '{commit:{committer:{date:$t}}}' >"$work/commit.json"
-cat >"$work/gh" <<'GH'
-#!/usr/bin/env bash
-filter=.
-prev=
-for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
-case "$1 $2" in
-  "pr list") file=prs.json ;;
-  "run list") file=run.json ;;
-  "api repos/o/r/commits/aaa") echo "GitHub says no" >&2; exit 1 ;;
-  "api repos/o/r/commits/"*) file=commit.json ;;
-  "api repos/o/r/issues/2/comments") file=comments-2.json ;;
-  "api repos/o/r/issues/3/comments") file=comments-3.json ;;
-  *) exit 0 ;;
-esac
-jq -rc "$filter" "$WORK/$file" # gh prints strings raw, like -r
-GH
-chmod +x "$work/gh"
+fake_gh <<'ROUTES'
+  "pr list"*) answer prs.json ;;
+  "run list"*) answer run.json ;;
+  "api repos/o/r/commits/aaa"*) refuse ;;
+  "api repos/o/r/commits/"*) answer commit.json ;;
+  "api repos/o/r/issues/2/comments"*) answer comments-2.json ;;
+  "api repos/o/r/issues/3/comments"*) answer comments-3.json ;;
+ROUTES
 status=0
-output=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r DRY_RUN=true "$here/sweep-prs.sh" 2>&1) || status=$?
-expect() { # expect <name> <text the output must contain>
-  case "$output" in *"$2"*) ;; *)
-    echo "FAIL: $1: no [$2] in [$output]"
-    failures=$((failures + 1))
-    ;;
-  esac
-}
-expect "a failing pull request is reported and the sweep carries on" "Couldn't sweep #1"
-expect "a review naming the head commit, in post-review.sh's footer, reads as ready" "#2 bbb: ok"
-expect "a review of an older commit doesn't count" "#3 ccc: human"
-if [ "$status" -eq 0 ]; then
-  echo "FAIL: a sweep with a failed pull request exits 0"
-  failures=$((failures + 1))
-fi
+output=$(GH=$work/gh GITHUB_REPOSITORY=o/r DRY_RUN=true "$here/sweep-prs.sh" 2>&1) || status=$?
+expect_in "a failing pull request is reported and the sweep carries on" "$output" "Couldn't sweep #1"
+expect_in "a review naming the head commit, in post-review.sh's footer, reads as ready" "$output" "#2 bbb: ok"
+expect_in "a review of an older commit doesn't count" "$output" "#3 ccc: human"
+[ "$status" -ne 0 ] || fail "a sweep with a failed pull request exits 0"
 
 # A conflicting factory pull request starts the resolver, unless a resolver run is already queued or
 # running: another would wait in the branch's concurrency group and could cancel a pending rework.
-cat >"$work/gh2" <<'GH'
-#!/usr/bin/env bash
-filter=.
-prev=
-for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
-case "$*" in
-  "run list"*resolve-conflicts.yml*) echo "$RESOLVER" | jq -rc "$filter" ;;
-  "run list"*) echo '[]' | jq -rc "$filter" ;;
-  "api repos/o/r/commits/"*) jq -n --arg t "$T" '{commit:{committer:{date:$t}}}' | jq -rc "$filter" ;;
-  "api repos/o/r/issues/"*) echo '[]' | jq -rc "$filter" ;;
-  *) echo "$*" >>"$WORK/writes" ;;
-esac
-GH
-chmod +x "$work/gh2"
+echo '[]' >"$work/empty.json"
+fake_gh "$work/gh2" <<'ROUTES'
+  "run list"*resolve-conflicts.yml*) jq -rc "$filter" <<<"$RESOLVER" ;;
+  "run list"*) answer empty.json ;;
+  "api repos/o/r/commits/"*) answer commit.json ;;
+  "api repos/o/r/issues/"*) answer empty.json ;;
+ROUTES
 conflicting='{"number":4,"mergeable":"CONFLICTING","sha":"ddd","factory":true,"dependabot":false}'
 sweep_one() { # sweep_one <resolver runs JSON>
-  : >"$work/writes"
-  WORK=$work T=$long_ago RESOLVER=$1 GH=$work/gh2 GITHUB_REPOSITORY=o/r "$here/sweep-prs.sh" --one "$conflicting" >/dev/null 2>&1
+  : >"$work/calls"
+  RESOLVER=$1 GH=$work/gh2 GITHUB_REPOSITORY=o/r "$here/sweep-prs.sh" --one "$conflicting" >/dev/null 2>&1
 }
 sweep_one '[{"status":"completed"}]'
-grep -q "workflow run resolve-conflicts.yml -R o/r --ref main -f pr=4" "$work/writes" ||
+grep -q "workflow run resolve-conflicts.yml -R o/r --ref main -f pr=4" "$work/calls" ||
   fail "a conflicting factory pull request starts the resolver for it"
-! grep -q "needs-human" "$work/writes" || fail "a conflict sent to the resolver isn't labeled needs-human"
+! grep -q "needs-human" "$work/calls" || fail "a conflict sent to the resolver isn't labeled needs-human"
 sweep_one '[{"status":"in_progress"}]'
-! grep -q "workflow run" "$work/writes" || fail "no second resolver is queued while one is running"
+! grep -q "workflow run" "$work/calls" || fail "no second resolver is queued while one is running"
 sweep_one '[{"status":"queued"}]'
-! grep -q "workflow run" "$work/writes" || fail "no second resolver is queued while one is queued"
+! grep -q "workflow run" "$work/calls" || fail "no second resolver is queued while one is queued"
 
 # A pull request handed to a human shows the factory done with its commit (ADR-0063).
-: >"$work/writes"
-WORK=$work T=$long_ago RESOLVER='[]' GH=$work/gh2 GITHUB_REPOSITORY=o/r "$here/sweep-prs.sh" --one \
+: >"$work/calls"
+RESOLVER='[]' GH=$work/gh2 GITHUB_REPOSITORY=o/r "$here/sweep-prs.sh" --one \
   '{"number":6,"mergeable":"MERGEABLE","sha":"eee","factory":true,"dependabot":false}' >/dev/null 2>&1
-grep -q "pr edit 6 -R o/r --add-label needs-human" "$work/writes" || fail "a stuck pull request is labeled needs-human"
-grep -q "statuses/eee -f context=factory -f state=success -f description=Done: over to you" "$work/writes" ||
+grep -q "pr edit 6 -R o/r --add-label needs-human" "$work/calls" || fail "a stuck pull request is labeled needs-human"
+grep -q "statuses/eee -f context=factory -f state=success -f description=Done: over to you" "$work/calls" ||
   fail "a stuck pull request's factory status says it's the owner's turn"
 
-if [ "$failures" -gt 0 ]; then
-  echo "$failures failed."
-  exit 1
-fi
-echo "All sweeper decisions pass."
+finish "All sweeper decisions pass."
