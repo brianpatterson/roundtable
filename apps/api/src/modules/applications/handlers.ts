@@ -225,7 +225,8 @@ export const ApplicationsLive = HttpApiBuilder.group(
                   const its = yield* tx
                     .select()
                     .from(rounds)
-                    .where(eq(rounds.applicationId, updated.id));
+                    .where(eq(rounds.applicationId, updated.id))
+                    .orderBy(asc(rounds.createdAt), asc(rounds.id));
 
                   yield* inferOutcomes(tx, failedByRejection(its, timeZone), 'failed');
                 }

@@ -9,7 +9,6 @@ export interface InferenceRound {
   readonly dueOn: string | null;
   readonly outcome: string;
   readonly outcomeSetByUser: boolean;
-  readonly createdAt: Date;
 }
 
 /** A Round inference may change: pending, and the user hasn't set its Outcome (ADR-0059). */
@@ -73,16 +72,18 @@ function dayOf(instant: Date, timeZone: string) {
 const sortTime = (round: InferenceRound, timeZone: string) =>
   round.startsAt?.getTime() ?? (round.dueOn === null ? null : startOfDay(round.dueOn, timeZone));
 
-/** The Rounds in the list's order: dated ones by date, then the rest as they were added. */
+/**
+ * The Rounds in the list's order: dated ones by date, then the rest as they were added. `rounds`
+ * must come in the order they were added (Postgres's `created_at, id`, as the list breaks ties): a
+ * `Date` keeps only milliseconds, so two Rounds added in the same one can't be told apart here,
+ * and the stable sort keeps them as given.
+ */
 function inListOrder(rounds: readonly InferenceRound[], timeZone: string) {
+  const unscheduledLast = (time: number | null) => time ?? Number.MAX_SAFE_INTEGER;
+
   return rounds
     .map((round) => ({ round, time: sortTime(round, timeZone) }))
-    .toSorted(
-      (a, b) =>
-        (a.time ?? Infinity) - (b.time ?? Infinity) ||
-        a.round.createdAt.getTime() - b.round.createdAt.getTime() ||
-        a.round.id.localeCompare(b.round.id),
-    );
+    .toSorted((a, b) => unscheduledLast(a.time) - unscheduledLast(b.time));
 }
 
 /**
@@ -107,7 +108,8 @@ export function passedByNewRound(
 
 /**
  * The Rounds a rejection fails: the latest inferable one in the list's order and, when it's dated,
- * every inferable one on the same calendar day in the user's time zone.
+ * every inferable one on the same calendar day in the user's time zone. `rounds` come in the order
+ * they were added.
  */
 export function failedByRejection(rounds: readonly InferenceRound[], timeZone: string): string[] {
   const pending = inListOrder(rounds.filter(inferable), timeZone);
