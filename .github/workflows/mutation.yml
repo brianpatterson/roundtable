@@ -5,13 +5,27 @@
 # each job's summary and its artifact (`web-mutation-report`, `api-mutation-report`). Then `file`
 # opens the factory's next mutation ticket from them (ADR-0051).
 #
-# It also runs on pull requests that change this file, so a change to it is tested before it lands.
+# Incremental (ADR-0062): each job restores the last run's Stryker results from the cache and
+# mutates only what changed since. Stryker sees changes to the files it mutates and to test files,
+# nothing else, so the cache key hashes everything else the results depend on (dependencies,
+# config, test helpers, the contract, migrations, files left out of `mutate`): change one, and
+# that run is full. Sunday's run, and a manual run with `full`, skip the cache, which also corrects
+# the results incremental mode keeps after a new test kills an old survivor.
+#
+# It also runs on pull requests that change this file, so a change to it is tested before it lands,
+# except Dependabot's: a bump of an action used here gets its first run the next night (ADR-0062).
 name: Mutation testing
 
 on:
   schedule:
-    - cron: '17 3 * * *' # nightly
+    - cron: '17 3 * * 1-6' # nightly, incremental
+    - cron: '17 3 * * 0' # Sunday, full: keep in step with FULL below
   workflow_dispatch:
+    inputs:
+      full:
+        description: Mutate everything, ignoring the last run's results
+        type: boolean
+        default: false
   pull_request:
     paths: [.github/workflows/mutation.yml]
 
@@ -22,11 +36,15 @@ concurrency:
   group: mutation-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FULL: ${{ github.event.schedule == '17 3 * * 0' || inputs.full == true }}
+
 jobs:
-  # The whole web app: about 20 seconds of mutants on a laptop.
+  # The web app. A full run had 1,118 mutants and needed about 24 minutes on a runner (2026-11-23).
   web:
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,6 +55,22 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Key the results on what Stryker can't see
+        id: key
+        env:
+          UNSEEN: >-
+            ${{ hashFiles('pnpm-lock.yaml', '.node-version', 'tsconfig.base.json',
+            'packages/contract/src/**', 'apps/web/*', 'apps/web/src/**/*.css',
+            'apps/web/src/test-setup.ts', 'apps/web/src/shared/testing/**',
+            'apps/web/src/main.tsx', 'apps/web/src/**/index.ts') }}
+        run: echo "prefix=mutation-web-$UNSEEN-" >> "$GITHUB_OUTPUT"
+      - name: Restore the last run's results
+        if: env.FULL != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: apps/web/reports/stryker-incremental.json
+          key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.key.outputs.prefix }}
       - name: Mutate the web app
         run: pnpm --filter @roundtable/web test:mutation
       - name: Report the score and the survivors
@@ -66,6 +100,11 @@ jobs:
           mkdir -p web-mutation-report
           mv survivors.md web-mutation-report/
           cp "$REPORT" web-mutation-report/
+      - name: Save the results for the next run
+        uses: actions/cache/save@v6
+        with:
+          path: apps/web/reports/stryker-incremental.json
+          key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v7
         with:
           name: web-mutation-report
@@ -73,9 +112,11 @@ jobs:
           retention-days: 14
 
   api:
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
-    # About 7 minutes on a laptop with four workers; a runner is slower.
-    timeout-minutes: 60
+    # About 7 minutes on a laptop with four workers. A full run on a runner passed 60 minutes on
+    # 2026-11-23.
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:17
@@ -101,7 +142,22 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # No incremental file on a fresh runner, so this is always a full run.
+      - name: Key the results on what Stryker can't see
+        id: key
+        env:
+          UNSEEN: >-
+            ${{ hashFiles('pnpm-lock.yaml', '.node-version', 'tsconfig.base.json',
+            'packages/contract/src/**', 'apps/api/*', 'apps/api/test/**', 'apps/api/drizzle/**',
+            'apps/api/src/main.ts', 'apps/api/src/migrate.ts', 'apps/api/src/**/index.ts',
+            'apps/api/src/**/schema.ts', 'apps/api/src/platform/database/columns.ts') }}
+        run: echo "prefix=mutation-api-$UNSEEN-" >> "$GITHUB_OUTPUT"
+      - name: Restore the last run's results
+        if: env.FULL != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: apps/api/reports/stryker-incremental.json
+          key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.key.outputs.prefix }}
       - name: Mutate the API
         run: pnpm --filter @roundtable/api test:mutation
       - name: Report the score and the survivors
@@ -142,6 +198,11 @@ jobs:
           mkdir -p api-mutation-report
           mv survivors.md api-mutation-report/
           cp "$REPORT" api-mutation-report/
+      - name: Save the results for the next run
+        uses: actions/cache/save@v6
+        with:
+          path: apps/api/reports/stryker-incremental.json
+          key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v7
         with:
           name: api-mutation-report
