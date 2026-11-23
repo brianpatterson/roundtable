@@ -13,6 +13,7 @@ import {
   type CreateApplication,
   type CreateReport,
   type CreateRound,
+  type RoundRating,
   type RoundSchedule,
   type UpdateApplication,
 } from '../index.js';
@@ -58,6 +59,10 @@ export function makeApiClient(options: ApiClientOptions) {
     scheduleRound: (applicationId: string, roundId: string, payload: RoundSchedule) =>
       run((client) =>
         client.applications.scheduleRound({ params: { id: applicationId, roundId }, payload }),
+      ),
+    rateRound: (applicationId: string, roundId: string, payload: RoundRating) =>
+      run((client) =>
+        client.applications.rateRound({ params: { id: applicationId, roundId }, payload }),
       ),
     deleteRound: (applicationId: string, roundId: string) =>
       run((client) => client.applications.deleteRound({ params: { id: applicationId, roundId } })),

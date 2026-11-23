@@ -6,13 +6,16 @@ import {
   integer,
   pgEnum,
   pgTable,
+  smallint,
   text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
   INTERVIEW_TYPES,
+  MAX_RATING_NOTE,
   ROUND_DURATION_MINUTES,
+  SELF_RATING,
   STORED_APPLICATION_STATUSES,
 } from '@roundtable/contract';
 import { timestamps } from '../../platform/database/columns.js';
@@ -49,6 +52,8 @@ const durationRange = sql.raw(
   `${ROUND_DURATION_MINUTES.minimum} and ${ROUND_DURATION_MINUTES.maximum}`,
 );
 
+const ratingRange = sql.raw(`${SELF_RATING.minimum} and ${SELF_RATING.maximum}`);
+
 // An application owns its Rounds: they go when it does. Whose they are is the application's
 // user_id, so every query reaches them through an application the user owns.
 export const rounds = pgTable(
@@ -71,6 +76,9 @@ export const rounds = pgTable(
     startsAt: timestamp('starts_at', { withTimezone: true }),
     durationMinutes: integer('duration_minutes'),
     dueOn: date('due_on', { mode: 'string' }),
+    // The user's Self-rating (GLOSSARY.md): 1 to 5 and a note on what went wrong, each optional.
+    selfRating: smallint('self_rating'),
+    ratingNote: text('rating_note'),
     ...timestamps,
   },
   (t) => [
@@ -80,6 +88,11 @@ export const rounds = pgTable(
     check(
       'rounds_duration_check',
       sql`${t.durationMinutes} is null or (${t.startsAt} is not null and ${t.durationMinutes} between ${durationRange})`,
+    ),
+    check('rounds_self_rating_check', sql`${t.selfRating} between ${ratingRange}`),
+    check(
+      'rounds_rating_note_check',
+      sql`char_length(${t.ratingNote}) <= ${sql.raw(String(MAX_RATING_NOTE))}`,
     ),
   ],
 );

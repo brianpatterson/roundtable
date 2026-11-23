@@ -17,7 +17,7 @@
   list-style: none;
 }
 
-/* A Round: its heading, then its Tags. */
+/* A Round: its heading, its Self-rating, then its Tags. */
 .round {
   display: flex;
   flex-direction: column;
@@ -49,6 +49,28 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* The Self-rating, its button beside it, and the note under them. */
+.rating {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}
+
+.ratingLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+/* The note keeps the user's line breaks, and a long word or URL wraps instead of widening the page. */
+.note {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ds-color-on-surface-variant);
 }
 
 .summary {

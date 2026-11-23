@@ -1,0 +1,140 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "bcbd9ccd-2b4a-4dae-9e62-bb94f9bb3f10",
+  "prevIds": [
+    "5969a2fd-2f98-4d26-8aa3-6d8a1d687719",
+    "6499be9b-e089-406b-acaf-226b44320a67"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "self_rating"
+      ],
+      "writes": [
+        "s|col|public.rounds.self_rating",
+        "n|col|public.rounds.self_rating",
+        "e|col|public.rounds.self_rating"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "rating_note"
+      ],
+      "writes": [
+        "s|col|public.rounds.rating_note",
+        "n|col|public.rounds.rating_note",
+        "e|col|public.rounds.rating_note"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "rounds"
+      ],
+      "writes": [
+        "s|ck|public.rounds.rounds_self_rating_check",
+        "n|ck|public.rounds.rounds_self_rating_check",
+        "e|ck|public.rounds.rounds_self_rating_check",
+        "n|con|public.rounds.rounds_self_rating_check"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|col|public.rounds.self_rating"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "rounds"
+      ],
+      "writes": [
+        "s|ck|public.rounds.rounds_rating_note_check",
+        "n|ck|public.rounds.rounds_rating_note_check",
+        "e|ck|public.rounds.rounds_rating_note_check",
+        "n|con|public.rounds.rounds_rating_note_check"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|col|public.rounds.rating_note"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "self_rating",
+        "type": "smallint",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "rating_note",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "rounds_self_rating_check",
+        "value": "\"self_rating\" between 1 and 5",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "rounds_rating_note_check",
+        "value": "char_length(\"rating_note\") <= 2000",
+        "entityType": "checks"
+      }
+    }
+  ]
+}
