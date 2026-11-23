@@ -35,8 +35,8 @@ Return the structured output:
 - `acceptance_criteria`: Given/When/Then lines the implementer turns into tests, for what this
   candidate changes. Most deepenings keep behavior the same and say so; one that fixes a bug or
   changes what a user sees must say exactly what changes. Every issue also gets two fixed
-  criteria (existing tests pass or move to the new interface; the recommendations are
-  followed), so don't repeat those.
+  criteria (the deepened module is tested through its interface, and the shallow modules' tests
+  it replaces are deleted; the recommendations are followed), so don't repeat those.
 - `out_of_scope`: what the candidate deliberately doesn't touch.
 - `top_recommendation`: which candidate you'd tackle first, and why, in two or three sentences.
 
