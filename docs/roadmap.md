@@ -284,8 +284,9 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
 1. **Application status rework**: a `saved` status for postings not yet sent, an applied date
    separate from the creation date, and `screening` folded into `interviewing` (expand/contract,
    since a deploy rollback can't undo a migration).
-2. **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
-   self-rating, and an outcome inferred from the next round or a rejection.
+2. ✅ **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
+   self-rating, and an outcome inferred from the next round or a rejection
+   ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
 3. **Agenda**: upcoming rounds in date order, with time left and prep progress.
 4. **Skills and prep**: starts the `personas` module with a skill library per user (ADR-0044
    puts Skills there, so they never have to move); notes and prep tasks on a round, each task

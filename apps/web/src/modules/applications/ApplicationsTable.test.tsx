@@ -43,6 +43,9 @@ let failUpdate: (() => Response) | null;
 /** How many PATCHes reached the server. */
 let updates: number;
 
+/** The time zone the table sent with each status change. */
+let timeZones: (string | undefined)[];
+
 const serverError = () => new Response(null, { status: 500 });
 
 async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -60,9 +63,10 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     if (failUpdate) return failUpdate();
 
     // SAFETY: the typed client encoded this body with the contract's UpdateApplication schema.
-    const { status } = (await request.json()) as { status: string };
+    const { status, timeZone } = (await request.json()) as { status: string; timeZone?: string };
 
     existing.status = status;
+    timeZones.push(timeZone);
     // Like the real API: a status change dates an application that wasn't sent yet.
     existing.appliedAt ??= '2026-11-03T12:00:00.000Z';
 
@@ -92,6 +96,7 @@ beforeEach(() => {
   answerDelete = noContent;
   failUpdate = null;
   updates = 0;
+  timeZones = [];
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -168,6 +173,15 @@ describe('ApplicationsTable: changing status', () => {
     await waitFor(() => expect(rows[0]?.status).toBe('offer'));
     await waitFor(() => expect(statusFor('Acme').textContent).toContain('Offer'));
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  // A rejection fails the Rounds of the user's day, so the API needs to know which day that is.
+  it('sends the user’s time zone with the change', async () => {
+    await renderTable();
+    await changeStatus('Acme', 'Rejected');
+
+    await waitFor(() => expect(rows[0]?.status).toBe('rejected'));
+    expect(timeZones).toEqual(['America/Los_Angeles']);
   });
 
   it('shows a failure in an announced snackbar, not an alert above the table', async () => {

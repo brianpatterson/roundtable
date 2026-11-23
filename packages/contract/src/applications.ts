@@ -92,6 +92,34 @@ const JobUrl = Schema.String.check(
   Schema.makeFilter((value: string) => (isWebUrl(value) ? undefined : 'must be an http(s) URL')),
 );
 
+/**
+ * Whether `value` names a time zone, like `America/New_York` or `UTC`: one `Intl` knows, written
+ * as a name. An offset (`+05:30`) isn't one: places change offsets over the year.
+ */
+const isTimeZoneName = (value: string) => {
+  if (!/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(value)) return false;
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The user's time zone, as the browser reports it. A request that changes what's inferred from a
+ * Round's date sends it, so "the same day" is the user's day, not the server's. Without it, UTC.
+ */
+export const TimeZone = Schema.String.check(
+  Schema.isMaxLength(64),
+  Schema.makeFilter((value: string) => (isTimeZoneName(value) ? undefined : 'must be a time zone')),
+);
+
+/** Whether `value` is a time zone the API accepts. */
+export const isTimeZone = Schema.is(TimeZone);
+
 export const CreateApplication = Schema.Struct({
   company: Text,
   jobTitle: Text,
@@ -106,9 +134,13 @@ export const UpdateApplication = Schema.Struct({
   jobTitle: Schema.optional(Text),
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
   status: Schema.optional(ApplicationStatus),
+  /** The user's time zone: a change to rejected fails the latest Rounds of their day. */
+  timeZone: Schema.optional(TimeZone),
 }).check(
   Schema.makeFilter((value) =>
-    Object.keys(value).length > 0 ? undefined : 'At least one field is required',
+    Object.keys(value).some((key) => key !== 'timeZone')
+      ? undefined
+      : 'At least one field is required',
   ),
 );
 
@@ -247,6 +279,8 @@ const isConsistentSchedule = Schema.makeFilter((value: ScheduleFields) => {
 export const CreateRound = Schema.Struct({
   interviewType: InterviewType,
   ...scheduleFields,
+  /** The user's time zone: it puts a take-home's due day among the other Rounds. */
+  timeZone: Schema.optional(TimeZone),
 }).check(isConsistentSchedule);
 
 export type CreateRound = typeof CreateRound.Type;
@@ -368,6 +402,13 @@ export const Round = Schema.Struct({
 export type Round = typeof Round.Type;
 
 /**
+ * Whether a Round's Outcome was inferred (GLOSSARY.md): one the user didn't set that isn't the
+ * pending every Round starts with. Only inference writes such a value (ADR-0061).
+ */
+export const isInferredOutcome = (round: Pick<Round, 'outcome' | 'outcomeSetByUser'>) =>
+  !round.outcomeSetByUser && round.outcome !== 'pending';
+
+/**
  * A missing Round, one of another application, or one of another user's: always 404, never 403.
  */
 export class RoundNotFound extends Schema.TaggedError<
@@ -400,6 +441,7 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       payload: CreateApplication,
       success: Application.pipe(HttpApiSchema.status(201)),
     }),
+    // A change to rejected fails the latest pending Rounds whose Outcome the user hasn't set.
     HttpApiEndpoint.patch('update', '/:id', {
       params: IdParams,
       payload: UpdateApplication,
@@ -418,7 +460,8 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       success: Schema.Array(Round),
       error: ApplicationNotFound,
     }),
-    // Adding the first Round of an applied application moves it to interviewing.
+    // Adding the first Round of an applied application moves it to interviewing, and passes the
+    // pending Rounds before it whose Outcome the user hasn't set.
     HttpApiEndpoint.post('createRound', '/:id/rounds', {
       params: IdParams,
       payload: CreateRound,

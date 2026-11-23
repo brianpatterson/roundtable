@@ -259,6 +259,37 @@ describe('what the contract accepts', () => {
     expect(round.tags).toEqual([]);
   });
 
+  // The browser's time zone, sent with a new Round and a status change for inferred Outcomes.
+  const timeZoneCases = {
+    'a city': ['America/New_York', true],
+    'a deeper name': ['America/Argentina/Buenos_Aires', true],
+    UTC: ['UTC', true],
+    'an offset': ['+05:30', false],
+    'a name Intl doesn’t know': ['Mars/Olympus_Mons', false],
+    empty: ['', false],
+    'with a space': ['America/New York', false],
+  } satisfies Record<string, [string, boolean]>;
+
+  it.each(Object.entries(timeZoneCases))('time zone: %s', (_name, [timeZone, valid]) => {
+    const round = Schema.decodeExit(contract.CreateRound)({
+      interviewType: 'coding',
+      timeZone,
+    });
+
+    const update = Schema.decodeExit(contract.UpdateApplication)({
+      status: 'rejected',
+      timeZone,
+    });
+
+    expect([Exit.isSuccess(round), Exit.isSuccess(update)]).toEqual([valid, valid]);
+  });
+
+  it('refuses an update with only a time zone: it changes nothing', () => {
+    const exit = Schema.decodeExit(contract.UpdateApplication)({ timeZone: 'UTC' });
+
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
   it.each(Object.entries(updateCases))('update: %s', (_name, [input, decoded]) => {
     const exit = Schema.decodeUnknownExit(contract.UpdateApplication)(input);
 
