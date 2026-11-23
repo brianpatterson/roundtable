@@ -18,7 +18,13 @@ import {
   scheduleOf,
   type ScheduleDraft,
 } from './Schedule';
-import { inLocalOrder, interviewTypeLabel, roundNames, scheduleLabel } from './format';
+import {
+  inLocalOrder,
+  inUserTimeZone,
+  interviewTypeLabel,
+  roundNames,
+  scheduleLabel,
+} from './format';
 import { applicationsQueryKey, roundsQueryKey } from './queries';
 import { RoundOutcome } from './RoundOutcome';
 import { RoundRating } from './RoundRating';
@@ -68,11 +74,12 @@ export function Rounds({ applicationId }: { applicationId: string }) {
   const [addError, setAddError] = useState<string>();
 
   // Adding the first Round can move the application to interviewing, so the application and the
-  // list of applications are asked again along with the Rounds.
+  // list of applications are asked again along with the Rounds, whose Outcomes it can infer.
   const refresh = () => queryClient.invalidateQueries({ queryKey: applicationsQueryKey });
 
   const add = useMutation({
-    mutationFn: (when: RoundSchedule) => api.createRound(applicationId, { interviewType, ...when }),
+    mutationFn: (when: RoundSchedule) =>
+      api.createRound(applicationId, { interviewType, ...when, ...inUserTimeZone() }),
     onSuccess: () => {
       setSchedule(EMPTY_SCHEDULE);
 

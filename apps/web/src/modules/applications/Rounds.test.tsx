@@ -53,8 +53,11 @@ let nextRound: number;
 /** What the server answers a request to add or delete a Round with, unless it's the default. */
 let failWrites: number | undefined;
 
-/** The bodies the page sent to add Rounds. */
+/** The bodies the page sent to add Rounds, without the time zone. */
 let added: unknown[];
+
+/** The time zone the page sent with each Round it added. */
+let timeZones: (string | undefined)[];
 
 /** The bodies the page sent to change a Round's schedule. */
 let scheduled: unknown[];
@@ -95,12 +98,24 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     if (failWrites) return new Response(null, { status: failWrites });
 
     // SAFETY: the typed client encoded this body with the contract's CreateRound schema.
-    const body = (await request.json()) as { interviewType: string } & Partial<Schedule>;
+    const { timeZone, ...body } = (await request.json()) as {
+      interviewType: string;
+      timeZone?: string;
+    } & Partial<Schedule>;
 
     added.push(body);
+    timeZones.push(timeZone);
 
     // The first Round moves an applied application to interviewing.
     if (stored.length === 0 && status === 'applied') status = 'interviewing';
+
+    // A stand-in for inference: the pending Rounds the user hasn't set pass (unscheduled ones all
+    // come before a new Round).
+    stored = stored.map((r) =>
+      r.outcome === 'pending' && !r.outcomeSetByUser && r.startsAt === null && r.dueOn === null
+        ? { ...r, outcome: 'passed' }
+        : r,
+    );
 
     nextRound += 1;
 
@@ -253,6 +268,7 @@ beforeEach(() => {
   nextRound = 100;
   failWrites = undefined;
   added = [];
+  timeZones = [];
   scheduled = [];
   ratings = [];
   outcomes = [];
@@ -1315,6 +1331,43 @@ describe('a Round’s Outcome', () => {
     expect(
       ['Coding 1', 'Behavioral 1', 'System design 1', 'Presentation 1'].map(outcomeShown),
     ).toEqual(['Passed', 'Pending', 'Failed', 'Unknown (never told)']);
+  });
+
+  it('marks an inferred Outcome, apart from one the user set', async () => {
+    stored = [
+      round(1, 'coding', { outcome: 'passed' }),
+      round(2, 'behavioral', { outcome: 'passed', outcomeSetByUser: true }),
+      round(3, 'system_design', { outcome: 'failed' }),
+      round(4, 'presentation'),
+    ];
+    await renderPage();
+    await listed();
+
+    expect(
+      ['Coding 1', 'Behavioral 1', 'System design 1', 'Presentation 1'].map(outcomeShown),
+    ).toEqual(['Passed (inferred)', 'Passed', 'Failed (inferred)', 'Pending']);
+  });
+
+  it('shows the Outcomes inferred from a Round it adds, sending the user’s time zone', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+
+    await addRound('Behavioral');
+
+    await waitFor(() => expect(outcomeShown('Coding 1')).toBe('Passed (inferred)'));
+    expect(timeZones).toEqual(['America/Los_Angeles']);
+  });
+
+  it('sets an inferred Outcome as the user’s when they change it', async () => {
+    stored = [round(1, 'coding', { outcome: 'passed' })];
+    await renderPage();
+    await listed();
+
+    await pickOutcome('Coding 1', 'Failed');
+
+    await waitFor(() => expect(outcomeShown('Coding 1')).toBe('Failed'));
+    expect(stored[0]).toMatchObject({ outcome: 'failed', outcomeSetByUser: true });
   });
 
   it('offers the four Outcomes, in order', async () => {

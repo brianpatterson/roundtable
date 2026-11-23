@@ -14,6 +14,7 @@ import {
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
+import { failedByRejection, passedByNewRound } from './inference.js';
 import { applications, rounds } from './schema.js';
 
 type Row = typeof applications.$inferSelect;
@@ -112,6 +113,29 @@ export const ApplicationsLive = HttpApiBuilder.group(
         return result;
       });
 
+    /**
+     * Sets the inferred `outcome` on the Rounds `ids`, in the transaction `tx` that made the change
+     * it follows from. A Round whose Outcome the user set keeps it, even one set since it was read.
+     */
+    const inferOutcomes = (
+      tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+      ids: readonly string[],
+      outcome: 'passed' | 'failed',
+    ) =>
+      ids.length === 0
+        ? Effect.void
+        : tx
+            .update(rounds)
+            .set({ outcome })
+            .where(
+              and(
+                inArray(rounds.id, [...ids]),
+                eq(rounds.outcome, 'pending'),
+                eq(rounds.outcomeSetByUser, false),
+              ),
+            )
+            .pipe(Effect.asVoid);
+
     return handlers.handleAll({
       list: () =>
         Effect.gen(function* () {
@@ -161,26 +185,54 @@ export const ApplicationsLive = HttpApiBuilder.group(
           return toApplication(row);
         }),
 
-      update: ({ params, payload }) =>
+      update: ({ params, payload: { timeZone = 'UTC', ...changes } }) =>
         Effect.gen(function* () {
           const user = yield* CurrentUser;
 
-          const [row] = yield* db
-            .update(applications)
-            .set({
-              ...payload,
-              // Back to saved means not sent. Any other status was sent: one moving out of
-              // `saved` gets its applied date now, from Postgres's clock; one already sent keeps
-              // its date.
-              ...(payload.status && {
-                appliedAt:
-                  payload.status === 'saved'
-                    ? null
-                    : sql`coalesce(${applications.appliedAt}, now())`,
+          // One transaction holding the application's row, so the status it changes from is the
+          // one it had, and the Rounds a rejection fails fail with it.
+          const row = yield* db
+            .transaction((tx) =>
+              Effect.gen(function* () {
+                const [before] = yield* tx
+                  .select({ status: applications.status })
+                  .from(applications)
+                  .where(ownedBy(user.id, params.id))
+                  .for('update');
+
+                if (!before) return undefined;
+
+                const [updated] = yield* tx
+                  .update(applications)
+                  .set({
+                    ...changes,
+                    // Back to saved means not sent. Any other status was sent: one moving out of
+                    // `saved` gets its applied date now, from Postgres's clock; one already sent
+                    // keeps its date.
+                    ...(changes.status && {
+                      appliedAt:
+                        changes.status === 'saved'
+                          ? null
+                          : sql`coalesce(${applications.appliedAt}, now())`,
+                    }),
+                  })
+                  .where(ownedBy(user.id, params.id))
+                  .returning();
+
+                // A change to rejected fails the latest pending Rounds, unless the user set
+                // their Outcome. Setting rejected again changes nothing.
+                if (updated && changes.status === 'rejected' && before.status !== 'rejected') {
+                  const its = yield* tx
+                    .select()
+                    .from(rounds)
+                    .where(eq(rounds.applicationId, updated.id));
+
+                  yield* inferOutcomes(tx, failedByRejection(its, timeZone), 'failed');
+                }
+
+                return updated;
               }),
-            })
-            .where(ownedBy(user.id, params.id))
-            .returning()
+            )
             .pipe(Effect.orDie);
 
           if (!row) return yield* new ApplicationNotFound();
@@ -239,11 +291,10 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
                 if (!application) return undefined;
 
-                const [earlier] = yield* tx
-                  .select({ id: rounds.id })
+                const earlier = yield* tx
+                  .select()
                   .from(rounds)
-                  .where(eq(rounds.applicationId, application.id))
-                  .limit(1);
+                  .where(eq(rounds.applicationId, application.id));
 
                 const [round] = yield* tx
                   .insert(rounds)
@@ -254,9 +305,18 @@ export const ApplicationsLive = HttpApiBuilder.group(
                   })
                   .returning();
 
+                if (!round) return yield* Effect.die(new Error('insert returned no row'));
+
+                // The pending Rounds before it passed, unless the user set their Outcome.
+                yield* inferOutcomes(
+                  tx,
+                  passedByNewRound(earlier, round, payload.timeZone ?? 'UTC'),
+                  'passed',
+                );
+
                 // Its first Round moves an applied application to interviewing (GLOSSARY.md). Any
                 // other status was set by the user, and stays.
-                if (!earlier && application.status === 'applied') {
+                if (earlier.length === 0 && application.status === 'applied') {
                   yield* tx
                     .update(applications)
                     .set({ status: 'interviewing' })

@@ -1,4 +1,19 @@
-import type { ApplicationStatus, InterviewType, Round } from '@roundtable/contract';
+import {
+  isTimeZone,
+  type ApplicationStatus,
+  type InterviewType,
+  type Round,
+} from '@roundtable/contract';
+
+/**
+ * The user's time zone, as the browser reports it, for a request the API infers Outcomes from
+ * (ADR-0060). Nothing when the browser reports one the API wouldn't accept: the API then uses UTC.
+ */
+export function inUserTimeZone(): { timeZone?: string } {
+  const { timeZone } = new Intl.DateTimeFormat().resolvedOptions();
+
+  return isTimeZone(timeZone) ? { timeZone } : {};
+}
 
 // How the table and an application's page show an application's fields.
 
