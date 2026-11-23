@@ -373,6 +373,95 @@ export type Round = typeof Round.Type;
 export const isInferredOutcome = (round: Pick<Round, 'outcome' | 'outcomeSetByUser'>) =>
   !round.outcomeSetByUser && round.outcome !== 'pending';
 
+// Round order (GLOSSARY.md): the order an Application's Rounds are listed in, in the user's time
+// zone. Outcome inference in the API (ADR-0061) and the web's list both take it from here, so the
+// order, and the time-zone arithmetic behind it, is defined once. The API's list keeps its own SQL
+// order, by UTC days (ADR-0054).
+
+/** What Round order reads of a Round: its start, or its due date, or neither. */
+export type OrderedRound = Pick<Round, 'startsAt' | 'dueOn'>;
+
+/** The calendar date and time an instant reads as in `timeZone`, as numbers. */
+function zonedParts(instant: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  }).formatToParts(instant);
+
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value ?? 0);
+
+  return {
+    year: part('year'),
+    month: part('month'),
+    day: part('day'),
+    hour: part('hour'),
+    minute: part('minute'),
+    second: part('second'),
+  };
+}
+
+/** How far `timeZone` is ahead of UTC at `instant`, in milliseconds. */
+function offsetAt(instant: number, timeZone: string) {
+  const { year, month, day, hour, minute, second } = zonedParts(instant, timeZone);
+  const wallClock = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  return wallClock - (instant - (instant % 1000));
+}
+
+/** `2026-12-01` → the instant that day starts in `timeZone`. */
+function startOfDay(date: string, timeZone: string) {
+  const [year = 0, month = 1, day = 1] = date.split('-').map(Number);
+  const midnightUtc = Date.UTC(year, month - 1, day);
+  const guess = midnightUtc - offsetAt(midnightUtc, timeZone);
+
+  // Again at the guess, in case an offset change falls between the two instants.
+  return midnightUtc - offsetAt(guess, timeZone);
+}
+
+/** The calendar day an instant falls on in `timeZone`, `YYYY-MM-DD`. */
+function dayOf(instant: Date, timeZone: string) {
+  const { year, month, day } = zonedParts(instant.getTime(), timeZone);
+
+  return [year, month, day].map((n, i) => String(n).padStart(i === 0 ? 4 : 2, '0')).join('-');
+}
+
+/** When a Round sorts: its start, or the start of its due day in `timeZone`; none if unscheduled. */
+const sortTime = ({ startsAt, dueOn }: OrderedRound, timeZone: string) =>
+  startsAt?.getTime() ?? (dueOn === null ? null : startOfDay(dueOn, timeZone));
+
+/**
+ * The Rounds in Round order, as a sorted copy: dated ones first, a scheduled Round by its start
+ * and a take-home by the start of its due day in `timeZone` (an IANA name, like `Asia/Tokyo`),
+ * then the unscheduled ones. Rounds that tie keep the order given, so give them in the order they
+ * were added.
+ */
+export function inRoundOrder<R extends OrderedRound>(rounds: readonly R[], timeZone: string): R[] {
+  return rounds
+    .map((round) => ({ round, time: sortTime(round, timeZone) }))
+    .sort((a, b) => {
+      if (a.time === null || b.time === null) {
+        return (a.time === null ? 1 : 0) - (b.time === null ? 1 : 0);
+      }
+
+      return a.time - b.time;
+    })
+    .map(({ round }) => round);
+}
+
+/**
+ * The calendar day a Round falls on in `timeZone`, `YYYY-MM-DD`: a take-home's due date as it is,
+ * a scheduled Round's start as the user's day. Null for one not scheduled yet.
+ */
+export const roundDay = ({ startsAt, dueOn }: OrderedRound, timeZone: string): string | null =>
+  dueOn ?? (startsAt ? dayOf(startsAt, timeZone) : null);
+
 /**
  * A missing Round, one of another application, or one of another user's: always 404, never 403.
  */

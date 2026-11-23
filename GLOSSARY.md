@@ -39,9 +39,10 @@ mark, the code is what's true.
 - **Round**: one interview within an Application, of one Interview type. An onsite of four
   back-to-back interviews is four Rounds on the same day, not one. It has a scheduled time (a
   start, and a duration when the company gave one), a due date (a take-home), or neither yet (the
-  company named the step but hasn't booked it). Listed with dated Rounds first, in date order (a
-  scheduled Round by its start, a take-home by its due date), then the rest in the order they were
-  added.
+  company named the step but hasn't booked it). Listed in Round order.
+- **Round order**: the order an Application's Rounds are listed in: dated Rounds first, a
+  scheduled Round by its start and a take-home by the start of its due day in the user's time
+  zone, then the rest in the order they were added. Outcome inference uses the same order.
 - **Self-rating**: the user's own score for a Round, given right after it, from 1 (went badly) to
   5 (went well), with a note on what went wrong (up to 2000 characters). Both are optional and
   can be changed or cleared. Immediate and per Round, where the Outcome is late and coarse.

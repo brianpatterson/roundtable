@@ -132,7 +132,11 @@ also has a menu with its Outcome, which saves as soon as one is picked
 (`PUT …/rounds/:roundId/outcome`) and refetches its Rounds. An Outcome the API inferred reads
 `Passed (inferred)` until the user picks one. Adding a Round and changing an application's status
 send the browser's time zone, so the API infers by the user's day
-([ADR-0061](adr/0061-inferred-round-outcomes.md)).
+([ADR-0061](adr/0061-inferred-round-outcomes.md)). The page re-sorts the Rounds in the browser's
+time zone, and inference orders them in the one sent, with the same function: Round order
+(`inRoundOrder`, and `roundDay` for the user's day) lives in the contract's `applications.ts`, so
+the order and its time-zone arithmetic are defined once. The API's list keeps its SQL order by UTC
+days (ADR-0054).
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives

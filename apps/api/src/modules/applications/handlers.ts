@@ -31,7 +31,8 @@ const ratingOf = (rating: RoundRating) => ({
 
 /**
  * A Round's date for the list: its start, or the start of its due date's day (UTC: the server
- * doesn't know the user's time zone). Undated Rounds come last.
+ * doesn't know the user's time zone). Undated Rounds come last. This is Round order in UTC
+ * (ADR-0054); inference and the web order in the user's zone with the contract's `inRoundOrder`.
  */
 const roundDate = sql`coalesce(${rounds.startsAt}, ${rounds.dueOn}::timestamp at time zone 'UTC') asc nulls last`;
 
