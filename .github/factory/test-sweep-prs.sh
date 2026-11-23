@@ -148,6 +148,14 @@ sweep_one '[{"status":"in_progress"}]'
 sweep_one '[{"status":"queued"}]'
 ! grep -q "workflow run" "$work/writes" || fail "no second resolver is queued while one is queued"
 
+# A pull request handed to a human shows the factory done with its commit (ADR-0063).
+: >"$work/writes"
+WORK=$work T=$long_ago RESOLVER='[]' GH=$work/gh2 GITHUB_REPOSITORY=o/r "$here/sweep-prs.sh" --one \
+  '{"number":6,"mergeable":"MERGEABLE","sha":"eee","factory":true,"dependabot":false}' >/dev/null 2>&1
+grep -q "pr edit 6 -R o/r --add-label needs-human" "$work/writes" || fail "a stuck pull request is labeled needs-human"
+grep -q "statuses/eee -f context=factory -f state=success -f description=Done: over to you" "$work/writes" ||
+  fail "a stuck pull request's factory status says it's the owner's turn"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."
   exit 1

@@ -44,6 +44,7 @@ jobs:
       actions: write # rerun a cancelled CI, start the conflict resolver
       pull-requests: write # label and comment
       issues: write # labels and comments go through the issues API
+      statuses: write # the factory status on a pull request it hands over (ADR-0063)
     steps:
       - uses: actions/checkout@v7
         with:

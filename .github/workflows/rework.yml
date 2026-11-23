@@ -38,6 +38,7 @@ jobs:
       actions: read # the review's verdict record
       pull-requests: write
       issues: write
+      statuses: write # the factory status (ADR-0063)
     outputs:
       pr: ${{ steps.pick.outputs.pr }}
       sha: ${{ steps.pick.outputs.sha }}
@@ -45,6 +46,13 @@ jobs:
       attempt: ${{ steps.pick.outputs.attempt }}
       kind: ${{ steps.pick.outputs.kind }}
     steps:
+      # The factory status script (ADR-0063), from main like this file.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/factory/factory-status.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,6 +82,9 @@ jobs:
           [ "$(jq -r .state <<<"$info")" = OPEN ] || { echo "#$pr isn't open."; exit 0; }
           # A newer commit gets its own CI run, review and, if needed, rework.
           [ "$(jq -r .headRefOid <<<"$info")" = "$reviewed" ] || { echo "#$pr has moved past $reviewed."; exit 0; }
+          # The factory status on the reviewed commit (ADR-0063). The Review workflow has already
+          # set it as done on every pull request the checks below turn away.
+          status() { SHA=$reviewed .github/factory/factory-status.sh "$@"; }
           # Only the factory's own pull requests: a branch of this repository, labeled `factory`.
           jq -e '.isCrossRepository | not' <<<"$info" >/dev/null || { echo "#$pr is from a fork."; exit 0; }
           jq -e 'any(. == "factory")' <<<"$labels" >/dev/null || { echo "#$pr isn't a factory pull request."; exit 0; }
@@ -90,7 +101,9 @@ jobs:
           # One minor pass per pull request: what later minor-only reviews find is the owner's call.
           if [ "$kind" = minor ]; then
             [ "$(jq --arg m "$MINOR_MARKER" '[.[] | select(contains($m))] | length' <<<"$reworks")" -eq 0 ] ||
-              { echo "#$pr: ready; it has had its minor pass, so its minor findings are the owner's."; exit 0; }
+              { echo "#$pr: ready; it has had its minor pass, so its minor findings are the owner's."
+                status success "Done: ready for you; the minor findings are yours"; exit 0; }
+            status pending "Working: fixing the minor findings"
             { echo "pr=$pr"; echo "sha=$reviewed"; echo "branch=$(jq -r .headRefName <<<"$info")"; echo "kind=minor"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -98,8 +111,10 @@ jobs:
           if [ "${attempts:-0}" -ge 2 ]; then
             gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --add-label needs-human
             gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory reworked this pull request twice and the reviewer still asks for changes. Over to you: push a fix. To hand it back, push a commit yourself (that resets the count) and remove \`needs-human\`; it tries again on the next \`changes\` verdict. ADR-0037."
+            status success "Done: over to you, reworked twice and changes are still asked (needs-human)"
             exit 0
           fi
+          status pending "Working: reworking, attempt $(( ${attempts:-0} + 1 )) of 2"
 
           {
             echo "pr=$pr"
@@ -126,6 +141,9 @@ jobs:
       issues: write
       actions: read # lets the agent read CI results on the pull request
       id-token: write # exchanged for the Claude GitHub App's short-lived token
+    outputs:
+      stale: ${{ steps.current.outputs.stale }}
+      outcome: ${{ steps.report.outputs.outcome }}
     services:
       postgres:
         image: postgres:17
@@ -264,6 +282,7 @@ jobs:
       # Deterministic: what the agent pushed, whatever it reported, and one marked comment per
       # attempt (select counts them). Runs even when the agent failed, so a failed attempt counts.
       - name: Check and report the attempt
+        id: report
         if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -321,4 +340,40 @@ jobs:
           body=$(printf '<!-- factory-rework -->\n%s### %s: %s\n\n%s\n\n<sub>[Run](%s), answering the review of commit %s. ADR-0037, ADR-0053.</sub>\n' \
             "$extra" "$title" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")
           gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
           [ "$outcome" != protected ] || exit 1
+
+  # The factory status on the reviewed commit once the rework is over (ADR-0063). A job of its own,
+  # so the agent's job gets no permission to set statuses. A pushed fix leaves it: the new commit is
+  # the one the pull request page shows, and its own review sets its status. Anything else is the
+  # owner's turn, or, if the rework didn't finish, stopped.
+  status:
+    needs: [select, rework]
+    if: always() && needs.select.outputs.pr != '' && needs.rework.outputs.stale != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/factory/factory-status.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Set the factory status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.select.outputs.sha }}
+          KIND: ${{ needs.select.outputs.kind }}
+          OUTCOME: ${{ needs.rework.outputs.outcome }}
+        run: |
+          case "$KIND:$OUTCOME" in
+            *:fixed) echo "The rework pushed a fix; the new commit's review sets its status." ;;
+            *:protected) .github/factory/factory-status.sh error "Stopped: the rework changed the factory's own files. Check it before merging (needs-human)" ;;
+            *:unchecked) .github/factory/factory-status.sh success "Done: over to you, check what the rework pushed before merging (needs-human)" ;;
+            minor:?*) .github/factory/factory-status.sh success "Done: ready for you; the minor findings are yours" ;;
+            changes:?*) .github/factory/factory-status.sh success "Done: over to you, the rework didn't fix the review (needs-human)" ;;
+            *) .github/factory/factory-status.sh error "Stopped: the rework didn't finish. See the run" ;;
+          esac

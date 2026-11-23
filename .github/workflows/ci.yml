@@ -87,6 +87,9 @@ jobs:
       # What the reviewer posts, and when a re-review adds a comment Auto-fix can see (ADR-0046).
       - name: Review comments
         run: .github/factory/test-post-review.sh
+      # The factory status a pull request shows: working, done or stopped (ADR-0063).
+      - name: Factory status
+        run: .github/factory/test-factory-status.sh
       - name: User report hand-off
         run: .github/factory/test-report-handoff.sh
       - name: Schema and migrations are in sync
