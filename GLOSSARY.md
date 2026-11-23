@@ -24,9 +24,10 @@ mark, the code is what's true.
   compare like with like; finer detail goes in Tags.
 - **Outcome** (of a Round): whether the user advanced past it: pending, passed, failed or unknown
   (never told). A new Round is pending. The user can set it, and one they set is never
-  overridden. _(planned)_ Inferred where possible: adding the next Round passes the earlier
-  pending ones, and a rejection fails the latest pending ones. Often known days later, and a
-  rejection after several same-day Rounds fails them all. Compare Self-rating.
+  overridden. Inferred where possible: adding the next Round passes the earlier pending ones, and
+  a rejection fails the latest pending ones. Often known days later, and a rejection after
+  several same-day Rounds fails them all. An inferred Outcome is shown as such until the user
+  sets one. Compare Self-rating.
 - **Pass rate** _(planned)_: for a group of Rounds (one Interview type, say), the share of those with a known
   Outcome that passed. Pending and unknown Rounds don't count either way, and the number of
   Rounds behind it is always shown with it.

@@ -129,7 +129,10 @@ that day wherever the user is. Adding or removing a Round's Tag invalidates only
 so does rating one: a dialog sets, changes or clears its Self-rating and note together
 (`PUT …/rounds/:roundId/rating`), and the list shows them under the Round's name. Each Round
 also has a menu with its Outcome, which saves as soon as one is picked
-(`PUT …/rounds/:roundId/outcome`) and refetches its Rounds.
+(`PUT …/rounds/:roundId/outcome`) and refetches its Rounds. An Outcome the API inferred reads
+`Passed (inferred)` until the user picks one. Adding a Round and changing an application's status
+send the browser's time zone, so the API infers by the user's day
+([ADR-0060](adr/0060-inferred-round-outcomes.md)).
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
@@ -322,7 +325,10 @@ erDiagram
   bounds as the contract; a blank note is stored as null. `outcome` is the Round's Outcome, a
   Postgres enum `round_outcome` made from the contract's `OUTCOMES` (pending, passed, failed,
   unknown), pending until set; `outcome_set_by_user` records that the user set it, so a later
-  inferred Outcome never overrides theirs ([ADR-0059](adr/0059-round-outcome.md)).
+  inferred Outcome never overrides theirs ([ADR-0059](adr/0059-round-outcome.md)). Adding a
+  Round passes the pending Rounds before it, and a change to `rejected` fails the latest pending
+  ones of one day, each in the transaction that makes the change; a passed or failed Outcome with
+  the flag unset is an inferred one ([ADR-0060](adr/0060-inferred-round-outcomes.md)).
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
@@ -358,10 +364,10 @@ are rejected at the API rather than left to React and the CSP.
 | GET      | `/api/applications`                               | session                   | 200             | 401                                                                                                                |
 | GET      | `/api/applications/:id`                           | session                   | 200             | 400 (malformed id), 401, 404 (unknown or not yours)                                                                |
 | POST     | `/api/applications`                               | session                   | 201             | 400, 401                                                                                                           |
-| PATCH    | `/api/applications/:id`                           | session                   | 200             | 400 (body or id), 401, 404                                                                                         |
+| PATCH    | `/api/applications/:id`                           | session                   | 200             | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                            |
 | DELETE   | `/api/applications/:id`                           | session                   | 204             | 400 (malformed id), 401, 404                                                                                       |
 | GET      | `/api/applications/:id/rounds`                    | session                   | 200             | 400 (malformed id), 401, 404 (application unknown or not yours)                                                    |
-| POST     | `/api/applications/:id/rounds`                    | session                   | 201             | 400 (body, e.g. an unknown interview type, or id), 401, 404                                                        |
+| POST     | `/api/applications/:id/rounds`                    | session                   | 201             | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                          |
 | PUT      | `/api/applications/:id/rounds/:roundId/schedule`  | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`) |
 | PUT      | `/api/applications/:id/rounds/:roundId/rating`    | session                   | 200 (the Round) | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)      |
 | PUT      | `/api/applications/:id/rounds/:roundId/outcome`   | session                   | 200 (the Round) | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                 |
