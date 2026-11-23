@@ -1,9 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
 import { Schema } from 'effect';
 import { Application } from '@roundtable/contract';
 import { setupTestApp, signUp, type Json } from '#test/helpers';
-import { applications } from './schema.js';
 
 const t = setupTestApp();
 let cookie: string;
@@ -147,13 +145,7 @@ describe('applications API', () => {
   });
 });
 
-// Only the release before the fold writes `screening`, so these tests put such rows in the
-// database directly, the way that release would.
 describe('applied date and the status rework (ADR-0045)', () => {
-  async function storeAs(id: string, values: Partial<typeof applications.$inferInsert>) {
-    await t.db.update(applications).set(values).where(eq(applications.id, id));
-  }
-
   it('keeps the applied date when a sent application changes status', async () => {
     const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE', status: 'offer' });
     const res = await request('PATCH', `/api/applications/${created.id}`, { status: 'rejected' });
@@ -190,18 +182,6 @@ describe('applied date and the status rework (ADR-0045)', () => {
     const res = await request('PATCH', `/api/applications/${created.id}`, { jobTitle: 'Staff' });
 
     expect(res.json<ApplicationJson>()).toMatchObject({ status: 'saved', appliedAt: null });
-  });
-
-  it('reads a screening row as interviewing, in the list and on its own', async () => {
-    const { json: created } = await create({ company: 'Acme', jobTitle: 'SWE' });
-
-    await storeAs(created.id, { status: 'screening' });
-
-    const one = await request('GET', `/api/applications/${created.id}`);
-    const list = await request('GET', '/api/applications');
-
-    expect(one.json<ApplicationJson>().status).toBe('interviewing');
-    expect(list.json<ApplicationJson[]>().map((a) => a.status)).toEqual(['interviewing']);
   });
 
   it('refuses screening in request bodies', async () => {

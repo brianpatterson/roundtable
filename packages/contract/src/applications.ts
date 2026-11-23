@@ -6,7 +6,8 @@ import { Authorization } from './identity.js';
 
 /**
  * The stages an application can be in, in display order (ADR-0045). `saved` is a posting not yet
- * sent; every other status means it was sent, on its `appliedAt` date.
+ * sent; every other status means it was sent, on its `appliedAt` date. The Postgres enum is made
+ * from it (apps/api/src/modules/applications/schema.ts), in this order.
  */
 export const APPLICATION_STATUSES = [
   'saved',
@@ -21,42 +22,6 @@ export const APPLICATION_STATUSES = [
 export const ApplicationStatus = Schema.Literals(APPLICATION_STATUSES);
 
 export type ApplicationStatus = typeof ApplicationStatus.Type;
-
-/**
- * The Postgres enum's values, in its order (apps/api/src/modules/applications/schema.ts).
- * `screening` was folded into `interviewing` (ADR-0045) but stays in the enum until a later
- * release drops it: the release before the fold may still write it during a deploy or rollback.
- */
-export const STORED_APPLICATION_STATUSES = [
-  'saved',
-  'applied',
-  'screening',
-  'interviewing',
-  'offer',
-  'accepted',
-  'rejected',
-  'withdrawn',
-] as const;
-
-export type StoredApplicationStatus = (typeof STORED_APPLICATION_STATUSES)[number];
-
-/** What a stored status means now: `screening` reads as `interviewing`. */
-export const currentStatus = (status: StoredApplicationStatus): ApplicationStatus =>
-  status === 'screening' ? 'interviewing' : status;
-
-/**
- * A status in a response. Decodes a stored `screening` as `interviewing`, so the web app keeps
- * working against a server from before the fold (a tab left open across a rollback).
- */
-const ResponseStatus = Schema.Literals(STORED_APPLICATION_STATUSES).pipe(
-  Schema.decodeTo(
-    ApplicationStatus,
-    new SchemaTransformation.Transformation(
-      SchemaGetter.transform<ApplicationStatus, StoredApplicationStatus>(currentStatus),
-      SchemaGetter.passthroughSubtype<StoredApplicationStatus, ApplicationStatus>(),
-    ),
-  ),
-);
 
 const MAX_TEXT = 200;
 
@@ -152,7 +117,7 @@ export const Application = Schema.Struct({
   company: Schema.String,
   jobTitle: Schema.String,
   jobUrl: Schema.NullOr(Schema.String),
-  status: ResponseStatus,
+  status: ApplicationStatus,
   /**
    * When it was sent: null while `saved`. Set by the server, never by a request (ADR-0045). A
    * server from before the column leaves it out, which reads as null.

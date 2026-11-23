@@ -8,7 +8,6 @@ import {
   RoundNotFound,
   RoundtableApi,
   TooManyTags,
-  currentStatus,
   sameTag,
   type RoundRating,
   type RoundSchedule,
@@ -16,11 +15,6 @@ import {
 import { Database } from '../../platform/database/effect.js';
 import { failedByRejection, passedByNewRound } from './inference.js';
 import { applications, rounds } from './schema.js';
-
-type Row = typeof applications.$inferSelect;
-
-/** A row as the API returns it: a `screening` the previous release wrote reads as interviewing. */
-const toApplication = (row: Row) => ({ ...row, status: currentStatus(row.status) });
 
 /** A whole schedule as columns: what the request leaves out is cleared. */
 const scheduleOf = (schedule: RoundSchedule) => ({
@@ -145,8 +139,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .select()
             .from(applications)
             .where(eq(applications.userId, user.id))
-            .orderBy(desc(applications.updatedAt))
-            .pipe(Effect.map((rows) => rows.map(toApplication)));
+            .orderBy(desc(applications.updatedAt));
         }).pipe(Effect.orDie),
 
       get: ({ params }) =>
@@ -161,7 +154,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new ApplicationNotFound();
 
-          return toApplication(row);
+          return row;
         }),
 
       create: ({ payload }) =>
@@ -182,7 +175,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* Effect.die(new Error('insert returned no row'));
 
-          return toApplication(row);
+          return row;
         }),
 
       update: ({ params, payload: { timeZone = 'UTC', ...changes } }) =>
@@ -238,7 +231,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new ApplicationNotFound();
 
-          return toApplication(row);
+          return row;
         }),
 
       delete: ({ params }) =>
