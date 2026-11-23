@@ -65,3 +65,9 @@ store shaped by a branch could be restored by CI and deploy on `main`.
   doesn't reopen it.
 - Revisit with option 2 if GitHub's CodeQL check run turns out to trigger workflows, and with option
   4 when the triage agent is built.
+
+## Note (2026-11-23)
+
+The pull request check reads the open CodeQL alerts on the pull request's ref instead of the SARIF
+file, so dismissing an alert clears it, as the consequences above expect. Reading the file failed
+every change to `deploy.yml` on alert #9, dismissed in November. The decision is unchanged.

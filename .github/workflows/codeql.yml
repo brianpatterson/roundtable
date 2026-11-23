@@ -36,20 +36,24 @@ jobs:
       # fails, never heard of one (ADR-0030). On a pull request, fail on findings in the files it
       # changed, and print them, so the fixer can read them with `gh run view --log-failed`.
       # Findings elsewhere are older alerts; they're triaged from the Security tab.
+      # It reads the open alerts on the pull request's ref, not the SARIF file: an alert dismissed
+      # on main stays dismissed here, and the file can't say so. analyze waits until GitHub has
+      # processed this upload, so a finding the pull request adds is already an alert.
       - name: Fail on findings in changed files
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          CATEGORY: /language:${{ matrix.language }}
         run: |
           changed=$(gh pr diff "$PR" -R "$GITHUB_REPOSITORY" --name-only | jq -R . | jq -s .)
-          findings=$(jq -r --argjson changed "$changed" '
-            .runs[].results[]
-            | (.locations[0].physicalLocation // {}) as $where
-            | ($where.artifactLocation.uri // "") as $file
-            | select($changed | index($file))
-            | "::error file=\($file),line=\($where.region.startLine // 1)::CodeQL \(.ruleId): \(.message.text | gsub("\n"; " "))"
-          ' sarif-results/*.sarif)
+          alerts=$(gh api --paginate --jq '.[]' \
+            "repos/$GITHUB_REPOSITORY/code-scanning/alerts?ref=refs/pull/$PR/merge&state=open&tool_name=CodeQL&per_page=100")
+          findings=$(jq -r --argjson changed "$changed" --arg category "$CATEGORY" '
+            .most_recent_instance as $where
+            | select($where.category == $category and ($changed | index($where.location.path)))
+            | "::error file=\($where.location.path),line=\($where.location.start_line // 1)::CodeQL \(.rule.id): \($where.message.text | gsub("\n"; " "))"
+          ' <<<"$alerts")
           [ -z "$findings" ] && { echo "No CodeQL findings in the files this pull request changed."; exit 0; }
           echo "$findings"
           exit 1
