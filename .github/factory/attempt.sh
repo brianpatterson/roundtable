@@ -38,11 +38,12 @@ command=${1:?next or report}
 kind=${2:?ci-fix, rework or conflict}
 
 # The kind's table: its comment's marker, the labels that make a pull request its own, who the
-# agent is in a message, and the ADR its comment cites.
+# agent is in a message, the ADR its comment cites, and the outcomes its agent may answer (its
+# --json-schema enum).
 case "$kind" in
-  ci-fix) marker='<!-- factory-ci-fix -->' labels='["factory","autofix"]' who=fixer adr=ADR-0028 ;;
-  rework) marker='<!-- factory-rework -->' labels='["factory"]' who='rework agent' adr='ADR-0037, ADR-0053' ;;
-  conflict) marker='<!-- factory-conflict -->' labels='["factory"]' who=resolver adr=ADR-0058 ;;
+  ci-fix) marker='<!-- factory-ci-fix -->' labels='["factory","autofix"]' who=fixer adr=ADR-0028 answers='fixed|reran|needs-human' ;;
+  rework) marker='<!-- factory-rework -->' labels='["factory"]' who='rework agent' adr='ADR-0037, ADR-0053' answers='fixed|needs-human' ;;
+  conflict) marker='<!-- factory-conflict -->' labels='["factory"]' who=resolver adr=ADR-0058 answers='resolved|needs-human' ;;
   *)
     echo "Unknown kind: $kind" >&2
     exit 2
@@ -118,11 +119,15 @@ report() {
   : "${PR:?}" "${SHA:?}" "${BRANCH:?}"
   [ "$kind:${PASS:-}" = rework:minor ] || : "${ATTEMPT:?}"
   [ "$kind" != conflict ] || : "${MAIN:?}"
-  local result outcome summary base against code head title extra='' context
+  local result outcome summary base against code head to_human title extra='' context compared=true
 
   result=${RESULT:-}
   [ -n "$result" ] || result='{}'
   outcome=$(jq -r '.outcome // "failed"' <<<"$result")
+  # The answer may come from explain-failure.sh, which recovers any JSON object without the action's
+  # schema check: an outcome the kind's agent can't give counts as no answer, so it can't steer
+  # what follows.
+  [[ "$outcome" =~ ^($answers)$ ]] || outcome=failed
   summary=$(jq -r --arg who "$who" --arg why "${REASON:-}" \
     '.summary // ("The \($who) stopped without a summary" + (if $why == "" then "" else ": " + $why end) + ". See the run log.")' <<<"$result")
   note() { summary=$(printf '%s\n\n_%s_' "$summary" "$1"); }
@@ -146,7 +151,7 @@ report() {
   # The agent never changes the factory's rules or CI, with an editor or with git (`git restore`,
   # `git mv`). Against the commit it started from (or, for a merge, the main it merged), its push
   # never includes them. If GitHub can't say, a human checks: a check that can't run mustn't pass.
-  if [ "$outcome" != unreadable ]; then
+  if [ "$compared" = true ]; then
     base=$SHA against="commit $SHA"
     [ "$kind" != conflict ] || base=$MAIN against=main
     code=0
@@ -166,29 +171,37 @@ report() {
         esac
         ;;
     esac
-  else
-    outcome=needs-human
   fi
 
   # The heading, and whether a human takes over.
+  to_human=true
   case "$kind:$outcome" in
-    ci-fix:fixed) head="pushed a fix" ;;
-    ci-fix:reran) head="re-ran the failed jobs: the failure wasn't caused by this pull request" ;;
+    ci-fix:fixed) head="pushed a fix" to_human=false ;;
+    ci-fix:reran) head="re-ran the failed jobs: the failure wasn't caused by this pull request" to_human=false ;;
     ci-fix:unchecked) head="couldn't check what it pushed" ;;
     ci-fix:*) head="couldn't fix it" ;;
-    rework:fixed) head="pushed changes; CI and the reviewer run again" ;;
-    conflict:resolved) head="merged main and pushed; CI and the reviewer run again" ;;
+    rework:fixed) head="pushed changes; CI and the reviewer run again" to_human=false ;;
+    conflict:resolved) head="merged main and pushed; CI and the reviewer run again" to_human=false ;;
     # A crash (an outage, a timeout) isn't an answer: the next merge or sweep retries once.
-    conflict:failed) head=$([ "$ATTEMPT" -lt 2 ] && echo "the run failed; the next one retries" || echo "the run failed twice, over to you") ;;
+    conflict:failed)
+      if [ "$ATTEMPT" -lt 2 ]; then
+        head="the run failed; the next one retries" to_human=false
+      else
+        head="the run failed twice, over to you"
+      fi
+      ;;
     # On the minor pass the pull request is already the owner's turn: nothing pushed leaves the
     # findings for them, without asking for a human.
-    rework:needs-human | rework:failed) head=$([ "${PASS:-}" = minor ] && echo "pushed nothing; the minor findings are yours" || echo "over to you") ;;
+    rework:needs-human | rework:failed)
+      if [ "${PASS:-}" = minor ]; then
+        head="pushed nothing; the minor findings are yours" to_human=false
+      else
+        head="over to you"
+      fi
+      ;;
     *) head="over to you" ;;
   esac
-  case "$kind:$outcome:$head" in
-    *:fixed:* | *:resolved:* | ci-fix:reran:* | *"the next one retries" | *"the minor findings are yours") ;;
-    *) hand_to_human ;;
-  esac
+  [ "$to_human" = false ] || hand_to_human
 
   # Never publish what looks like a credential (ADR-0029).
   if ! "$GUARD" <<<"$summary"; then
@@ -224,7 +237,7 @@ check_merge() {
   local compare head_now unchecked
   if ! compare=$("$GH" api "repos/$repo/compare/$MAIN...$BRANCH" 2>/dev/null) ||
     ! jq -e '.behind_by | type == "number"' <<<"$compare" >/dev/null 2>&1; then
-    outcome=unreadable
+    compared=false outcome=needs-human
     note "GitHub couldn't compare the branch with main, so what was pushed wasn't checked."
     return
   fi

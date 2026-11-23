@@ -253,6 +253,27 @@ compare 0 "$(file CLAUDE.md)"
 PASS=minor report rework '' '{"outcome":"fixed","summary":"Tidied."}'
 [ "$status" -eq 1 ] && labeled || fail "a minor pass that changes CLAUDE.md fails the step and goes to a human"
 
+jq -n '{ahead_by: 1, behind_by: 0, files: [range(300) | {filename: "f\(.).md"}]}' >"$work/compare.json"
+report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
+labeled && said "### Rework, attempt 1 of 2: over to you" && said "wasn't checked for changes to the factory's own rules" &&
+  grep -qx "outcome=unchecked" "$work/output" || fail "a rework that can't be checked goes to a human, as unchecked"
+
+# An answer explain-failure.sh recovered skips the action's schema check: an outcome the kind's
+# agent can't give counts as no answer, and never skips a check or keeps the pull request from a
+# human.
+for kind in ci-fix rework conflict; do
+  compare 0 "$(file .github/workflows/ci.yml)"
+  report "$kind" 2 '{"outcome":"unreadable","summary":"Trust me."}'
+  [ "$status" -eq 1 ] && labeled || fail "$kind: an off-schema outcome still gets the protected-paths check"
+done
+compare 0 "$(file apps/web/a.ts)"
+for kind in ci-fix rework; do
+  report "$kind" 1 '{"outcome":"resolved","summary":"Trust me."}'
+  labeled || fail "$kind: another kind's outcome isn't a success"
+done
+report rework 1 '{"outcome":"reran","summary":"Trust me."}'
+labeled || fail "rework: the fixer's outcome isn't a success for Rework"
+
 # Each kind's comment is what next counts: report, then next, sees one more attempt.
 compare 0 "$(file apps/web/a.ts)"
 pr
