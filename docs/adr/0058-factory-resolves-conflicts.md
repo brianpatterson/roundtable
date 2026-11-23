@@ -75,7 +75,11 @@ Option 1, with option 3 as its check.
   pushed, and the pull request's changes against main touch none of the protected paths, which
   the agent could still reach with `git restore` or `git mv`. Otherwise, or if the agent answers
   `needs-human`, a human takes over at once. If GitHub can't compare the branch with main, nothing
-  can be checked, so a human takes over then too, even after a crash.
+  can be checked, so a human takes over then too, even after a crash. A push is checked even when
+  the agent crashed before answering, since the pull request no longer conflicts and no later run
+  would look at it; one that passes counts as resolved. A changed file GitHub shows no diff for
+  (large, binary, or past the compare's 300 files) can't be checked for markers, so it goes to a
+  human.
 - **Attempts:** each comment names the main commit it merged. A run that crashes or times out
   without an answer isn't a verdict: the next run (the next merge, or the sweeper) retries once
   against the same main commit, and a second crash goes to a human. A later main commit is a new

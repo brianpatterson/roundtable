@@ -17,6 +17,9 @@ case "$1 $2" in
     [ -f "$WORK/compare.json" ] || { echo "GitHub says no" >&2; exit 1; }
     cat "$WORK/compare.json" ;;
   "pr comment") printf '%s\n' "$*" >>"$WORK/comments" ;;
+  "pr view")
+    [ "${HEAD_NOW:-abc}" != unreadable ] || { echo "GitHub says no" >&2; exit 1; }
+    echo "${HEAD_NOW:-abc}" ;;
   *) echo "$*" >>"$WORK/writes" ;;
 esac
 GH
@@ -30,8 +33,11 @@ compare() { # compare <behind_by> [file JSON objects…]: what GitHub answers; n
   files=$(IFS=,; echo "[$*]")
   jq -n --argjson b "$behind" --argjson f "$files" '{behind_by: $b, files: $f}' >"$work/compare.json"
 }
+nopatch() { # nopatch <name> <changes>: a file GitHub shows no diff for
+  jq -nc --arg n "$1" --argjson c "$2" '{filename: $n, changes: $c}'
+}
 file() { # file <name> [patch, with \n for newlines]
-  jq -nc --arg n "$1" --arg p "$(printf '%b' "${2:-@@ -1 +1 @@\n+fine}")" '{filename: $n, patch: $p}'
+  jq -nc --arg n "$1" --arg p "$(printf '%b' "${2:-@@ -1 +1 @@\n+fine}")" '{filename: $n, patch: $p, changes: 1}'
 }
 status=0
 run() { # run <attempt> <agent result JSON or "">: sets status, writes, comments
@@ -96,6 +102,36 @@ labeled && said "couldn't compare" || fail "an answer without behind_by counts a
 compare 0 "$(file docs/a.md)"
 run 1 "{\"outcome\":\"resolved\",\"summary\":\"key ghp_$(printf 'a%.0s' {1..36})\"}"
 said "withheld" && ! said "ghp_" || fail "a summary with a credential is withheld"
+
+# The agent pushed, then crashed before answering: the push is checked all the same, since the
+# pull request no longer conflicts and no later run would look at it.
+compare 0 "$(file docs/a.md)"
+HEAD_NOW=def run 1 ''
+! labeled && said "merged main and pushed" && said "stopped without answering" ||
+  fail "a crash after a clean push counts as resolved, saying so"
+compare 0 "$(file README.md '@@ -1 +1,2 @@\n+>>>>>>> main')"
+HEAD_NOW=def run 1 ''
+labeled && said "conflict markers" || fail "a crash after a push with conflict markers goes to a human"
+compare 1 "$(file docs/a.md)"
+HEAD_NOW=def run 1 ''
+labeled && said "isn't merged" || fail "a crash after a push without main goes to a human"
+compare 0 "$(file docs/a.md)"
+HEAD_NOW=unreadable run 1 ''
+! labeled && said "stopped without answering" || fail "an unreadable head counts as moved, so the push is checked"
+
+# Files GitHub shows no diff for can't be checked for markers.
+compare 0 "$(file docs/a.md)" "$(nopatch docs/big.md 4000)"
+run 1 "$resolved"
+labeled && said "showed no diff" || fail "a changed file without a patch goes to a human"
+compare 0 "$(nopatch docs/adr/0059-a.md 0)"
+run 1 "$resolved"
+! labeled || fail "a pure rename, with no patch and no changes, is fine"
+jq -n '{behind_by: 0, files: [range(300) | {filename: "f\(.).md", patch: "@@ -1 +1 @@\n+fine", changes: 1}]}' >"$work/compare.json"
+run 1 "$resolved"
+labeled && said "showed no diff" || fail "a compare listing 300 files counts as unchecked"
+compare 0 "$(nopatch docs/big.md 4000)"
+run 1 ''
+! labeled && said "the next one retries" || fail "a crash that pushed nothing isn't judged on the pull request's own files"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

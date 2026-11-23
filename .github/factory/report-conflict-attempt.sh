@@ -24,13 +24,25 @@ note() { summary=$(printf '%s\n\n_%s_' "$summary" "$1"); }
 # reported: a crashed run may still have pushed.
 if compare=$("$GH" api "repos/$GITHUB_REPOSITORY/compare/$MAIN...$BRANCH" 2>/dev/null) &&
   jq -e '.behind_by | type == "number"' <<<"$compare" >/dev/null 2>&1; then
-  if [ "$outcome" = resolved ]; then
+  # What was pushed is checked whether or not the agent answered: one that pushes and then crashes
+  # leaves a pull request that no longer conflicts, which no later run would look at again. If the
+  # head can't be read, assume it moved.
+  head_now=$("$GH" pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid 2>/dev/null) || head_now=
+  if [ "$outcome" = resolved ] || [ "$head_now" != "$SHA" ]; then
+    # GitHub leaves out a file's patch when it's large or binary, and lists at most 300 files.
+    unchecked=$(jq '([.files[]? | select(.patch == null and (.changes // 0) > 0)] | length) + (if (.files | length) >= 300 then 1 else 0 end)' <<<"$compare")
     if [ "$(jq .behind_by <<<"$compare")" -ne 0 ]; then
       outcome=needs-human
-      note "The agent reported the conflict resolved, but main ($MAIN) isn't merged into the branch."
+      note "Main ($MAIN) isn't merged into the branch."
     elif jq -e '[.files[]?.patch // "" | select(test("(^|\n)\\+(<<<<<<<|>>>>>>>)( |\n|$)"))] | length > 0' <<<"$compare" >/dev/null; then
       outcome=needs-human
       note "The merge pushed still has conflict markers in it."
+    elif [ "$unchecked" -gt 0 ]; then
+      outcome=needs-human
+      note "GitHub showed no diff for some changed files (large, binary, or past 300), so they weren't checked for conflict markers."
+    elif [ "$outcome" = failed ]; then
+      outcome=resolved
+      note "The agent stopped without answering, but what it pushed passes the checks."
     fi
   fi
 
