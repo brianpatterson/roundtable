@@ -493,7 +493,7 @@ flowchart LR
   dispatcher through `workflow_dispatch` every 20 minutes, with a fine-grained GitHub token
   limited to Actions on this repository. GitHub can't narrow it further, so it could start any
   dispatchable workflow on any branch, but every job holding a secret runs in an environment that
-  admits only `main` ([ADR-0060](adr/0060-factory-clock.md)).
+  admits only `main`, except the sweeps' two heartbeat URLs ([ADR-0060](adr/0060-factory-clock.md)).
 - **DNS:** records point straight at the reserved IP (Cloudflare's proxy is off). The CAA record
   allows Let's Encrypt; Cloudflare automatically adds its own CAs to that set.
 - **Backups:** nightly, a GitHub Actions job streams `pg_dump` over SSH, encrypts it with age,

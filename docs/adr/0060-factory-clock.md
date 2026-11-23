@@ -74,7 +74,10 @@ Option 4, with option 1's events added for the sweeper, and a heartbeat for each
   `workflow_dispatch` trigger on any branch, rerun or cancel runs, disable workflows and delete
   run logs. It can't read or push code, secrets or issues. Every job that uses a secret runs in an
   environment that admits only `main` (`production`, `backups`, `factory`,
-  `security-advisories`), so a run it starts on another branch gets none. `repository_dispatch`
+  `security-advisories`), so a run it starts on another branch gets none, with one exception:
+  the sweeps read their two heartbeat URLs as repository secrets, without an environment. Through
+  them a leaked token could only ping the heartbeats and so hide a stalled factory; a `main`-only
+  environment would close that, at the cost of a deployment record on every sweep. `repository_dispatch`
   would allow narrower triggers but needs **Contents: write**, which is worse. It's a
   `secret_text` binding, set from `terraform.tfvars` into the encrypted state (ADR-0016).
 - **Events.** The sweeper also runs after every CI run on a pull request and every Review run (`workflow_run`, ignoring `main`, where CI already starts the conflict resolver and a sweep at the same moment could start a second one), so a
@@ -87,14 +90,17 @@ Option 4, with option 1's events added for the sweeper, and a heartbeat for each
   `factory-dispatch`, shared with the Factory workflow's gate) with `cancel-in-progress: false`.
   Extra triggers queue behind the running sweep, and a newer waiting run replaces an older one.
   Each sweep reads the current state, so nothing is lost and two sweeps never race.
-- **The dead man's switch.** Every successful sweep, whatever started it, pings its own Better
+- **The dead man's switch.** Every successful sweep the clock started (or GitHub's cron, or a
+  person by hand), pings its own Better
   Stack heartbeat (`.github/factory/ping-heartbeat.sh`; URLs in the `SWEEPER_HEARTBEAT_URL` and
   `DISPATCHER_HEARTBEAT_URL` secrets), as the nightly backup already does (ADR-0019). Each
   heartbeat expects a ping every hour, with 5 minutes of grace. Sweeps come every 20 minutes, so
   two ticks can go missing without an alert, and an hour without a successful sweep opens a Better Stack incident and emails the owner. That covers a dead clock,
   an expired token, an Actions outage and a sweep that keeps failing. The alert has to come from
   outside GitHub, since a check inside it runs only when GitHub runs something (option 2). A
-  dry run doesn't ping, and a failed ping only warns: the missing pings raise the alarm.
+  dry run doesn't ping, and a failed ping only warns: the missing pings raise the alarm. Sweeps
+  started by events don't ping: in a busy stretch they would keep the heartbeat green while the
+  clock is down, and the timeout rules depend on the clock.
 
 The rules in `sweep-prs.sh` and `dispatch.sh` are unchanged. A sweep now comes at least every 20
 minutes and up to 60 minutes late before anyone is told, so ADR-0040's promise holds: the longest
@@ -107,8 +113,7 @@ threshold (2 hours) plus 20 minutes. ADR-0047's sweep happens every 20 minutes t
   much less than a runner kept up (option 3).
 - New moving parts: a Worker, a Cron Trigger, two heartbeats, and a token. The Cloudflare token
   needs **Workers Scripts: Edit**. The GitHub token expires (a year at most) and must be rotated
-  before it does. If it isn't, the heartbeats alert within the hour, unless events keep the
-  sweeper going during a busy stretch, in which case they alert after the first quiet hour.
+  before it does. If it isn't, the heartbeats alert within the hour.
   Setup and rotation are in `infra/README.md`, under Factory clock.
 - Until a human applies the OpenTofu change and sets the two secrets, nothing changes: the
   sweeps still run on GitHub's late cron and on events, and the ping step says no heartbeat is
@@ -116,9 +121,6 @@ threshold (2 hours) plus 20 minutes. ADR-0047's sweep happens every 20 minutes t
 - A leaked token could start the agent workflows on `main` and use up Claude usage, or cancel a
   deploy. Nothing on the token prevents that; revoking it does, and the Factory's `verify` job
   still builds only tickets the owner approved. The runbook says what to check after a leak.
-- Sweeps started by CI and Review ping the same heartbeats, so in a busy stretch they keep them
-  green while the clock is down; the timeout rules then wait for the first quiet hour's alert. The
-  runbook says to check that recent runs include `workflow_dispatch` ones.
 - Sweeps started by the clock show the token owner as the actor in the Actions tab, with event
   `workflow_dispatch`, the same as a manual run.
 - Revisit if GitHub's scheduled runs come back on time for weeks (the backup's start time shows

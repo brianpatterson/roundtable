@@ -41,10 +41,11 @@ resource "cloudflare_workers_cron_trigger" "factory_clock" {
   schedules = [{ cron = "7,27,47 * * * *" }]
 }
 
-# A sweep pings these after it succeeds, whatever started it (the clock, an event, GitHub's own
-# late cron). Sweeps come every 20 minutes, but the heartbeat only needs one an hour: a period of
-# an hour (plus 5 minutes' grace) alerts when an hour passes without a successful sweep, lets two
-# ticks go missing first, and asks the least of Better Stack's free plan.
+# A sweep the clock (or GitHub's late cron) started pings these after it succeeds; sweeps started
+# by events don't, so the heartbeat shows the clock is alive. Sweeps come every 20 minutes, but
+# the heartbeat only needs one an hour: a period of an hour (plus 5 minutes' grace) alerts when an
+# hour passes without a successful sweep, lets two ticks go missing first, and asks the least of
+# Better Stack's free plan.
 resource "betteruptime_heartbeat" "sweeper" {
   name   = "Factory sweeper"
   period = 3600

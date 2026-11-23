@@ -9,7 +9,7 @@
 #
 # GitHub starts this repository's scheduled runs hours late and drops the rest, so the factory's
 # clock (a Cloudflare Worker, infra/factory-clock.tf) dispatches the sweep every 20 minutes, and
-# every successful sweep pings a Better Stack heartbeat, which alerts when an hour passes without
+# every successful sweep it (or GitHub's cron) started pings a Better Stack heartbeat, which alerts when an hour passes without
 # one (ADR-0060).
 name: Dispatcher
 
@@ -59,10 +59,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: .github/factory/dispatch.sh
-      # The dead man's switch (ADR-0060). A sweep that fails or never runs sends nothing, and
-      # Better Stack alerts when an hour passes without a ping. Skipped until the secret is set.
+      # The dead man's switch (ADR-0060). Only sweeps the clock (or GitHub's cron) started ping,
+      # so the heartbeat shows the clock is alive: event-started sweeps would keep it green while
+      # the clock is down. A sweep that fails or never runs sends nothing, and Better Stack alerts
+      # when an hour passes without a ping. Skipped until the secret is set.
       - name: Report to the heartbeat monitor
-        if: inputs.dry_run != true
+        if: >-
+          contains(fromJSON('["workflow_dispatch", "schedule"]'), github.event_name) &&
+          inputs.dry_run != true
         env:
           HEARTBEAT_URL: ${{ secrets.DISPATCHER_HEARTBEAT_URL }}
         run: .github/factory/ping-heartbeat.sh

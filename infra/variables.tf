@@ -5,7 +5,7 @@ variable "do_token" {
 }
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Zone:DNS:Edit on this domain Account:Workers R2 Storage:Edit and Account:Workers Scripts:Edit (see README)."
+  description = "Cloudflare API token with Zone:DNS:Edit on this domain, Account:Workers R2 Storage:Edit and Account:Workers Scripts:Edit (see README)."
   type        = string
   sensitive   = true
 }
