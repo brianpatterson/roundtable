@@ -26,7 +26,12 @@ interface Rating {
   ratingNote: string | null;
 }
 
-interface StoredRound extends Schedule, Rating {
+interface Outcome {
+  outcome: string;
+  outcomeSetByUser: boolean;
+}
+
+interface StoredRound extends Schedule, Rating, Outcome {
   id: string;
   applicationId: string;
   interviewType: string;
@@ -38,6 +43,8 @@ interface StoredRound extends Schedule, Rating {
 const NOT_SCHEDULED: Schedule = { startsAt: null, durationMinutes: null, dueOn: null };
 
 const NOT_RATED: Rating = { selfRating: null, ratingNote: null };
+
+const NEW_OUTCOME: Outcome = { outcome: 'pending', outcomeSetByUser: false };
 
 let status: string;
 let stored: StoredRound[];
@@ -54,6 +61,12 @@ let scheduled: unknown[];
 
 /** The bodies the page sent to rate a Round. */
 let ratings: unknown[];
+
+/** The bodies the page sent to set a Round's Outcome. */
+let outcomes: unknown[];
+
+/** While set, the server waits for it before answering a request to set an Outcome. */
+let outcomeHeld: Promise<void> | undefined;
 
 const roundId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -94,6 +107,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     const round = {
       ...NOT_SCHEDULED,
       ...NOT_RATED,
+      ...NEW_OUTCOME,
       ...body,
       id: roundId(nextRound),
       applicationId: ACME_ID,
@@ -180,6 +194,27 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     return Response.json(round);
   }
 
+  if (request.method === 'PUT' && pathname.endsWith('/outcome')) {
+    if (failWrites) return new Response(null, { status: failWrites });
+
+    const id = pathname.slice(ROUNDS_PATH.length + 1, -'/outcome'.length);
+    const existing = stored.find((r) => r.id === id);
+
+    if (!existing) return notFound('RoundNotFound');
+
+    // SAFETY: the typed client encoded this body with the contract's RoundOutcome schema.
+    const body = (await request.json()) as { outcome: string };
+
+    outcomes.push(body);
+    await outcomeHeld;
+
+    const round = { ...existing, outcome: body.outcome, outcomeSetByUser: true };
+
+    stored = stored.map((r) => (r.id === id ? round : r));
+
+    return Response.json(round);
+  }
+
   if (request.method === 'DELETE' && pathname.startsWith(`${ROUNDS_PATH}/`)) {
     if (failWrites) return new Response(null, { status: failWrites });
 
@@ -198,7 +233,7 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 const round = (
   n: number,
   interviewType: string,
-  { tags = [], ...rest }: Partial<Schedule & Rating> & { tags?: string[] } = {},
+  { tags = [], ...rest }: Partial<Schedule & Rating & Outcome> & { tags?: string[] } = {},
 ): StoredRound => ({
   id: roundId(n),
   applicationId: ACME_ID,
@@ -206,6 +241,7 @@ const round = (
   tags,
   ...NOT_SCHEDULED,
   ...NOT_RATED,
+  ...NEW_OUTCOME,
   ...rest,
   createdAt: TIMESTAMP,
   updatedAt: TIMESTAMP,
@@ -219,6 +255,8 @@ beforeEach(() => {
   added = [];
   scheduled = [];
   ratings = [];
+  outcomes = [];
+  outcomeHeld = undefined;
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -1238,5 +1276,122 @@ describe('a Round’s Self-rating', () => {
     dialog = await openRatingDialog('Coding 1');
 
     expect(within(dialog).queryByRole('alert')).toBeNull();
+  });
+});
+
+/** Where a Round's Outcome is shown and set, e.g. `outcomeGroup('Coding 1')`. */
+const outcomeGroup = (name: string) => screen.getByRole('group', { name: `${name} outcome` });
+
+const outcomeMenu = (name: string) =>
+  within(outcomeGroup(name)).getByRole('combobox', { name: 'Outcome' });
+
+/** The Outcome a Round's menu shows. */
+const outcomeShown = (name: string) => outcomeMenu(name).textContent;
+
+const pickOutcome = async (name: string, label: string) => {
+  await userEvent.click(outcomeMenu(name));
+  await userEvent.click(await screen.findByRole('option', { name: label }));
+};
+
+describe('a Round’s Outcome', () => {
+  it('shows a new Round as pending', async () => {
+    await renderPage();
+    await addRound('Coding');
+    await listed();
+
+    expect(outcomeShown('Coding 1')).toBe('Pending');
+  });
+
+  it('shows each Round’s Outcome', async () => {
+    stored = [
+      round(1, 'coding', { outcome: 'passed', outcomeSetByUser: true }),
+      round(2, 'behavioral'),
+      round(3, 'system_design', { outcome: 'failed', outcomeSetByUser: true }),
+      round(4, 'presentation', { outcome: 'unknown', outcomeSetByUser: true }),
+    ];
+    await renderPage();
+    await listed();
+
+    expect(
+      ['Coding 1', 'Behavioral 1', 'System design 1', 'Presentation 1'].map(outcomeShown),
+    ).toEqual(['Passed', 'Pending', 'Failed', 'Unknown (never told)']);
+  });
+
+  it('offers the four Outcomes, in order', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+
+    await userEvent.click(outcomeMenu('Coding 1'));
+
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
+
+    expect(options).toEqual(['Pending', 'Passed', 'Failed', 'Unknown (never told)']);
+  });
+
+  it('sets it to passed, failed, unknown and back to pending, on that Round only', async () => {
+    stored = [round(1, 'coding'), round(2, 'behavioral')];
+    await renderPage();
+    await listed();
+
+    for (const [outcome, label] of [
+      ['passed', 'Passed'],
+      ['failed', 'Failed'],
+      ['unknown', 'Unknown (never told)'],
+      ['pending', 'Pending'],
+    ] as const) {
+      await pickOutcome('Coding 1', label);
+
+      await waitFor(() => expect(outcomeShown('Coding 1')).toBe(label));
+      expect(stored[0]).toMatchObject({ outcome, outcomeSetByUser: true });
+    }
+
+    expect(outcomes).toEqual([
+      { outcome: 'passed' },
+      { outcome: 'failed' },
+      { outcome: 'unknown' },
+      { outcome: 'pending' },
+    ]);
+    expect(outcomeShown('Behavioral 1')).toBe('Pending');
+  });
+
+  it('shows the picked Outcome while it saves, and takes no other until it has', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await listed();
+
+    let answer = () => {};
+
+    outcomeHeld = new Promise((resolve) => {
+      answer = resolve;
+    });
+
+    await pickOutcome('Coding 1', 'Passed');
+
+    await waitFor(() => expect(outcomes).toEqual([{ outcome: 'passed' }]));
+    expect(outcomeShown('Coding 1')).toBe('Passed');
+    expect(outcomeMenu('Coding 1').hasAttribute('data-disabled')).toBe(true);
+
+    answer();
+
+    await waitFor(() => expect(outcomeMenu('Coding 1').hasAttribute('data-disabled')).toBe(false));
+    expect(outcomeShown('Coding 1')).toBe('Passed');
+  });
+
+  it.each([
+    [500, 'Something went wrong. Please try again.'],
+    [404, 'That round no longer exists.'],
+  ])('says why the Outcome couldn’t be saved (%i), keeping the old one', async (code, message) => {
+    stored = [round(1, 'coding', { outcome: 'passed', outcomeSetByUser: true })];
+    await renderPage();
+    await listed();
+
+    if (code === 404) stored = [];
+    else failWrites = code;
+
+    await pickOutcome('Coding 1', 'Failed');
+
+    expect((await within(outcomeGroup('Coding 1')).findByRole('alert')).textContent).toBe(message);
+    expect(outcomeShown('Coding 1')).toBe('Passed');
   });
 });
