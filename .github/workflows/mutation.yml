@@ -12,7 +12,8 @@
 # that run is full. Sunday's run, and a manual run with `full`, skip the cache, which also corrects
 # the results incremental mode keeps after a new test kills an old survivor.
 #
-# It also runs on pull requests that change this file, so a change to it is tested before it lands.
+# It also runs on pull requests that change this file, so a change to it is tested before it lands,
+# except Dependabot's: a bump of an action used here gets its first run the next night (ADR-0062).
 name: Mutation testing
 
 on:
@@ -41,6 +42,7 @@ env:
 jobs:
   # The web app. A full run had 1,118 mutants and needed about 24 minutes on a runner (2026-11-23).
   web:
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -110,6 +112,7 @@ jobs:
           retention-days: 14
 
   api:
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     # About 7 minutes on a laptop with four workers. A full run on a runner passed 60 minutes on
     # 2026-11-23.

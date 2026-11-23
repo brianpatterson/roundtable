@@ -39,6 +39,10 @@ app's CSS, test setup and re-exports; the API's tests folder, migrations, tables
 Sunday's run and a manual run with `full` skip the cache. The time limits rise to 45 minutes (web)
 and 90 (API), enough for a full run.
 
+Dependabot's pull requests skip the workflow. One changes `mutation.yml` only to bump an action it
+uses, so its run tests the action, not the code; the next nightly run does the same within a day,
+and a dependency bump changes the cache key, so that run is full anyway.
+
 ## Consequences
 
 - Most nights finish in minutes. A full run still happens weekly, after any dependency or config
@@ -48,5 +52,8 @@ and 90 (API), enough for a full run.
   The implementer then finds nothing to do for it; the next full run clears it.
 - The cache key lists files by hand. A new kind of file the tests depend on, outside those
   patterns, would be missed until Sunday. Add it to the key in `mutation.yml` when it appears.
+- A broken bump of an action this workflow uses is found by the next nightly run (a failed run,
+  and no `mutation` tickets that night), not on its pull request. The `file` job's steps, which no
+  pull request's run reaches before Stryker finishes, are the ones most likely to show it.
 - A pull request's cache is scoped to its own ref, so a pull request can't plant results for main.
 - Revisit if full runs approach the new limits again: sharding (option 3) is the next step.
