@@ -86,8 +86,8 @@ Option 4, with option 1's events added for the sweeper, and a heartbeat for each
 - **The dead man's switch.** Every successful sweep, whatever started it, pings its own Better
   Stack heartbeat (`.github/factory/ping-heartbeat.sh`; URLs in the `SWEEPER_HEARTBEAT_URL` and
   `DISPATCHER_HEARTBEAT_URL` secrets), as the nightly backup already does (ADR-0019). Each
-  heartbeat expects a ping every 20 minutes and allows 40 minutes of grace. An hour without a
-  successful sweep opens a Better Stack incident and emails the owner. That covers a dead clock,
+  heartbeat expects a ping every hour, with 5 minutes of grace. Sweeps come every 20 minutes, so
+  two ticks can go missing without an alert, and an hour without a successful sweep opens a Better Stack incident and emails the owner. That covers a dead clock,
   an expired token, an Actions outage and a sweep that keeps failing. The alert has to come from
   outside GitHub, since a check inside it runs only when GitHub runs something (option 2). A
   dry run doesn't ping, and a failed ping only warns: the missing pings raise the alarm.

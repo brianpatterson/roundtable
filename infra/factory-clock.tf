@@ -42,18 +42,19 @@ resource "cloudflare_workers_cron_trigger" "factory_clock" {
 }
 
 # A sweep pings these after it succeeds, whatever started it (the clock, an event, GitHub's own
-# late cron). Expected every 20 minutes; the grace lets two ticks go missing before alerting, so
-# an incident opens when an hour passes without a successful sweep.
+# late cron). Sweeps come every 20 minutes, but the heartbeat only needs one an hour: a period of
+# an hour (plus 5 minutes' grace) alerts when an hour passes without a successful sweep, lets two
+# ticks go missing first, and is a period Better Stack's free plan accepts.
 resource "betteruptime_heartbeat" "sweeper" {
   name   = "Factory sweeper"
-  period = 1200
-  grace  = 2400
+  period = 3600
+  grace  = 300
   email  = true
 }
 
 resource "betteruptime_heartbeat" "dispatcher" {
   name   = "Dispatcher"
-  period = 1200
-  grace  = 2400
+  period = 3600
+  grace  = 300
   email  = true
 }
