@@ -186,6 +186,24 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const outcomeCases = {
+    pending: [{ outcome: 'pending' }, { outcome: 'pending' }],
+    passed: [{ outcome: 'passed' }, { outcome: 'passed' }],
+    failed: [{ outcome: 'failed' }, { outcome: 'failed' }],
+    unknown: [{ outcome: 'unknown' }, { outcome: 'unknown' }],
+    'one outside the four': [{ outcome: 'advanced' }, false],
+    'another case': [{ outcome: 'PASSED' }, false],
+    null: [{ outcome: null }, false],
+    missing: [{}, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(outcomeCases))('outcome: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.RoundOutcome)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
   // The web app sends what the user typed, so the client must refuse the same schedules first.
   it('encodes a schedule, and refuses an inconsistent one before it is sent', () => {
     const encode = Schema.encodeUnknownExit(contract.CreateRound);
@@ -361,6 +379,8 @@ describe('responses from the release before the status rework still decode', () 
       dueOn: null,
       selfRating: null,
       ratingNote: null,
+      outcome: 'pending',
+      outcomeSetByUser: false,
     });
   });
 
