@@ -13,17 +13,17 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
+  APPLICATION_STATUSES,
   INTERVIEW_TYPES,
   MAX_RATING_NOTE,
   OUTCOMES,
   ROUND_DURATION_MINUTES,
   SELF_RATING,
-  STORED_APPLICATION_STATUSES,
 } from '@roundtable/contract';
 import { timestamps } from '../../platform/database/columns.js';
 import { users } from '../identity/index.js';
 
-export const applicationStatus = pgEnum('application_status', STORED_APPLICATION_STATUSES);
+export const applicationStatus = pgEnum('application_status', APPLICATION_STATUSES);
 
 // The foreign key to users is the one place this module reaches into identity's tables. It goes
 // if applications ever gets its own database (ADR-0023).

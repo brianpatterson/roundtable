@@ -1,0 +1,51 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "8b0bdf5b-d07e-4291-b0d7-9dab5d0ac62b",
+  "prevIds": [
+    "9a2a0657-3418-4b08-92db-969bc0c97245"
+  ],
+  "footprints": [
+    {
+      "statementType": "recreate_enum",
+      "statementTarget": [
+        "enum",
+        "public",
+        "application_status"
+      ],
+      "writes": [
+        "s|enum|public.application_status",
+        "n|enum|public.application_status",
+        "e|enum|public.application_status",
+        "n|type|public.application_status",
+        "s|colprop|public.applications.status.type",
+        "s|colprop|public.applications.status.default"
+      ],
+      "reads": [
+        "n|sch|public",
+        "n|tbl|public.applications",
+        "n|sch|public",
+        "n|col|public.applications.status"
+      ],
+      "sqlHash": "c30b13e679c78194"
+    }
+  ],
+  "deltas": [
+    {
+      "op": "alter",
+      "key": "enums\u0000[\"public\",\"application_status\"]",
+      "set": {
+        "values": [
+          "saved",
+          "applied",
+          "interviewing",
+          "offer",
+          "accepted",
+          "rejected",
+          "withdrawn"
+        ]
+      }
+    }
+  ]
+}

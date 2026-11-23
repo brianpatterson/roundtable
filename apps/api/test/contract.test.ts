@@ -383,16 +383,24 @@ describe('responses from the release before the status rework still decode', () 
     company: 'Acme',
     jobTitle: 'SWE',
     jobUrl: null,
-    status: 'screening',
+    status: 'interviewing',
     createdAt: '2026-11-01T00:00:00.000Z',
     updatedAt: '2026-11-02T00:00:00.000Z',
   };
 
-  it('reads screening as interviewing, and a missing applied date as null', () => {
+  it('reads a missing applied date as null', () => {
     expect(Schema.decodeUnknownSync(contract.Application)(before)).toMatchObject({
       status: 'interviewing',
       appliedAt: null,
     });
+  });
+
+  // Release 3 of ADR-0045: no deployed release returns `screening` any more, so there's one list
+  // of statuses and a response carrying it is malformed.
+  it('rejects a response with screening', () => {
+    const screening = { ...before, status: 'screening' };
+
+    expect(Exit.isFailure(Schema.decodeUnknownExit(contract.Application)(screening))).toBe(true);
   });
 
   it('reads a Round from before scheduling as not scheduled yet', () => {

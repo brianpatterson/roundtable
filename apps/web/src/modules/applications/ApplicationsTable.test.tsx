@@ -397,16 +397,6 @@ describe('ApplicationsTable: statuses and the applied date (ADR-0045)', () => {
     ]);
   });
 
-  it('shows a screening row from an older server as Interviewing', async () => {
-    const acme = rows.find((r) => r.id === ACME_ID);
-
-    if (acme) acme.status = 'screening';
-
-    await renderTable();
-
-    expect(statusFor('Acme').textContent).toContain('Interviewing');
-  });
-
   it('shows a saved row as Saved and Not sent, and dates it once moved to Applied', async () => {
     const acme = rows.find((r) => r.id === ACME_ID);
 
