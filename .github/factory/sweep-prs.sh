@@ -120,7 +120,16 @@ if [ "${1:-}" = --one ]; then
       "$GH" pr comment "$number" -R "$repo" --body "The sweeper reran CI once: $reason. If it ends the same way again, this goes to a human. ADR-0040."
       ;;
     resolve)
-      "$GH" workflow run resolve-conflicts.yml -R "$repo" --ref main -f pr="$number"
+      # GitHub keeps one pending job per concurrency group and cancels the one before: a resolver
+      # queued behind a running one could replace a pending fix or rework on the same branch.
+      # Whatever is already queued or running will reach this pull request, or the next sweep will.
+      active=$("$GH" run list -R "$repo" --workflow resolve-conflicts.yml --limit 20 --json status \
+        --jq '[.[] | select(.status != "completed")] | length')
+      if [ "${active:-0}" -gt 0 ]; then
+        echo "#$number: the conflict resolver is already queued or running; the next sweep checks again."
+      else
+        "$GH" workflow run resolve-conflicts.yml -R "$repo" --ref main -f pr="$number"
+      fi
       ;;
     human)
       "$GH" pr edit "$number" -R "$repo" --add-label needs-human

@@ -139,7 +139,8 @@ jobs:
         if: steps.current.outputs.stale != 'true'
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
-            .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh "$RUNNER_TEMP/"
+            .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
+            .github/factory/report-conflict-attempt.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -218,51 +219,11 @@ jobs:
       # Deterministic: what the agent pushed, whatever it reported, and one marked comment naming
       # main's commit per attempt (select-conflicts.sh counts them). Runs even when the agent
       # failed, so a crash counts: the first is retried by the next run, the second goes to a human.
+      # From main, like the guards: pinned by test-report-conflict-attempt.sh.
       - name: Check and report the attempt
         if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
           REASON: ${{ steps.failure.outputs.reason }}
-        run: |
-          outcome=$(jq -r '.outcome // "failed"' <<<"${RESULT:-{\}}")
-          summary=$(jq -r --arg why "${REASON:-}" '.summary // ("The resolver stopped without a summary" + (if $why == "" then "" else ": " + $why end) + ". See the run log.")' <<<"${RESULT:-{\}}")
-
-          # The pull request's own changes against the main it merged: nothing behind means main
-          # is in the branch.
-          compare=$(gh api "repos/$GITHUB_REPOSITORY/compare/$MAIN...$BRANCH" 2>/dev/null) || compare='{}'
-
-          if [ "$outcome" = resolved ]; then
-            if [ "$(jq '.behind_by // 1' <<<"$compare")" -ne 0 ]; then
-              outcome=needs-human
-              summary=$(printf '%s\n\n_The agent reported the conflict resolved, but main (%s) isn'"'"'t merged into the branch._' "$summary" "$MAIN")
-            elif jq -e '[.files[]?.patch // "" | select(test("(^|\n)\\+(<<<<<<<|>>>>>>>)( |\n|$)"))] | length > 0' <<<"$compare" >/dev/null; then
-              outcome=needs-human
-              summary=$(printf '%s\n\n_The merge pushed still has conflict markers in it._' "$summary")
-            fi
-          fi
-
-          # The agent never changes the factory's rules or CI. Against the merged main, a factory
-          # pull request's own changes never include them.
-          if jq -r '.files[]?.filename' <<<"$compare" | grep -qE '^(\.github/|\.claude/|CLAUDE\.md$)'; then
-            outcome=protected
-            summary="The resolved branch changes \`.github/\`, \`.claude/\` or \`CLAUDE.md\` against main, which the factory may not touch. Don't merge it until a human has looked."
-          fi
-
-          case "$outcome" in
-            resolved) head="merged main and pushed; CI and the reviewer run again" ;;
-            # A crash (an outage, a timeout) isn't an answer: the next merge or sweep retries once.
-            failed) if [ "$ATTEMPT" -lt 2 ]; then head="the run failed; the next one retries"
-                    else head="the run failed twice, over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human; fi ;;
-            *) head="over to you"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
-          esac
-
-          # Never publish what looks like a credential (ADR-0029).
-          if ! "$RUNNER_TEMP/guard-secrets.sh" <<<"$summary"; then
-            summary="The resolver's summary was withheld because it matched a credential pattern. See the run, and rotate the credential."
-          fi
-
-          body=$(printf '<!-- factory-conflict -->\n### Conflict with main, attempt %s: %s\n\n%s\n\n<sub>[Run](%s), merging main at %s into commit %s. ADR-0058.</sub>\n' \
-            "$ATTEMPT" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$MAIN" "$SHA")
-          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
-          [ "$outcome" != protected ] || exit 1
+        run: '"$RUNNER_TEMP/report-conflict-attempt.sh"'

@@ -5,6 +5,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 failures=0
+fail() { echo "FAIL: $1"; failures=$((failures + 1)); }
 
 check() { # check <name> <state JSON> <expected action>
   got=$("$here/sweep-prs.sh" --decide <<<"$2" | jq -r .action)
@@ -116,6 +117,36 @@ if [ "$status" -eq 0 ]; then
   echo "FAIL: a sweep with a failed pull request exits 0"
   failures=$((failures + 1))
 fi
+
+# A conflicting factory pull request starts the resolver, unless a resolver run is already queued or
+# running: another would wait in the branch's concurrency group and could cancel a pending rework.
+cat >"$work/gh2" <<'GH'
+#!/usr/bin/env bash
+filter=.
+prev=
+for arg in "$@"; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
+case "$*" in
+  "run list"*resolve-conflicts.yml*) echo "$RESOLVER" | jq -rc "$filter" ;;
+  "run list"*) echo '[]' | jq -rc "$filter" ;;
+  "api repos/o/r/commits/"*) jq -n --arg t "$T" '{commit:{committer:{date:$t}}}' | jq -rc "$filter" ;;
+  "api repos/o/r/issues/"*) echo '[]' | jq -rc "$filter" ;;
+  *) echo "$*" >>"$WORK/writes" ;;
+esac
+GH
+chmod +x "$work/gh2"
+conflicting='{"number":4,"mergeable":"CONFLICTING","sha":"ddd","factory":true,"dependabot":false}'
+sweep_one() { # sweep_one <resolver runs JSON>
+  : >"$work/writes"
+  WORK=$work T=$long_ago RESOLVER=$1 GH=$work/gh2 GITHUB_REPOSITORY=o/r "$here/sweep-prs.sh" --one "$conflicting" >/dev/null 2>&1
+}
+sweep_one '[{"status":"completed"}]'
+grep -q "workflow run resolve-conflicts.yml -R o/r --ref main -f pr=4" "$work/writes" ||
+  fail "a conflicting factory pull request starts the resolver for it"
+! grep -q "needs-human" "$work/writes" || fail "a conflict sent to the resolver isn't labeled needs-human"
+sweep_one '[{"status":"in_progress"}]'
+! grep -q "workflow run" "$work/writes" || fail "no second resolver is queued while one is running"
+sweep_one '[{"status":"queued"}]'
+! grep -q "workflow run" "$work/writes" || fail "no second resolver is queued while one is queued"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failed."

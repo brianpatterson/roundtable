@@ -81,12 +81,12 @@ out=$(WORK=$work GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 MAIN=main0 "$here/sel
 [ "$(jq -c '[.[].pr]' <<<"$out")" = '[1]' ] || fail "a named pull request is the only one checked, against MAIN: $out"
 
 # select-conflicts.sh finds the resolver's comments by their marker and the main commit they name.
-# If the comment resolve-conflicts.yml posts changes either, attempts stop counting. Pin them.
-workflow="$here/../workflows/resolve-conflicts.yml"
-if ! grep -qF "body=\$(printf '<!-- factory-conflict -->\n###" "$workflow" ||
-  ! grep -qF 'merging main at %s into commit %s.' "$workflow" ||
+# If the comment report-conflict-attempt.sh posts changes either, attempts stop counting. Pin them.
+reporter="$here/report-conflict-attempt.sh"
+if ! grep -qF "body=\$(printf '<!-- factory-conflict -->\n###" "$reporter" ||
+  ! grep -qF 'merging main at %s into commit %s.' "$reporter" ||
   ! grep -qF "marker='<!-- factory-conflict -->'" "$here/select-conflicts.sh"; then
-  fail "the comment resolve-conflicts.yml posts and what select-conflicts.sh counts have drifted apart"
+  fail "the comment report-conflict-attempt.sh posts and what select-conflicts.sh counts have drifted apart"
 fi
 
 if [ "$failures" -gt 0 ]; then
