@@ -1,8 +1,0 @@
-# actionlint (CI's `check` job). ShellCheck's own settings for `run:` scripts are in .shellcheckrc.
-paths:
-  .github/workflows/deploy.yml:
-    ignore:
-      # The deploy step's ssh command expands $ACTOR, $IMAGE_PREFIX and $SHA on the runner, on
-      # purpose. Ignored here rather than with an inline directive: CodeQL's pull request gate
-      # fails any change to deploy.yml on an alert dismissed on main (#9).
-      - 'SC2029:'
