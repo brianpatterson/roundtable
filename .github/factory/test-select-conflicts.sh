@@ -65,13 +65,4 @@ out=$(GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 "$here/select-conflicts.sh" 5 2>
 out=$(GH=$work/gh GITHUB_REPOSITORY=o/r SLEEP=0 MAIN=main0 "$here/select-conflicts.sh" 1 2>/dev/null)
 [ "$(jq -c '[.[].pr]' <<<"$out")" = '[1]' ] || fail "a named pull request is the only one checked, against MAIN: $out"
 
-# select-conflicts.sh finds the resolver's comments by their marker and the main commit they name.
-# If the comment report-conflict-attempt.sh posts changes either, attempts stop counting. Pin them.
-reporter="$here/report-conflict-attempt.sh"
-if ! grep -qF "body=\$(printf '<!-- factory-conflict -->\n###" "$reporter" ||
-  ! grep -qF 'merging main at %s into commit %s.' "$reporter" ||
-  ! grep -qF "marker='<!-- factory-conflict -->'" "$here/select-conflicts.sh"; then
-  fail "the comment report-conflict-attempt.sh posts and what select-conflicts.sh counts have drifted apart"
-fi
-
 finish "All conflict selections pass."

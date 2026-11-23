@@ -2,7 +2,8 @@
 # After a failed agent run: the Claude action hides the agent's messages from the public log,
 # including the one that says why it failed (a rejected token, an unknown model). Shows only that
 # final message, as an error and in the step summary. Used by every agent job in factory.yml,
-# copied from main before the agent runs (a branch can't change it).
+# rework.yml and resolve-conflicts.yml, copied from main before the agent runs (a branch can't
+# change it). The answer it recovers skips the action's schema check: attempt.sh checks the outcome.
 #
 # The action also fails a run that finished but took more turns than --max-turns, and then leaves
 # its structured_output empty, although the agent returned its answer (#132: 179 turns of 150, with

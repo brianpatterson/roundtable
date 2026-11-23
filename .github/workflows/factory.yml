@@ -537,6 +537,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read # attempt.sh, from main
       pull-requests: write
       issues: write
     outputs:
@@ -545,43 +546,32 @@ jobs:
       branch: ${{ steps.pick.outputs.branch }}
       attempt: ${{ steps.pick.outputs.attempt }}
     steps:
+      # attempt.sh decides, from main like this file (ADR-0028).
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/factory/attempt.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          MARKER: '<!-- factory-ci-fix -->'
         run: |
           pr=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$RUN_BRANCH" --state open --json number --jq '.[0].number // empty')
           [ -n "$pr" ] || { echo "No open pull request for $RUN_BRANCH."; exit 0; }
 
-          info=$(gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json headRefOid,labels,commits)
-          sha=$(jq -r .headRefOid <<<"$info")
-          labels=$(jq -c '[.labels[].name]' <<<"$info")
-
-          [ "$sha" = "$RUN_SHA" ] || { echo "#$pr has moved past $RUN_SHA; its own CI run decides."; exit 0; }
-          jq -e 'any(. == "factory" or . == "autofix")' <<<"$labels" >/dev/null ||
-            { echo "#$pr is neither a factory pull request nor labeled autofix."; exit 0; }
-          ! jq -e 'any(. == "needs-human")' <<<"$labels" >/dev/null ||
-            { echo "#$pr is waiting for a human."; exit 0; }
-
-          # Attempts since the last commit a human pushed: a push from the owner resets the count.
-          since=$(jq -r '[.commits[] | select(all(.authors[]; (.login // "") | test("^(claude|dependabot)") | not)) | .committedDate] | max // "1970-01-01T00:00:00Z"' <<<"$info")
-          attempts=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate \
-            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\")) and .created_at > \"$since\")] | length" |
-            jq -s add)
-
-          if [ "${attempts:-0}" -ge 2 ]; then
-            gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --add-label needs-human
-            gh pr comment "$pr" -R "$GITHUB_REPOSITORY" --body "The factory tried to fix CI twice and it still fails. Over to you: push a fix. To hand it back, push a commit yourself (that resets the count) and remove \`needs-human\`; it tries again on the next failure."
-            exit 0
-          fi
+          # A factory or autofix pull request still at the failed commit, not waiting for a human,
+          # with fewer than two fixes since a human last pushed; at two, attempt.sh hands it over.
+          attempt=$(EXPECT_SHA=$RUN_SHA .github/factory/attempt.sh next ci-fix "$pr")
+          case "$attempt" in [0-9]*) ;; *) exit 0 ;; esac
 
           {
             echo "pr=$pr"
-            echo "sha=$sha"
+            echo "sha=$RUN_SHA"
             echo "branch=$RUN_BRANCH"
-            echo "attempt=$(( ${attempts:-0} + 1 ))"
+            echo "attempt=$attempt"
           } >> "$GITHUB_OUTPUT"
 
   fix-ci:
@@ -645,7 +635,7 @@ jobs:
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
-            .github/factory/protected-changes.sh "$RUNNER_TEMP/"
+            .github/factory/protected-changes.sh .github/factory/attempt.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -719,41 +709,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
           REASON: ${{ steps.failure.outputs.reason }}
-        run: |
-          outcome=$(jq -r '.outcome // "failed"' <<<"${RESULT:-{\}}")
-          summary=$(jq -r --arg why "${REASON:-}" '.summary // ("The fixer stopped without a summary" + (if $why == "" then "" else ": " + $why end) + ". See the run log.")' <<<"${RESULT:-{\}}")
-
-          # The fixer never changes its own rules or CI, whatever the pull request itself touches.
-          # If GitHub can't say what it pushed, a human checks: a check that can't run mustn't pass.
-          code=0
-          "$RUNNER_TEMP/protected-changes.sh" "$SHA" "$BRANCH" >/dev/null || code=$?
-          case "$code" in
-            0) ;;
-            1)
-              outcome=protected
-              summary="The fix changed \`.github/\`, \`.claude/\` or \`CLAUDE.md\`, which the factory may not touch. Don't merge it until a human has looked."
-              ;;
-            *)
-              # A fix or rerun can't be trusted unchecked; a failure keeps its own heading, and
-              # goes to a human either way.
-              case "$outcome" in fixed | reran) outcome=unchecked ;; esac
-              summary=$(printf '%s\n\n_GitHub couldn'"'"'t compare the branch with commit %s, so what the fixer pushed wasn'"'"'t checked for changes to the factory'"'"'s own rules. Check it before merging._' "$summary" "$SHA")
-              ;;
-          esac
-
-          case "$outcome" in
-            fixed) head="pushed a fix" ;;
-            reran) head="re-ran the failed jobs: the failure wasn't caused by this pull request" ;;
-            unchecked) head="couldn't check what it pushed"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
-            *) head="couldn't fix it"; gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human ;;
-          esac
-
-          # Never publish what looks like a credential (ADR-0029).
-          if ! "$RUNNER_TEMP/guard-secrets.sh" <<<"$summary"; then
-            summary="The fixer's summary was withheld because it matched a credential pattern. See the run, and rotate the credential."
-          fi
-
-          body=$(printf '<!-- factory-ci-fix -->\n### CI fix, attempt %s of 2: %s\n\n%s\n\n<sub>[Run](%s), for commit %s. ADR-0028.</sub>\n' \
-            "$ATTEMPT" "$head" "$summary" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$SHA")
-          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" --body "$body"
-          [ "$outcome" != protected ] || exit 1
+        run: '"$RUNNER_TEMP/attempt.sh" report ci-fix'
