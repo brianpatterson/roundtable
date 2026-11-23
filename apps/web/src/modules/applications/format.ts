@@ -1,4 +1,5 @@
 import {
+  inRoundOrder,
   isTimeZone,
   type ApplicationStatus,
   type InterviewType,
@@ -57,24 +58,13 @@ const localDay = (date: string) => {
  */
 const formatCalendarDate = (date: string) => calendarDate.format(localDay(date));
 
-/** When a Round sorts: its start, or the start of its due day in the user's zone; else none. */
-const sortTime = ({ startsAt, dueOn }: Round) =>
-  startsAt?.getTime() ?? (dueOn === null ? null : localDay(dueOn).getTime());
-
 /**
- * The Rounds in date order in the user's time zone (ADR-0054): dated ones first, a take-home at
- * the start of its due day, then the rest in the order given. The server orders a due day by
- * midnight UTC, as it doesn't know the user's zone, which puts a take-home ahead of an interview
- * the evening before for anyone west of UTC.
+ * The Rounds in Round order in the user's time zone (ADR-0054), from the contract. The server
+ * orders a due day by midnight UTC, as it doesn't know the user's zone, which puts a take-home
+ * ahead of an interview the evening before for anyone west of UTC.
  */
 export const inLocalOrder = (rounds: readonly Round[]): Round[] =>
-  [...rounds].sort((a, b) => {
-    const [x, y] = [sortTime(a), sortTime(b)];
-
-    if (x === null || y === null) return (x === null ? 1 : 0) - (y === null ? 1 : 0);
-
-    return x - y;
-  });
+  inRoundOrder(rounds, new Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 /**
  * When a Round happens or is due: its start (to its end, when it has a duration) in the user's
