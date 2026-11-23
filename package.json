@@ -21,10 +21,10 @@
     "check": "pnpm lint && prettier --check . && pnpm typecheck && pnpm check:effect && pnpm check:deps && pnpm check:adrs && pnpm check:boundaries && pnpm test"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.69.0",
-    "@oxlint/plugins": "1.93.0",
+    "@effect/tsgo": "0.73.2",
+    "@oxlint/plugins": "1.94.0",
     "@types/node": "^26.6.6",
-    "oxlint": "1.93.0",
+    "oxlint": "1.94.0",
     "prettier": "^3.10.1",
     "typescript": "^7.0.2"
   },
