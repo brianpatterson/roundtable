@@ -926,77 +926,45 @@ describe('Outcomes inferred from a rejection', () => {
     return { application, ids: await seedRounds(application.id, ...schedules) };
   }
 
-  it('fails the latest pending Round, leaving the earlier ones', async () => {
-    const {
-      application,
-      ids: [first, second],
-    } = await withRounds(
-      { startsAt: '2026-12-01T17:00:00Z' },
-      { startsAt: '2026-12-03T17:00:00Z' },
-    );
+  // The day and order rules are pinned without a database in inference.test.ts; these check the
+  // Round lifecycle's wiring: one case per behaviour.
 
-    const res = await reject(application.id);
+  // Noon on 30 November, then 10:00, a take-home and 20:00 on 1 December, in New York. The evening
+  // Round is already 2 December in UTC.
+  const newYorkDay = [
+    { startsAt: '2026-11-30T17:00:00Z' },
+    { startsAt: '2026-12-01T15:00:00Z' },
+    { dueOn: '2026-12-01' },
+    { startsAt: '2026-12-02T01:00:00Z' },
+  ];
+
+  it('fails every pending Round on the latest one’s day, in the user’s time zone', async () => {
+    const { application, ids } = await withRounds(...newYorkDay);
+
+    const res = await reject(application.id, 'America/New_York');
 
     expect(res.statusCode).toBe(200);
     expect(res.json<ApplicationJson>().status).toBe('rejected');
-    expect(await outcomesOf(application.id)).toEqual({
-      [first ?? '']: PENDING,
-      [second ?? '']: INFERRED_FAILED,
-    });
-  });
 
-  it('fails every pending Round on the latest one’s day, in the user’s time zone', async () => {
-    // Noon on 30 November, then 10:00, a take-home and 20:00 on 1 December, in New York. The
-    // evening Round is already 2 December in UTC.
-    const schedules = [
-      { startsAt: '2026-11-30T17:00:00Z' },
-      { startsAt: '2026-12-01T15:00:00Z' },
-      { dueOn: '2026-12-01' },
-      { startsAt: '2026-12-02T01:00:00Z' },
-    ];
+    const outcomes = await outcomesOf(application.id);
 
-    const inNewYork = await withRounds(...schedules);
-
-    await reject(inNewYork.application.id, 'America/New_York');
-
-    const [dayBefore, morning, takeHome, evening] = inNewYork.ids;
-
-    expect(await outcomesOf(inNewYork.application.id)).toEqual({
-      [dayBefore ?? '']: PENDING,
-      [morning ?? '']: INFERRED_FAILED,
-      [takeHome ?? '']: INFERRED_FAILED,
-      [evening ?? '']: INFERRED_FAILED,
-    });
-
-    // Without a time zone the day is UTC's: the evening Round is alone on 2 December.
-    const inUtc = await withRounds(...schedules);
-
-    await reject(inUtc.application.id);
-
-    const outcomes = await outcomesOf(inUtc.application.id);
-
-    expect(inUtc.ids.map((id) => outcomes[id])).toEqual([
+    expect(ids.map((id) => outcomes[id])).toEqual([
       PENDING,
-      PENDING,
-      PENDING,
+      INFERRED_FAILED,
+      INFERRED_FAILED,
       INFERRED_FAILED,
     ]);
   });
 
-  it('fails only the latest when it isn’t scheduled', async () => {
-    const {
-      application,
-      ids: [dated, firstUnscheduled, lastUnscheduled],
-    } = await withRounds({ startsAt: '2026-12-01T17:00:00Z' }, {}, {});
+  it('uses UTC’s day when the request sends no time zone', async () => {
+    const { application, ids } = await withRounds(...newYorkDay);
 
-    // The unscheduled ones list as they were added, after the dated one.
     await reject(application.id);
 
-    expect(await outcomesOf(application.id)).toEqual({
-      [dated ?? '']: PENDING,
-      [firstUnscheduled ?? '']: PENDING,
-      [lastUnscheduled ?? '']: INFERRED_FAILED,
-    });
+    const outcomes = await outcomesOf(application.id);
+
+    // The evening Round is alone on 2 December.
+    expect(ids.map((id) => outcomes[id])).toEqual([PENDING, PENDING, PENDING, INFERRED_FAILED]);
   });
 
   it('passes over Rounds whose Outcome the user set, pending included', async () => {

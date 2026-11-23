@@ -136,7 +136,12 @@ send the browser's time zone, so the API infers by the user's day
 time zone, and inference orders them in the one sent, with the same function: Round order
 (`inRoundOrder`, and `roundDay` for the user's day) lives in the contract's `applications.ts`, so
 the order and its time-zone arithmetic are defined once. The API's list keeps its SQL order by UTC
-days (ADR-0054).
+days (ADR-0054). In the API, what a status change sets off lives in the applications module's
+Round lifecycle (`round-lifecycle.ts`): the `update` handler calls its `statusChanged` in the
+transaction that makes the change, and it decides whether it's a change to rejected, reads the
+Rounds in the order inference expects, defaults the time zone to UTC and runs the pure rules in
+`inference.ts`. Which Rounds inference may change (pending, not set by the user) is defined once
+there, and the SQL guard against a concurrent edit by the user is written from it.
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives

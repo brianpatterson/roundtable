@@ -1,7 +1,7 @@
 // Inferred Outcomes (GLOSSARY.md, ADR-0061): adding a Round passes the pending Rounds before it,
-// and a rejection fails the latest pending ones. Pure, so the handlers run it inside the
-// transaction that makes the change, on the Rounds they read there. The order and the user's day
-// come from the contract's Round order.
+// and a rejection fails the latest pending ones. Pure, so they're tested without a database; the
+// Round lifecycle (./round-lifecycle.ts) runs them inside the transaction that makes the change,
+// on the Rounds it reads there. The order and the user's day come from the contract's Round order.
 import { inRoundOrder, roundDay } from '@roundtable/contract';
 
 /** What inference reads of a Round. */
@@ -13,8 +13,14 @@ export interface InferenceRound {
   readonly outcomeSetByUser: boolean;
 }
 
-/** A Round inference may change: pending, and the user hasn't set its Outcome (ADR-0059). */
-const inferable = (round: InferenceRound) => round.outcome === 'pending' && !round.outcomeSetByUser;
+/**
+ * The Rounds inference may change: pending, and the user hasn't set its Outcome (ADR-0059). The
+ * one definition: the rules below test it, and the Round lifecycle's SQL guard writes it.
+ */
+export const INFERABLE = { outcome: 'pending', outcomeSetByUser: false } as const;
+
+const inferable = (round: InferenceRound) =>
+  round.outcome === INFERABLE.outcome && round.outcomeSetByUser === INFERABLE.outcomeSetByUser;
 
 /**
  * The Rounds adding `added` passes: every inferable one of `earlier` that comes before it in
