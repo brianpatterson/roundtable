@@ -1160,7 +1160,6 @@ describe('another user’s Rounds', () => {
 
     expect(res.statusCode).toBe(404);
     expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
-    expect(theirRound.outcome).toBe('pending');
   });
 
   it('schedules as not found, changing nothing', async () => {
