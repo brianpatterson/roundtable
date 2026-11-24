@@ -65,6 +65,15 @@ tests and screenshots already cover (`reviewer.md`, item 7).
 
 - UI tickets come with browser tests and screenshots, and the owner's manual check shrinks to
   what neither covers: hover, animation, a real screen reader, other browsers.
+- One exception to the browser build matching the branch: an owner's `@claude` follow-up
+  (`implement`) installs dependencies and Chromium from `main`, then the agent switches to the pull
+  request's branch. On a branch that changes Playwright's version (a Dependabot bump), Chromium
+  won't launch for the agent, which then says so and relies on CI.
+- The `browser-tests` artifact holds only `screenshots/` and `report/`: artifacts are public in
+  this repository, and the rest of `apps/web/test-results/` holds the test user's session cookie
+  and the test API's log. A failed test's trace, kept in the report for debugging, still records
+  that cookie in its network requests. It belongs to a throwaway user on a server that's gone when
+  the job ends.
 - Each agent job spends about 30 to 60 seconds installing Chromium, every run, UI change or not.
 - The reviewer reads images made by the pull request's code. Text in them is data, like the
   code (`reviewer.md`). Only PNGs are copied, never the HTML report or the test API's log.
