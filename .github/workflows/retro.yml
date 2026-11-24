@@ -2,7 +2,8 @@
 # parent issue and its sub-issues), an agent reads how the factory built them, including each
 # agent run's trail, and suggests improvements to the factory's environment. A deterministic step
 # publishes them as one `retro` issue, comments on the spec and closes it. The owner splits out
-# the findings worth building; the retro issue is never labeled `ready`.
+# the findings worth building into sub-issues of the retro issue; the retro issue is never labeled
+# `ready`, and `close` closes it once the last of those sub-issues closes.
 #
 # Four jobs, so the agent holds nothing it doesn't need: `select` decides, `gather` collects the
 # evidence with read access to issues, pull requests and artifacts, `retro` runs the agent with
@@ -31,6 +32,7 @@ jobs:
       issues: read
     outputs:
       parent: ${{ steps.select.outputs.parent }}
+      close: ${{ steps.select.outputs.close }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,6 +49,23 @@ jobs:
           else
             .github/factory/select-retro.sh --issue "$ISSUE"
           fi
+
+  # A retrospective whose findings are all done closes itself. No agent.
+  close:
+    needs: select
+    if: needs.select.outputs.close != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Close the retrospective
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETRO: ${{ needs.select.outputs.close }}
+        run: |
+          gh issue close "$RETRO" -R "$GITHUB_REPOSITORY" --reason completed \
+            --comment "Every finding filed from this retrospective is closed. ADR-0064."
 
   gather:
     needs: select
@@ -175,7 +194,7 @@ jobs:
                 "**Acceptance criteria**\n\n" + ($f.acceptance_criteria | map("- \(.)") | join("\n")) + "\n"
               ] | join("\n"))
             end) +
-            "\n<sub>From the batch retrospective ([run](\($run)), ADR-0064). Not labeled `ready`: split out the findings worth building into tickets, and close this with a comment on the rest so the next retrospective knows.</sub>"
+            "\n<sub>From the batch retrospective ([run](\($run)), ADR-0064). Not labeled `ready`. File each finding worth building as a sub-issue of this one (a hand-built one too, with `Closes` in its pull request), and comment on the rest so the next retrospective knows. This closes itself when the last sub-issue does.</sub>"
           ' <<<"$RESULT")
           .github/factory/guard-secrets.sh <<<"$body" || exit 1
 

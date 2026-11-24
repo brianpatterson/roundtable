@@ -46,6 +46,14 @@ closes, the factory runs the batch retrospective and closes the spec
   ticket belongs to; blocking edges still decide the build order.
 - Tickets published without a spec get no retrospective.
 
+### Following up a retrospective
+
+The retrospective opens one issue labeled `retro`. File each finding worth building as a sub-issue
+of it, the same way: a factory ticket labeled `ready`, or, for work only a human can do (anything
+in `.github/`, `.claude/` or `CLAUDE.md`), an issue that the hand-made pull request `Closes`. Open
+that issue **before** the pull request merges. Comment on the findings you decline. The retro closes
+itself when its last sub-issue closes, and never gets a retrospective of its own.
+
 ## Writing a ticket
 
 Write the body with the headings of the issue forms in `.github/ISSUE_TEMPLATE/`, since the

@@ -8,7 +8,13 @@
 # Ready when every sub-issue is closed, the factory built at least one of them (a merged pull
 # request from a claude/issue-<n>- branch closed it), and no `retro` issue covers the parent yet.
 # Through --issue the parent must also still be open. Prints why, and writes `parent=<P>` to
-# $GITHUB_OUTPUT when ready. Holds no secrets and runs no agent. GH overrides the gh binary (tests).
+# $GITHUB_OUTPUT when ready.
+#
+# A parent labeled `retro` is a retrospective whose findings were filed as its sub-issues, not a
+# batch: it never gets a retrospective of its own. Through --issue, once the last of its findings
+# closes, it writes `close=<P>` instead, and the workflow closes it.
+#
+# Holds no secrets and runs no agent. GH overrides the gh binary (tests).
 set -euo pipefail
 
 GH=${GH:-gh}
@@ -50,6 +56,7 @@ batch=$("$GH" api graphql -F owner="$owner" -F name="$name" -F number="$parent" 
     repository(owner: $owner, name: $name) {
       issue(number: $number) {
         state
+        labels(first: 20) { nodes { name } }
         subIssues(first: 100) {
           totalCount
           nodes {
@@ -61,6 +68,16 @@ batch=$("$GH" api graphql -F owner="$owner" -F name="$name" -F number="$parent" 
       }
     }
   }' --jq '.data.repository.issue')
+
+if jq -e 'any(.labels.nodes[]; .name == "retro")' <<<"$batch" >/dev/null; then
+  [ "$by_hand" = false ] || { say "#$parent is a retrospective, not a spec: it gets no retrospective of its own."; exit 0; }
+  [ "$(jq -r .state <<<"$batch")" = OPEN ] || { say "Retrospective #$parent is already closed."; exit 0; }
+  open=$(jq -r '[.subIssues.nodes[] | select(.state != "CLOSED") | "#\(.number)"] | join(", ")' <<<"$batch")
+  [ -z "$open" ] || { say "Retrospective #$parent still has open findings: $open."; exit 0; }
+  say "Every finding of retrospective #$parent is closed."
+  echo "close=$parent" >>"${GITHUB_OUTPUT:-/dev/null}"
+  exit 0
+fi
 
 # Prints a reason not to run, or nothing.
 why_not=$(jq -r --argjson by_hand "$by_hand" '

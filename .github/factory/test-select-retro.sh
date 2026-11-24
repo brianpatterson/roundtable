@@ -10,11 +10,12 @@ fake_gh <<'ROUTES'
   "issue list"*) answer retros.json ;;
 ROUTES
 
-run() { # run <args…>; sets status, out, selected (the parent written to the output, or empty)
+run() { # run <args…>; sets status, out, selected (the parent to review) and closing (the retro to close)
   rm -f "$work/output"
   status=0
   out=$(GH="$work/gh" GITHUB_REPOSITORY=owner/repo GITHUB_OUTPUT="$work/output" "$here/select-retro.sh" "$@" 2>&1) || status=$?
   selected=$(sed -n 's/^parent=//p' "$work/output" 2>/dev/null || true)
+  closing=$(sed -n 's/^close=//p' "$work/output" 2>/dev/null || true)
 }
 
 parent() { echo "{\"data\":{\"repository\":{\"issue\":{\"parent\":$1}}}}" >"$work/parent.json"; }
@@ -37,7 +38,7 @@ batch() {
     IFS=,
     echo "${nodes[*]+${nodes[*]}}"
   )
-  echo "{\"data\":{\"repository\":{\"issue\":{\"state\":\"$state\",\"subIssues\":{\"totalCount\":$#,\"nodes\":[$joined]}}}}}" >"$work/batch.json"
+  echo "{\"data\":{\"repository\":{\"issue\":{\"state\":\"$state\",\"labels\":{\"nodes\":[${LABELS:-}]},\"subIssues\":{\"totalCount\":$#,\"nodes\":[$joined]}}}}}" >"$work/batch.json"
 }
 
 echo '[]' >"$work/retros.json"
@@ -87,6 +88,29 @@ expect_in "names the existing retro" "$out" "#41"
 echo '[{"number":40,"body":"<!-- retro-of-#100 -->"}]' >"$work/retros.json"
 run --issue 11
 expect "another parent's retro doesn't count" 10 "$selected"
+
+# A retrospective whose findings are its sub-issues: closed when the last one closes, never reviewed.
+echo '[]' >"$work/retros.json"
+LABELS='{"name":"retro"}'
+batch OPEN 11:CLOSED:claude/issue-11-a 12:CLOSED:-
+run --issue 12
+expect "closes a retro once every finding is closed" 10 "$closing"
+expect "never reviews a retro" "" "$selected"
+
+batch OPEN 11:CLOSED:claude/issue-11-a 12:OPEN:-
+run --issue 11
+expect "keeps a retro open while a finding is open" "" "$closing"
+expect_in "names the open finding" "$out" "open findings: #12"
+expect "and doesn't review it" "" "$selected"
+
+batch CLOSED 11:CLOSED:claude/issue-11-a
+run --issue 11
+expect "leaves a closed retro alone" "" "$closing"
+
+run --parent 10
+expect "by hand, never reviews a retro" "" "$selected"
+expect "by hand, doesn't close one either" "" "$closing"
+LABELS=''
 
 run --bogus
 expect "an unknown option is a usage error" 2 "$status"
