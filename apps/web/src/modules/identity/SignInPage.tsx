@@ -29,12 +29,13 @@ export function SignInPage({ sessionEnded }: { sessionEnded: boolean }) {
   const [notice, setNotice] = useState<string | null>(sessionEnded ? SESSION_ENDED_NOTICE : null);
   const [pending, setPending] = useState(false);
 
+  // Stryker disable ArrayDeclaration: any constant dependency list runs the effect once
   useEffect(() => {
     // Drop ?error=… from the address bar so a reload doesn't show it again.
     // Stryker disable next-line StringLiteral: browsers ignore replaceState's title argument
     if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
-    // Stryker disable next-line ArrayDeclaration: any constant dependency list runs the effect once
   }, []);
+  // Stryker restore ArrayDeclaration
 
   // Stryker disable next-line ArrayDeclaration,StringLiteral: any key no other query uses caches the same
   const config = useQuery({ queryKey: ['auth-config'], queryFn: api.authConfig });
