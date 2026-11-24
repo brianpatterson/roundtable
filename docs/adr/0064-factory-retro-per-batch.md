@@ -98,5 +98,9 @@ The retro issue is never labeled `ready`: the owner splits out the findings wort
   what is public already.
 - Findings that change workflows can't be built by the factory (it may not touch `.github/`), so
   the owner builds those by hand.
+- _Update, 2026-11-24:_ the findings worth building are filed as sub-issues of the retro issue, a
+  hand-built one included (its pull request says `Closes`), and the retro closes itself when the
+  last one closes. `select-retro.sh` never treats a `retro` issue as a batch, so a retrospective
+  gets no retrospective of its own. The decision is unchanged.
 - Revisit if the retro issues go unread, which would mean batches are too small or the findings
   too generic, or if the factory starts building work that has no spec.
