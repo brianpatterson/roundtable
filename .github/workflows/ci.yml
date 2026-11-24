@@ -96,6 +96,64 @@ jobs:
       - name: Test
         run: pnpm test
 
+  # Playwright against the built web app and the real API (ADR-0065): keyboard and focus, an axe
+  # scan, and screenshots at phone and desktop widths in both themes, uploaded for the reviewer.
+  # No secrets: the API runs with test values on CI's Postgres, and emails go to its log.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Chromium only: the phone project is Chromium at a phone's size. Keyed on Playwright's
+      # version, which pins the browser build.
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(pnpm --filter @roundtable/web exec playwright --version)" >> "$GITHUB_OUTPUT"
+      - name: Cache browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @roundtable/web exec playwright install --with-deps chromium
+      - name: Install Chromium's system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @roundtable/web exec playwright install-deps chromium
+      - name: Browser tests
+        run: pnpm --filter @roundtable/web test:browser
+      # Screenshots, the HTML report, traces of failures and the test API's log, pass or fail.
+      - name: Upload screenshots and report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-tests
+          path: apps/web/e2e/.output/
+          retention-days: 14
+
   # The production images must build. They're not pushed here; the deploy pipeline does that.
   images:
     runs-on: ubuntu-latest
