@@ -20,4 +20,20 @@ done
 
 [ "$seen" -gt 0 ] || fail "found no agent allowlist to check: has the workflows' layout changed?"
 
-finish "All $seen agent allowlists can run every check"
+# An agent allowed Stryker must be able to run it on one file (`test:mutation --mutate <file>`,
+# as implementer.md says). An entry without `:*` matches only the bare command, and `test:*`
+# doesn't match `test:mutation`, so the implementer's check was refused (PR 194).
+mutation=0
+
+for file in "$workflows"/*.yml; do
+  while IFS=: read -r line text; do
+    mutation=$((mutation + 1))
+    for package in web api; do
+      [[ "$text" == *"Bash(pnpm --filter @roundtable/$package test:mutation:*)"* ]] || fail "$(basename "$file"):$line lets the agent run Stryker but not \`pnpm --filter @roundtable/$package test:mutation --mutate <file>\`"
+    done
+  done < <(grep -n -- '--allowedTools .*test:mutation' "$file" || true)
+done
+
+[ "$mutation" -gt 0 ] || fail "found no agent allowlist that runs Stryker: has the workflows' layout changed?"
+
+finish "All $seen agent allowlists can run every check, and all $mutation that run Stryker can run it on one file"
