@@ -87,12 +87,36 @@ bug it describes (see above); without the file, it isn't.
    `CLAUDE.md`'s layout says it belongs, and import other modules only through their `index.ts`.
 2. Turn each acceptance criterion into a test first and watch it fail, then make it pass. API
    tests hit the real `app_test` database (it's running); web tests query by role and label.
+   A criterion about what a user does in the browser (a page, a dialog, a form, the keyboard,
+   focus, a phone-sized screen) gets a browser test too (below).
 3. Follow every "Rules for every change" item in `CLAUDE.md`: ADRs for
    hard-to-reverse decisions, `docs/architecture.md`, generated migrations, cross-user tests.
 4. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
    test to get there. If you can't make it pass, say exactly what fails and why in the PR
    description.
 5. Commit with conventional subjects (`feat:`, `fix:` …) and keep the commits focused.
+
+### Browser tests
+
+When the change adds or changes something a user sees or does in the browser, add to or extend
+the Playwright tests in `apps/web/e2e/` ([ADR-0065](../../docs/adr/0065-browser-tests-in-ci.md)).
+They run against the built app and the real API, at desktop and phone sizes, as the user signed
+up by `auth.setup.ts`.
+
+- One test per user-visible behavior, found the way a user finds things: `getByRole`,
+  `getByLabel`. Assert keyboard and focus behavior there (Tab order, Escape, where focus goes
+  after a dialog closes); jsdom can't.
+- Every new page, dialog or state worth looking at gets `await expectAccessible(page)` and
+  `await screenshotThemes(page, testInfo, '<name>')` from `e2e/support.ts`. The reviewer looks at
+  the screenshots, so name them after what they show.
+- Data a test creates is named for its project and retry (`` `Acme ${testInfo.project.name}
+${testInfo.retry}` ``): every test shares one user and one database per run.
+- Run them with `pnpm --filter @roundtable/web test:browser`, or one file with
+  `pnpm --filter @roundtable/web test:browser e2e/<file>.spec.ts`. Each run builds the app first,
+  so it takes a minute: run them once the component tests pass, not after every edit. A failure
+  leaves `error-context.md` (the page's accessibility tree) under `apps/web/test-results/results/`.
+- Chromium is installed before you start. If it's missing or won't launch in your sandbox, say
+  so in the pull request and rely on CI's `browser` job: don't try to install it.
 
 ### Running commands
 
@@ -203,6 +227,8 @@ and which attempt this is (you get two). The pull request's branch is checked ou
    commit; `gh run view <run> --log-failed` shows why. Several workflows can fail at once, and
    dependency review may name only some advisories: also run `pnpm audit --audit-level moderate`
    to see them all, so one attempt fixes everything.
+   A failed `browser` job: run `pnpm --filter @roundtable/web test:browser` yourself, and read
+   `error-context.md` under `apps/web/test-results/results/` for the failing test.
 2. **Decide whose fault it is.** If the failure isn't caused by the pull request's changes (a
    GitHub or registry outage, a provider download timing out, a test that fails on unrelated
    code and passes on `main`), don't change code: re-run the failed jobs once with

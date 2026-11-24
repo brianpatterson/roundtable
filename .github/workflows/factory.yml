@@ -125,7 +125,7 @@ jobs:
       # runs under are main's, whatever a branch contains.
       - name: Load the implementer's instructions and the guards from main
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
+          cp .github/factory/implementer.md .github/factory/install-browsers.sh .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
             .github/factory/takedown-credentials.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
@@ -137,6 +137,10 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+      # Chromium for the browser tests the agent writes and runs (ADR-0066), by main's script:
+      # it runs with sudo, and no code from the branch does.
+      - name: Install Chromium for the browser tests
+        run: '"$RUNNER_TEMP/install-browsers.sh"'
 
       # Whether this is a follow-up on one of the factory's own pull requests (ADR-0034): opened by
       # claude[bot] from a claude/ branch in this repository. The author alone isn't enough: every
@@ -297,7 +301,7 @@ jobs:
           persist-credentials: false
       - name: Load the implementer's instructions and the secret guard from main
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
+          cp .github/factory/implementer.md .github/factory/install-browsers.sh .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
             .github/factory/takedown-report-quotes.sh .github/factory/explain-failure.sh \
             .github/factory/flag-suspicious.sh .github/factory/takedown-credentials.sh \
@@ -363,6 +367,10 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+      # Chromium for the browser tests the agent writes and runs (ADR-0066), by main's script:
+      # it runs with sudo, and no code from the branch does.
+      - name: Install Chromium for the browser tests
+        run: '"$RUNNER_TEMP/install-browsers.sh"'
 
       - name: Implement
         id: claude
@@ -655,7 +663,7 @@ jobs:
       - name: Load the implementer's instructions and the secret guard from main
         if: steps.current.outputs.stale != 'true'
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
+          cp .github/factory/implementer.md .github/factory/install-browsers.sh .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
             .github/factory/protected-changes.sh .github/factory/attempt.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
@@ -679,6 +687,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
         if: steps.current.outputs.stale != 'true'
         continue-on-error: true
+      # Chromium for the browser tests the agent writes and runs (ADR-0066), by main's script:
+      # it runs with sudo, and no code from the branch does.
+      - name: Install Chromium for the browser tests
+        run: '"$RUNNER_TEMP/install-browsers.sh"'
+        if: steps.current.outputs.stale != 'true'
 
       - name: Fix CI
         if: steps.current.outputs.stale != 'true'

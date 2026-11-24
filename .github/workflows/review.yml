@@ -37,15 +37,18 @@ jobs:
     permissions:
       pull-requests: read
       statuses: write # the factory status (ADR-0063)
+      actions: read # which CI run passed on the commit, for its screenshots (ADR-0066)
     outputs:
       pr: ${{ steps.pick.outputs.pr }}
       sha: ${{ steps.pick.outputs.sha }}
+      ci_run: ${{ steps.pick.outputs.ci_run }}
     steps:
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           LABELED_PR: ${{ github.event.pull_request.number }}
         run: |
@@ -69,8 +72,19 @@ jobs:
               { echo "#$pr has only Dependabot's commits."; exit 0; }
           fi
 
-          echo "pr=$pr" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # The CI run whose browser screenshots the reviewer looks at (ADR-0066): the one that
+          # started this review, or the latest that passed on the commit when the owner labeled it.
+          if [ "$EVENT" = workflow_run ]; then
+            ci_run=$RUN_ID
+          else
+            ci_run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow CI --commit "$sha" --status success \
+              --json databaseId --jq '.[0].databaseId // empty' || true)
+          fi
+          {
+            echo "pr=$pr"
+            echo "sha=$sha"
+            echo "ci_run=$ci_run"
+          } >> "$GITHUB_OUTPUT"
 
       # The factory status (ADR-0063): the pull request page shows the factory working on this
       # commit until the status job below, or Rework after it, says it's done.
@@ -102,6 +116,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      actions: read # downloads the CI run's browser screenshots (ADR-0066)
     outputs:
       verdict: ${{ steps.post.outputs.verdict }}
       minor: ${{ steps.post.outputs.minor }}
@@ -136,6 +151,29 @@ jobs:
             --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- factory-rework -->"))) | .body + "\n\n---\n"' \
             > rework/replies.md
 
+      # The screenshots the browser tests took on this commit (ADR-0065, ADR-0066), for the
+      # reviewer to look at. Only the PNGs: the rest of the artifact (the report, the test API's
+      # log) was written by the pull request's code. None when CI had no browser job.
+      - name: Load the browser screenshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ needs.select.outputs.ci_run }}
+        run: |
+          mkdir -p screenshots
+          [ -n "$CI_RUN" ] || { echo "No CI run to take screenshots from."; exit 0; }
+          gh run download "$CI_RUN" -R "$GITHUB_REPOSITORY" -n browser-tests -D "$RUNNER_TEMP/browser-tests" ||
+            { echo "No browser-tests artifact on run $CI_RUN."; exit 0; }
+          src="$RUNNER_TEMP/browser-tests/screenshots"
+          [ -d "$src" ] || exit 0
+          # <project>/<name>.png, with plain names only: nothing else is copied.
+          find "$src" -mindepth 2 -maxdepth 2 -type f -name '*.png' | while read -r file; do
+            project=$(basename "$(dirname "$file")")
+            name=$(basename "$file")
+            [[ "$project/$name" =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+\.png$ ]] || continue
+            mkdir -p "screenshots/$project"
+            cp "$file" "screenshots/$project/$name"
+          done
+          echo "$(find screenshots -name '*.png' | wc -l) screenshots."
       - name: Review
         id: claude
         uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
@@ -151,7 +189,8 @@ jobs:
           allowed_bots: claude[bot]
           prompt: |
             Review pull request #${{ env.PR }} in ${{ github.repository }} at commit ${{ env.SHA }}.
-            Its code is checked out in ./pr/. Follow your instructions and return the structured output.
+            Its code is checked out in ./pr/, and its browser tests' screenshots are in ./screenshots/.
+            Follow your instructions and return the structured output.
           claude_args: >-
             --model claude-opus-5-5
             --max-turns 60
