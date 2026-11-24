@@ -436,7 +436,10 @@ describe('without a GitHub App', () => {
     expect(t.sentEmails.filter((email) => email.to === OWNER)[0]?.text).toContain(
       'GitHub issue: not opened: no GitHub App is configured',
     );
-    expect(lines.some((line) => line.includes('GitHub issue skipped'))).toBe(true);
+    // The line names the report whose issue wasn't opened, so the owner can open it by hand.
+    const skipped = lines.find((line) => line.includes('GitHub issue skipped'));
+
+    expect(skipped).toContain(`User report ${(await storedReports(t))[0]?.id}`);
   });
 });
 

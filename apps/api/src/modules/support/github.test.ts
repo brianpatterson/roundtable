@@ -1,10 +1,13 @@
 // The GitHub issues client against a scripted fetch: what it sends, and how it fails.
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { Cause, Effect, ErrorReporter, Exit, Redacted, Schema } from 'effect';
+import { it as itEffect } from '@effect/vitest';
+import { Cause, Effect, ErrorReporter, Exit, Fiber, Redacted, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/http';
+import { TestClock } from 'effect/testing';
 import {
   GitHubAppKeyInvalid,
+  GitHubIssues,
   IssueOpenFailed,
   appJwt,
   makeGitHubIssues,
@@ -110,7 +113,25 @@ describe('GitHub issues client', () => {
     expect(issueRequest?.headers.get('authorization')).toBe('Bearer ghs_installation');
     expect(issueRequest?.headers.get('accept')).toBe('application/vnd.github+json');
     expect(issueRequest?.headers.get('user-agent')).toBe('roundtable-api');
+    expect(issueRequest?.headers.get('x-github-api-version')).toBe('2022-11-28');
     expect(issueRequest?.body).toEqual(issue);
+  });
+
+  it('signs the token request with a JWT issued now, in seconds', async () => {
+    const { fetch, sent } = scriptedFetch({});
+    const before = Math.floor(Date.now() / 1000);
+
+    await open(fetch);
+
+    const jwt = sent[0]?.headers.get('authorization')?.replace('Bearer ', '') ?? '';
+
+    const payload = Schema.decodeUnknownSync(Schema.Struct({ iat: Schema.Finite }))(
+      decodeSegment(jwt.split('.')[1]),
+    );
+
+    // Issued a minute in the past, to allow for clock drift.
+    expect(payload.iat).toBeGreaterThanOrEqual(before - 60);
+    expect(payload.iat).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) - 60);
   });
 
   it('signs a JWT GitHub accepts: RS256, issued by the App, expiring within 10 minutes', () => {
@@ -236,8 +257,129 @@ describe('GitHub issues client', () => {
     );
 
     expect(unreachable).toBeInstanceOf(IssueOpenFailed);
+    expect(unreachable).toMatchObject({ message: expect.stringMatching(/^GitHub unreachable/) });
     expect(garbledToken).toMatchObject({ message: 'Unexpected answer from GitHub' });
     expect(garbledIssue).toMatchObject({ message: 'Unexpected answer from GitHub' });
+  });
+
+  it('names which request GitHub refused', async () => {
+    const refused = () => Response.json({ message: 'Server Error' }, { status: 500 });
+
+    expect(failureOf(await open(scriptedFetch({ token: refused }).fetch))).toMatchObject({
+      message: expect.stringMatching(/^GitHub refused the installation token \(HTTP 500\)/),
+    });
+    expect(failureOf(await open(scriptedFetch({ issue: refused }).fetch))).toMatchObject({
+      message: expect.stringMatching(/^GitHub refused the issue \(HTTP 500\)/),
+    });
+  });
+
+  it('treats a 3xx answer as a refusal, not a success', async () => {
+    const { fetch, sent } = scriptedFetch({
+      token: () => Response.json({ token: 'ghs_installation' }, { status: 300 }),
+    });
+
+    expect(failureOf(await open(fetch))).toMatchObject({ status: 300 });
+    expect(sent).toHaveLength(1);
+  });
+
+  it('quotes at most the first 500 characters of a refusal', async () => {
+    const long = `${'a'.repeat(500)}${'z'.repeat(1500)}`;
+
+    const failure = failureOf(
+      await open(scriptedFetch({ token: () => new Response(long, { status: 500 }) }).fetch),
+    );
+
+    expect(failure).toMatchObject({ message: expect.stringContaining('a'.repeat(500)) });
+    expect(failure).toMatchObject({ message: expect.not.stringContaining('z') });
+  });
+
+  it('still fails with GitHub’s status when its answer cannot be read', async () => {
+    const unreadable = () =>
+      new Response(
+        new ReadableStream({
+          pull: (controller) => controller.error(new Error('connection reset')),
+        }),
+        { status: 502 },
+      );
+
+    const failure = failureOf(await open(scriptedFetch({ token: unreadable }).fetch));
+
+    expect(failure).toBeInstanceOf(IssueOpenFailed);
+    expect(failure).toMatchObject({
+      status: 502,
+      message: 'GitHub refused the installation token (HTTP 502): ',
+    });
+  });
+
+  it.each([
+    ['the token', { token: () => Response.json({ expires_at: '2026-01-01' }, { status: 201 }) }],
+    ['the issue', { issue: () => Response.json({ number: 7 }, { status: 201 }) }],
+  ])('fails when GitHub’s answer to %s lacks what is used from it', async (_, answers) => {
+    expect(failureOf(await open(scriptedFetch(answers).fetch))).toMatchObject({
+      message: 'Unexpected answer from GitHub',
+    });
+  });
+
+  it('fails with errors callers can handle by tag', async () => {
+    const recovered = await Effect.runPromise(
+      makeGitHubIssues(options(pem)).pipe(
+        Effect.flatMap((issues) => issues.open(issue)),
+        Effect.as('opened'),
+        Effect.catchTag('IssueOpenFailed', () => Effect.succeed('issue failed')),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(
+          FetchHttpClient.Fetch,
+          scriptedFetch({ token: () => new Response('', { status: 401 }) }).fetch,
+        ),
+      ),
+    );
+
+    const badKey = await Effect.runPromise(
+      makeGitHubIssues(options('not-a-key')).pipe(
+        Effect.as('built'),
+        Effect.catchTag('GitHubAppKeyInvalid', () => Effect.succeed('key invalid')),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, scriptedFetch({}).fetch),
+      ),
+    );
+
+    expect([recovered, badKey]).toEqual(['issue failed', 'key invalid']);
+  });
+
+  itEffect.effect('gives up after 10 seconds without an answer', () =>
+    Effect.gen(function* () {
+      // Answers nothing until the request is abandoned.
+      const silent: typeof globalThis.fetch = (_, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+
+      const opening = yield* makeGitHubIssues(options(pem)).pipe(
+        Effect.flatMap((issues) => issues.open(issue)),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, silent),
+        Effect.exit,
+        Effect.forkChild,
+      );
+
+      yield* TestClock.adjust('10 seconds');
+
+      const failure = failureOf(yield* Fiber.join(opening));
+
+      expect(failure).toBeInstanceOf(IssueOpenFailed);
+      expect(failure).toMatchObject({ message: expect.stringMatching(/timed out/) });
+    }),
+  );
+
+  it('fails with a message when a test’s capture rejects with something other than an Error', async () => {
+    const exit = await Effect.runPromiseExit(
+      GitHubIssues.use((issues) => issues.open(issue)).pipe(
+        Effect.provide(GitHubIssues.fromPromise(() => Promise.reject('not an Error'))),
+      ),
+    );
+
+    expect(failureOf(exit)).toBeInstanceOf(IssueOpenFailed);
+    expect(failureOf(exit)).toMatchObject({ message: expect.stringMatching(/failed/) });
   });
 
   it('reports only where it failed and GitHub’s status', () => {
