@@ -92,8 +92,8 @@ while read -r pick; do
       "\n\nLine numbers are from the run; the code may have moved since. Confirm with the command below.\n\n" +
       "### Acceptance criteria\n\n" +
       "- Given each mutant above, then a test fails when it is applied, through behavior a user or caller can see. " +
-      "Or, if no test could tell it from the original (an equivalent mutant), a `// Stryker disable next-line <Mutator>: <why it is equivalent>` comment sits on the line above it.\n" +
-      "- Given `pnpm --filter \($package) test:mutation --mutate \($file) --force`, then none of the mutants above is reported `Survived` or `NoCoverage`.\n" +
+      "Or, if no test could tell it from the original (an equivalent mutant), a `// Stryker disable next-line <Mutator>: <why it is equivalent>` comment sits on the line above it, or the pull request names it as equivalent where a disable would also hide a mutant a test kills (ADR-0068).\n" +
+      "- Given `pnpm --filter \($package) test:mutation --mutate \($file) --force`, then none of the mutants above is reported `Survived` or `NoCoverage`, apart from those the pull request names as left alive, each with why.\n" +
       "- Given the diff, then it changes only test files, plus Stryker disable comments in `\($path)`.\n" +
       "- Given `pnpm check`, then it passes.\n\n" +
       "### Modules touched\n\nTests for `\($path)`.\n\n" +

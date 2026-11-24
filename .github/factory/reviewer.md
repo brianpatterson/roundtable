@@ -61,9 +61,14 @@ the owner always merges.
 6. **Mutation tickets** (a ticket labeled `mutation`, [ADR-0051](../../docs/adr/0051-nightly-mutation-tickets.md)).
    The nightly run labeled it `ready`, not the owner, because it asks only for tests. Check the
    diff stays that way: outside test files, nothing but Stryker disable comments
-   (`// Stryker disable next-line <Mutator>: <reason>`). Any other source change is **blocking**.
-   So is `disable all`, a disable without `next-line`, or one with no reason. For each disable, ask whether the mutant really is
-   equivalent (no test could tell it apart); if a test could kill it, that's **blocking** too. For
+   (`// Stryker disable next-line <Mutator>: <reason>`, or a `disable <Mutator>: <reason>` and
+   `restore <Mutator>` pair where a `next-line` comment can't reach,
+   [ADR-0068](../../docs/adr/0068-mutation-disables-that-would-hide-too-much.md)). Any other source
+   change is **blocking**, code moved to make room for a comment included. So is `disable all`, a
+   disable that names no mutator, or one with no reason. For each disable, ask whether every
+   mutant it silences really is equivalent (no test could tell it apart); if a test could kill
+   one, that's **blocking** too. An equivalent mutant left alive and named, because its disable
+   would hide a killable one, meets the ticket: check its reason, and raise no finding for it. For
    each new test, ask whether it checks behavior a user or caller sees, or only pins an
    implementation detail to kill a mutant (a class name, a call count, a log string). The second
    is **minor**, and should have been left alive and named instead.
