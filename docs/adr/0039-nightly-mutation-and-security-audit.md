@@ -1,6 +1,6 @@
 # 0039. Run mutation testing and the security audit nightly, not per pull request or weekly
 
-- **Status:** Accepted, amended by [0057](0057-leave-mutation-testing-to-the-nightly-run.md), [0062](0062-incremental-nightly-mutation-testing.md)
+- **Status:** Accepted, amended by [0057](0057-leave-mutation-testing-to-the-nightly-run.md), [0062](0062-incremental-nightly-mutation-testing.md), [0069](0069-stryker-on-mutation-pull-requests.md)
 - **Date:** 2026-11-20
 - **Amends:** [ADR-0027](0027-mutation-testing-stryker.md) (mutation testing on pull requests),
   [ADR-0036](0036-weekly-security-audit.md) (a weekly audit)

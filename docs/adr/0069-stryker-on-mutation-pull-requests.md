@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-24
+- **Amends:** [ADR-0039](0039-nightly-mutation-and-security-audit.md) (no mutation testing on pull requests)
 
 ## Context
 
