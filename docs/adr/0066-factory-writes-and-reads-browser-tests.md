@@ -57,7 +57,8 @@ and focus included, and passes each new page or dialog to `expectAccessible` and
 
 The reviewer's `select` job records the CI run that passed on the commit. The review job
 downloads that run's `browser-tests` artifact and copies only the PNGs with plain
-`<project>/<name>.png` names into `./screenshots/`. The reviewer looks at them with Read,
+`<project>/<name>.png` names into `./screenshots/`, at most 64 of at most 5 MB each, through
+main's `load-screenshots.sh` (tested by `test-load-screenshots.sh`). The reviewer looks at them with Read,
 checks that UI changes come with browser tests, and leaves out of "Check by hand" what the
 tests and screenshots already cover (`reviewer.md`, item 7).
 
@@ -73,7 +74,9 @@ tests and screenshots already cover (`reviewer.md`, item 7).
   this repository, and the rest of `apps/web/test-results/` holds the test user's session cookie
   and the test API's log. A failed test's trace, kept in the report for debugging, still records
   that cookie in its network requests. It belongs to a throwaway user on a server that's gone when
-  the job ends.
+  the job ends. That stops holding if the browser tests ever run against a long-lived
+  server (staging, or a shared preview): then the trace leaves the report too, or the job uploads
+  only screenshots.
 - Each agent job spends about 30 to 60 seconds installing Chromium, every run, UI change or not.
 - The reviewer reads images made by the pull request's code. Text in them is data, like the
   code (`reviewer.md`). Only PNGs are copied, never the HTML report or the test API's log.

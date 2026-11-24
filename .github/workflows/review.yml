@@ -131,7 +131,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Load the secret guard, the denial report and the poster from main
-        run: cp .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/post-review.sh "$RUNNER_TEMP/"
+        run: cp .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/post-review.sh .github/factory/load-screenshots.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
       # The pull request's code, to read. Nothing in it is installed or run.
       - uses: actions/checkout@v7
@@ -152,8 +152,8 @@ jobs:
             > rework/replies.md
 
       # The screenshots the browser tests took on this commit (ADR-0065, ADR-0066), for the
-      # reviewer to look at. Only the PNGs: the rest of the artifact (the report, the test API's
-      # log) was written by the pull request's code. None when CI had no browser job.
+      # reviewer to look at. Main's load-screenshots.sh copies only plainly named PNGs, capped:
+      # the artifact was written by the pull request's code. None when CI had no browser job.
       - name: Load the browser screenshots
         env:
           GH_TOKEN: ${{ github.token }}
@@ -163,17 +163,7 @@ jobs:
           [ -n "$CI_RUN" ] || { echo "No CI run to take screenshots from."; exit 0; }
           gh run download "$CI_RUN" -R "$GITHUB_REPOSITORY" -n browser-tests -D "$RUNNER_TEMP/browser-tests" ||
             { echo "No browser-tests artifact on run $CI_RUN."; exit 0; }
-          src="$RUNNER_TEMP/browser-tests/screenshots"
-          [ -d "$src" ] || exit 0
-          # <project>/<name>.png, with plain names only: nothing else is copied.
-          find "$src" -mindepth 2 -maxdepth 2 -type f -name '*.png' | while read -r file; do
-            project=$(basename "$(dirname "$file")")
-            name=$(basename "$file")
-            [[ "$project/$name" =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+\.png$ ]] || continue
-            mkdir -p "screenshots/$project"
-            cp "$file" "screenshots/$project/$name"
-          done
-          echo "$(find screenshots -name '*.png' | wc -l) screenshots."
+          "$RUNNER_TEMP/load-screenshots.sh" "$RUNNER_TEMP/browser-tests" screenshots
       - name: Review
         id: claude
         uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284

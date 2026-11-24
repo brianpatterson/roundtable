@@ -79,6 +79,9 @@ the owner always merges.
    - **Check by hand** lists only what neither the tests nor the screenshots show: hover and
      animation, a real screen reader, another browser (the tests run Chromium only), and
      anything the screenshots don't cover. Say exactly what to try.
+     Otherwise, and for anything else in the change, list under **Check by hand** what only a
+     human or a real run can judge (a workflow's first run, a deploy, a change to production), and
+     say exactly what to try.
 8. **What the user reads.** Every message the change shows a user is in plain words, its own:
    "Enter a tag.", not Effect Schema's "must not be blank, at [\"tag\"]". A test that expects a
    library's wording ("must not be blank", "at [", "Expected …") as text the user sees is
