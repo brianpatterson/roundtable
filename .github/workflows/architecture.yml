@@ -1,6 +1,8 @@
-# The factory's weekly architecture review (ADR-0031): an agent runs Matt Pocock's
+# The factory's architecture review (ADR-0031, ADR-0067): an agent runs Matt Pocock's
 # improve-codebase-architecture skill (vendored in .github/factory/skills/) over the code that
-# changed recently, unattended, and writes the skill's HTML report. Each `Strong` candidate becomes
+# changed recently, unattended, and writes the skill's HTML report. Retro starts it when a spec's
+# batch closes; the Monday run is a backstop that skips itself when main hasn't changed since the
+# last review. Each `Strong` candidate becomes
 # an `architecture` issue in the ticket form's shape; the owner labels it `ready` to have the
 # implementer build it, or closes it with a reason so the next run doesn't suggest it again.
 #
@@ -12,6 +14,11 @@ on:
   schedule:
     - cron: '17 7 * * 1' # Mondays
   workflow_dispatch:
+    inputs:
+      spec:
+        description: The spec (parent issue) whose batch just closed, set by Retro. Empty runs the review even if main hasn't changed.
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -21,7 +28,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # lists the earlier reviews
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/factory
+      - name: Has main changed since the last review?
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SPEC: ${{ inputs.spec }}
+          SHA: ${{ github.sha }}
+        run: .github/factory/select-architecture.sh "$EVENT" "$SHA" "$SPEC"
+
   review:
+    needs: select
+    if: needs.select.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: factory
@@ -33,8 +64,8 @@ jobs:
         with:
           fetch-depth: 0 # the skill reads the commit history to find hot spots
           persist-credentials: false
-      - name: Load the instructions, the secret guard and the denial report from main
-        run: cp .github/factory/architect.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
+      - name: Load the instructions, the secret guard, the denial report and the issue finder from main
+        run: cp .github/factory/architect.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/find-architecture-issue.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
 
       - name: Review the architecture
@@ -48,8 +79,8 @@ jobs:
           # some events, ADR-0026).
           github_token: ${{ github.token }}
           prompt: |
-            Run this week's architecture review of ${{ github.repository }}, following your instructions,
-            and return the structured output.
+            Run an architecture review of ${{ github.repository }}${{ inputs.spec && format(', now that the batch of spec #{0} has landed', inputs.spec) || '' }},
+            following your instructions, and return the structured output.
           claude_args: >-
             --model claude-opus-5-5
             --max-turns 100
@@ -92,6 +123,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ORIGIN: "${{ inputs.spec && format('after the batch of #{0} closed', inputs.spec) || github.event_name == 'schedule' && 'weekly' || 'started by hand' }}"
         run: |
           "$RUNNER_TEMP/guard-secrets.sh" <<<"$RESULT" || exit 1
 
@@ -107,14 +139,15 @@ jobs:
 
           jq -c '.candidates[] | select(.strength == "Strong")' <<<"$RESULT" | while read -r candidate; do
             title="Architecture: $(jq -r .title <<<"$candidate")"
-            existing=$(gh issue list -R "$GITHUB_REPOSITORY" --label architecture --state open \
-              --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+            # The weekly and per-batch runs can both find a candidate (ADR-0067): skip one an open
+            # issue tracks, or one closed in the last 30 days, by exact title.
+            existing=$("$RUNNER_TEMP/find-architecture-issue.sh" "$title")
             if [ -n "$existing" ]; then
-              echo "#$existing already tracks \"$title\"."
+              echo "#$existing already tracks \"$title\", or closed it in the last 30 days."
               continue
             fi
 
-            body=$(jq -r --arg run "$RUN_URL" '
+            body=$(jq -r --arg run "$RUN_URL" --arg origin "$ORIGIN" '
               "### Problem\n\n\(.problem)\n\n" +
               "### Proposed change\n\n\(.solution)\n\n" +
               "### Benefits\n\n\(.benefits)\n\n" +
@@ -129,7 +162,7 @@ jobs:
               "### Out of scope\n\n\(.out_of_scope)\n\n" +
               "### Docs impact\n\nAn ADR if this changes a module'"'"'s interface across modules or departs from an existing ADR; `docs/architecture.md` if components move." +
               (if (.glossary | length) > 0 then " Proposed `GLOSSARY.md` entries:\n\n" + (.glossary | map("- \(.)") | join("\n")) else "" end) +
-              "\n\n<sub>From the weekly architecture review ([run](\($run)), ADR-0031). Not labeled `ready`: that is the owner'"'"'s call.</sub>"
+              "\n\n<sub>From the architecture review run \($origin) ([run](\($run)), ADR-0031, ADR-0067). Not labeled `ready`: that is the owner'"'"'s call.</sub>"
             ' <<<"$candidate")
 
             "$RUNNER_TEMP/guard-secrets.sh" <<<"$body" || continue
