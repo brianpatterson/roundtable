@@ -71,6 +71,15 @@ let outcomes: unknown[];
 /** While set, the server waits for it before answering a request to set an Outcome. */
 let outcomeHeld: Promise<void> | undefined;
 
+/** While set, the server waits for it before answering a request to list the Rounds. */
+let listHeld: Promise<void> | undefined;
+
+/** What the server answers a request to list the Rounds with, unless it's the default. */
+let failList: number | undefined;
+
+/** While set, the server waits for it before answering a request to reschedule or delete a Round. */
+let writeHeld: Promise<void> | undefined;
+
 const roundId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 const notFound = (tag: string) => Response.json({ _tag: tag }, { status: 404 });
@@ -92,7 +101,13 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
     });
   }
 
-  if (request.method === 'GET' && pathname === ROUNDS_PATH) return Response.json(stored);
+  if (request.method === 'GET' && pathname === ROUNDS_PATH) {
+    await listHeld;
+
+    if (failList) return new Response(null, { status: failList });
+
+    return Response.json(stored);
+  }
 
   if (request.method === 'POST' && pathname === ROUNDS_PATH) {
     if (failWrites) return new Response(null, { status: failWrites });
@@ -168,6 +183,8 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   }
 
   if (request.method === 'PUT' && pathname.endsWith('/schedule')) {
+    await writeHeld;
+
     if (failWrites) return new Response(null, { status: failWrites });
 
     const id = pathname.slice(ROUNDS_PATH.length + 1, -'/schedule'.length);
@@ -231,6 +248,8 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   }
 
   if (request.method === 'DELETE' && pathname.startsWith(`${ROUNDS_PATH}/`)) {
+    await writeHeld;
+
     if (failWrites) return new Response(null, { status: failWrites });
 
     const id = pathname.slice(ROUNDS_PATH.length + 1);
@@ -273,6 +292,9 @@ beforeEach(() => {
   ratings = [];
   outcomes = [];
   outcomeHeld = undefined;
+  listHeld = undefined;
+  failList = undefined;
+  writeHeld = undefined;
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -372,6 +394,20 @@ const openScheduleDialog = async (name: string) => {
 
   return dialog;
 };
+
+/** A request the server holds until `release` is called, e.g. `listHeld`. */
+const hold = () => {
+  let release = () => {};
+
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return { held, release };
+};
+
+/** The page's Rounds section. */
+const roundsRegion = () => screen.getByRole('region', { name: 'Rounds' });
 
 const openDeleteDialog = async (name: string) => {
   await userEvent.click(await screen.findByRole('button', { name: `Delete ${name}` }));
@@ -519,6 +555,86 @@ describe('Rounds on an application’s page', () => {
       'Something went wrong. Please try again.',
     );
     expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('closes the delete dialog with Escape, keeping the Round', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+    await openDeleteDialog('Coding 1');
+
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(stored).toHaveLength(1);
+    expect(await listed()).toEqual(['Coding 1']);
+  });
+
+  it('stays open on Escape while deleting, so a failure still shows', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openDeleteDialog('Coding 1');
+    const { held, release } = hold();
+
+    writeHeld = held;
+    failWrites = 500;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await userEvent.keyboard('{Escape}');
+    release();
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('opens the delete dialog again without the last failure', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    let dialog = await openDeleteDialog('Coding 1');
+
+    failWrites = 500;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await within(dialog).findByRole('alert');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    dialog = await openDeleteDialog('Coding 1');
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+  });
+
+  it('shows the Rounds are loading until the server answers', async () => {
+    const { held, release } = hold();
+
+    listHeld = held;
+    await renderPage();
+
+    expect(within(roundsRegion()).getByText('Loading rounds…')).toBeDefined();
+
+    release();
+
+    expect(await within(roundsRegion()).findByText('No rounds yet.')).toBeDefined();
+    expect(within(roundsRegion()).queryByText('Loading rounds…')).toBeNull();
+  });
+
+  it('says why the Rounds couldn’t be loaded', async () => {
+    failList = 500;
+    await renderPage();
+
+    expect((await within(roundsRegion()).findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(within(roundsRegion()).queryByText('Loading rounds…')).toBeNull();
+  });
+
+  it('adds a Round without the browser submitting the form and leaving the page', async () => {
+    await renderPage();
+
+    // `fireEvent` returns false when the page cancelled the browser's own handling of the event.
+    expect(fireEvent.submit(addForm())).toBe(false);
+    await waitFor(async () => expect(await listed()).toEqual(['Recruiter screen 1']));
   });
 });
 
@@ -897,14 +1013,84 @@ describe('a Round’s schedule', () => {
     await renderPage();
 
     const dialog = await openScheduleDialog('Coding 1');
+    const server = vi.fn(fakeServer);
 
+    vi.stubGlobal('fetch', server);
     await pickWhen(dialog, 'At a time');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     expect((await within(dialog).findByRole('alert')).textContent).toBe(
       'Enter the date and time it starts.',
     );
+    expect(server.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
     expect(scheduled).toEqual([]);
+  });
+
+  it('closes the editor with Escape, sending nothing', async () => {
+    stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Take-home 1');
+
+    fill(dialog, 'Due date', '2026-12-05');
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(scheduled).toEqual([]);
+    expect(await whenListed()).toEqual(['Due Dec 1, 2026']);
+  });
+
+  it('stays open on Escape while saving, so a failure still shows', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    const dialog = await openScheduleDialog('Coding 1');
+    const { held, release } = hold();
+
+    writeHeld = held;
+    failWrites = 500;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await userEvent.keyboard('{Escape}');
+    release();
+
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Something went wrong. Please try again.',
+    );
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('opens the editor again without the last failure', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    let dialog = await openScheduleDialog('Coding 1');
+
+    failWrites = 500;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await within(dialog).findByRole('alert');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    dialog = await openScheduleDialog('Coding 1');
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+  });
+
+  it('opens the editor again without the last message about what’s missing', async () => {
+    stored = [round(1, 'coding')];
+    await renderPage();
+
+    let dialog = await openScheduleDialog('Coding 1');
+
+    await pickWhen(dialog, 'At a time');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await within(dialog).findByRole('alert');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    dialog = await openScheduleDialog('Coding 1');
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
   });
 
   it.each([
