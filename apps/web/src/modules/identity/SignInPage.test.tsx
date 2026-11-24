@@ -139,6 +139,7 @@ describe('SignInPage: submitting', () => {
       await userEvent.type(screen.getByLabelText('Password'), 'correct horse');
       await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
+      await waitFor(() => expect(sent).toHaveLength(1));
       expect(browserSubmits).toBe(false);
     } finally {
       document.removeEventListener('submit', onSubmit);
