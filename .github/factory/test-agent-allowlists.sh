@@ -6,7 +6,7 @@
 . "$(dirname "$0")/testlib.sh"
 
 workflows="$here/../workflows"
-checks=(typecheck check:effect check:deps check:adrs check:boundaries)
+checks=(check:format typecheck check:effect check:deps check:adrs check:boundaries)
 seen=0
 
 for file in "$workflows"/*.yml; do

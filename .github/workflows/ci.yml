@@ -45,7 +45,7 @@ jobs:
       - name: Lint
         run: pnpm lint
       - name: Format
-        run: pnpm prettier --check .
+        run: pnpm check:format
       - name: Typecheck
         run: pnpm typecheck
       # Every shell script in the repo, the factory's guards included. .shellcheckrc lists the
@@ -70,6 +70,8 @@ jobs:
         run: pnpm check:adrs
       - name: ADR check fixtures
         run: scripts/test-check-adrs.sh
+      - name: Format check in the agent sandbox
+        run: scripts/test-check-format.sh
       # Every .github/factory/test-*.sh, so a new one runs without being listed here. Each
       # script's header names what it pins and the ADR behind it. All run, then the step fails if
       # any did, with one error line per failed script.

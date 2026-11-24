@@ -18,7 +18,8 @@
     "check:effect": "scripts/check-effect.sh",
     "check:boundaries": "node scripts/check-boundaries.ts",
     "check:adrs": "node scripts/check-adrs.ts",
-    "check": "pnpm lint && prettier --check . && pnpm typecheck && pnpm check:effect && pnpm check:deps && pnpm check:adrs && pnpm check:boundaries && pnpm test"
+    "check:format": "scripts/check-format.sh",
+    "check": "pnpm lint && pnpm check:format && pnpm typecheck && pnpm check:effect && pnpm check:deps && pnpm check:adrs && pnpm check:boundaries && pnpm test"
   },
   "devDependencies": {
     "@effect/tsgo": "0.73.2",
