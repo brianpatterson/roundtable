@@ -207,8 +207,10 @@ review, so stay inside it:
   The reason ends up in the report. Never `disable all`, never a disable without `next-line`, and
   never `mutator.excludedMutations` in the config: those hide real survivors along with the one.
 - **Confirm each kill with Stryker, on that file alone:**
-  `pnpm --filter @roundtable/web test:mutation --mutate src/path/File.tsx` (or `@roundtable/api`,
-  whose run takes a few minutes; add `:<from>-<to>` lines to narrow it). Its
+  `pnpm --filter @roundtable/web test:mutation --mutate src/path/File.tsx --force` (or
+  `@roundtable/api`, whose run takes a few minutes; add `:<from>-<to>` lines to narrow it).
+  `--force` tests every mutant again: without it, a rerun reuses the last run's result for mutants
+  no test covers directly and can report a survivor your new test already kills (PR 203). Its
   `reports/mutation/mutation.json` shows what's still `Survived` or `NoCoverage`. The ticket's line
   numbers are from last night's run; go by the mutator and replacement if the code has moved.
 - **The pull request** names, for every listed mutant, the test that kills it, the disable comment that
