@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { API_LOG, SCREENSHOTS_DIR } from './paths';
 
 /**
@@ -22,8 +22,20 @@ export async function screenshotThemes(page: Page, testInfo: TestInfo, name: str
   await page.emulateMedia({ colorScheme: null });
 }
 
-/** Fails on any WCAG 2.2 A or AA violation axe finds on the page as it is now. */
+/**
+ * Fails on any WCAG 2.2 A or AA violation axe finds on the page as it is now, in the light and
+ * the dark theme (contrast differs between them).
+ */
 export async function expectAccessible(page: Page) {
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await test.step(`axe, ${colorScheme} theme`, () => expectAccessibleNow(page));
+  }
+
+  await page.emulateMedia({ colorScheme: null });
+}
+
+async function expectAccessibleNow(page: Page) {
   // Mid fade-in, text is translucent and axe reports it as low contrast (a dialog opening).
   // An endless animation (a spinner) never finishes, so it doesn't count.
   await page.waitForFunction(() =>

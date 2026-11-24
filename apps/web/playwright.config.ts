@@ -72,8 +72,11 @@ export default defineConfig({
         GITHUB_ISSUES_PRIVATE_KEY: '',
         GITHUB_ISSUES_REPOSITORY: '',
         REPORTS_EMAIL: '',
+        FACTORY_REPORTS_TOKEN: '',
         GITHUB_CLIENT_ID: '',
+        GITHUB_CLIENT_SECRET: '',
         GOOGLE_CLIENT_ID: '',
+        GOOGLE_CLIENT_SECRET: '',
       },
     },
     {

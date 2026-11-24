@@ -45,7 +45,7 @@ and in CI's `browser` job.
 - Two projects: `desktop` (Desktop Chrome) and `phone` (Pixel 7, also Chromium, so CI installs
   one browser).
 - Tests use three helpers from `e2e/support.ts`. `expectAccessible` fails on any WCAG 2.2 A/AA
-  violation axe finds, after animations settle. `screenshotThemes` saves full-page screenshots
+  violation axe finds, in the light and the dark theme, after animations settle. `screenshotThemes` saves full-page screenshots
   in light and dark themes. `confirmationLink` reads the emailed link.
 - Screenshots are not compared to baselines. They go to the `browser-tests` artifact (with the
   HTML report, traces of failures and the API log) for a person or the reviewer to look at.
@@ -55,6 +55,8 @@ and in CI's `browser` job.
 - Focus, keyboard, layout at two widths, both themes and automated accessibility are now
   checkable on every PR, with no secrets and no new production access.
 - A second Postgres-backed CI job, about two minutes, in parallel with `check`.
+- Until the factory's part lands, the CI fixer can't run these tests (no Chromium in its job), so
+  a factory PR that breaks the `browser` job will likely end `needs-human`.
 - CSP and other Caddy headers are still untested. Option 2 is the upgrade if that bites.
 - Next (a separate change): the implementer writes browser tests for UI changes, its job
   installs Chromium before the agent runs (`node_modules` is read-only there, ADR-0050), and the
