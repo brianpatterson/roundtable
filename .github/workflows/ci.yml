@@ -151,7 +151,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: browser-tests
-          path: apps/web/e2e/.output/
+          path: apps/web/test-results/
           retention-days: 14
 
   # The production images must build. They're not pushed here; the deploy pipeline does that.
