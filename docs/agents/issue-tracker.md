@@ -32,6 +32,20 @@ that has been deployed. So:
 - Once a ticket is labeled, don't edit its title or description; an edit by anyone but the owner
   removes `ready` until the owner rereads it.
 
+## A batch: a spec and its tickets
+
+A set of tickets cut from one spec (`to-spec`, then `to-tickets`) is a **batch**: publish the spec
+as an issue first, then add every ticket as a GitHub sub-issue of it. When the last sub-issue
+closes, the factory runs the batch retrospective and closes the spec
+([ADR-0064](../adr/0064-factory-retro-per-batch.md)). So:
+
+- The spec gets **no** label: never `ready`, since it isn't built itself, and no pull request
+  says `Closes` it.
+- **Add a sub-issue**: `gh api --method POST repos/brianpatterson/roundtable/issues/<spec>/sub_issues -F sub_issue_id=<ticket-db-id>`,
+  with the ticket's database id as for a blocking edge (below). Sub-issues say which batch a
+  ticket belongs to; blocking edges still decide the build order.
+- Tickets published without a spec get no retrospective.
+
 ## Writing a ticket
 
 Write the body with the headings of the issue forms in `.github/ISSUE_TEMPLATE/`, since the

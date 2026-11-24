@@ -1,0 +1,196 @@
+# The factory's batch retrospective (ADR-0064): when the last ticket of a batch closes (a spec's
+# parent issue and its sub-issues), an agent reads how the factory built them, including each
+# agent run's trail, and suggests improvements to the factory's environment. A deterministic step
+# publishes them as one `retro` issue, comments on the spec and closes it. The owner splits out
+# the findings worth building; the retro issue is never labeled `ready`.
+#
+# Four jobs, so the agent holds nothing it doesn't need: `select` decides, `gather` collects the
+# evidence with read access to issues, pull requests and artifacts, `retro` runs the agent with
+# only `contents: read`, and `publish` writes the issue with no agent.
+name: Retro
+
+on:
+  issues:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      parent:
+        description: The spec (parent issue) whose batch to review, even if it is already closed
+        type: number
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      parent: ${{ steps.select.outputs.parent }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Is a batch done?
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          PARENT: ${{ inputs.parent }}
+        run: |
+          if [ -n "$PARENT" ]; then
+            .github/factory/select-retro.sh --parent "$PARENT"
+          else
+            .github/factory/select-retro.sh --issue "$ISSUE"
+          fi
+
+  gather:
+    needs: select
+    if: needs.select.outputs.parent != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: read # the agent trails are artifacts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Gather the batch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARENT: ${{ needs.select.outputs.parent }}
+        run: .github/factory/gather-retro.sh "$PARENT" "$RUNNER_TEMP/retro"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retro-evidence
+          path: ${{ runner.temp }}/retro/
+          retention-days: 7
+
+  retro:
+    needs: [select, gather]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: factory
+    # One retrospective per batch at a time: two tickets closing together both find it done.
+    concurrency:
+      group: retro-${{ needs.select.outputs.parent }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # it reads the pull requests' merge commits
+          persist-credentials: false
+      - name: Load the instructions, the secret guard and the denial report from main
+        run: cp .github/factory/retro.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
+      - uses: actions/download-artifact@v8
+        with:
+          name: retro-evidence
+          path: .retro
+      - uses: ./.github/actions/isolate-agent
+
+      - name: Review the batch
+        id: claude
+        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' # ADR-0029; also forces explicit tool rules
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # It only reads the checkout, so the job's own token is enough (as in the architecture review).
+          github_token: ${{ github.token }}
+          prompt: |
+            The factory finished the batch of spec #${{ needs.select.outputs.parent }}. Its evidence is
+            in .retro/. Run the retrospective, following your instructions, and return the structured output.
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 100
+            --permission-mode default
+            --append-system-prompt-file ${{ runner.temp }}/retro.md
+            --allowedTools "Read,Glob,Grep,Task,Agent,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(ls:*)"
+            --disallowedTools "WebFetch,WebSearch,Read(./.git/**),Grep(./.git/**),Glob(./.git/**)"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["summary","findings"],"properties":{"summary":{"type":"string"},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["title","category","severity","evidence","change","files","acceptance_criteria"],"properties":{"title":{"type":"string"},"category":{"type":"string","enum":["navigation","automated-check","coding-standard","steering","no-op","tool-economy","information-access","ticket-writing","factory"]},"severity":{"type":"string","enum":["high","medium","low"]},"evidence":{"type":"array","items":{"type":"string"}},"change":{"type":"string"},"files":{"type":"array","items":{"type":"string"}},"acceptance_criteria":{"type":"array","items":{"type":"string"}}}}}}}'
+
+      - name: Explain a failed run
+        if: always() && steps.claude.outcome == 'failure'
+        run: |
+          file="$RUNNER_TEMP/claude-execution-output.json"
+          [ -f "$file" ] || { echo "::error::The retrospective failed before writing its output."; exit 0; }
+          reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // (.errors // [] | join(", "))) // "no result message"' "$file" | head -c 1000)
+          echo "::error::The retrospective failed: $reason"
+
+      - name: Report denied tool calls
+        id: denials
+        if: always()
+        run: '"$RUNNER_TEMP/report-denials.sh"'
+
+      # A suspicious run publishes nothing (ADR-0029).
+      - name: Stop a suspicious run
+        if: always() && steps.denials.outputs.suspicious == 'true'
+        run: |
+          echo "::error::The retrospective tried tool calls that reach for credentials or the factory's rules. Nothing was published; read the run."
+          exit 1
+
+  publish:
+    needs: [select, retro]
+    if: needs.retro.outputs.result != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Open the retro issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARENT: ${{ needs.select.outputs.parent }}
+          RESULT: ${{ needs.retro.outputs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          .github/factory/guard-secrets.sh <<<"$RESULT" || exit 1
+          spec=$(gh issue view "$PARENT" -R "$GITHUB_REPOSITORY" --json title,state)
+
+          body=$(jq -r --arg parent "$PARENT" --arg run "$RUN_URL" '
+            (.findings | sort_by({"high": 0, "medium": 1, "low": 2}[.severity])) as $findings |
+            "<!-- retro-of-#\($parent) -->\n## Retrospective of #\($parent)\n\n\(.summary)\n\n" +
+            (if ($findings | length) == 0 then "No findings.\n" else
+              "| # | Severity | Category | Finding |\n| --- | --- | --- | --- |\n" +
+              ([$findings | to_entries[] | "| \(.key + 1) | \(.value.severity) | \(.value.category) | \(.value.title) |"] | join("\n")) + "\n\n" +
+              ([$findings | to_entries[] | .value as $f |
+                "### \(.key + 1). \($f.title)\n\n**\($f.severity)**, \($f.category)\n\n\($f.change)\n\n" +
+                "**Evidence**\n\n" + ($f.evidence | map("- \(.)") | join("\n")) + "\n\n" +
+                (if ($f.files | length) > 0 then "**Files**\n\n" + ($f.files | map("- `\(.)`") | join("\n")) + "\n\n" else "" end) +
+                "**Acceptance criteria**\n\n" + ($f.acceptance_criteria | map("- \(.)") | join("\n")) + "\n"
+              ] | join("\n"))
+            end) +
+            "\n<sub>From the batch retrospective ([run](\($run)), ADR-0064). Not labeled `ready`: split out the findings worth building into tickets, and close this with a comment on the rest so the next retrospective knows.</sub>"
+          ' <<<"$RESULT")
+          .github/factory/guard-secrets.sh <<<"$body" || exit 1
+
+          gh label create retro -R "$GITHUB_REPOSITORY" --color 5319e7 \
+            --description "Findings from a batch retrospective (ADR-0064)" 2>/dev/null || true
+          title="Retro: $(jq -r .title <<<"$spec")"
+          url=$(gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --label retro --body "$body")
+          echo "Opened $url"
+          if [ "$(jq '.findings | length' <<<"$RESULT")" = 0 ]; then
+            gh issue close "$url" -R "$GITHUB_REPOSITORY" --reason completed
+          fi
+
+          # The batch is done: the spec closes with a pointer to what it taught.
+          if [ "$(jq -r .state <<<"$spec")" = OPEN ]; then
+            gh issue close "$PARENT" -R "$GITHUB_REPOSITORY" --reason completed --comment "Every ticket is closed. Retrospective: $url"
+          else
+            gh issue comment "$PARENT" -R "$GITHUB_REPOSITORY" --body "Retrospective: $url"
+          fi
