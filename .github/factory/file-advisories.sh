@@ -33,7 +33,8 @@ jq -c '{findings: [.findings[]? | select(type == "object") | {
 
 failed=0
 count=$(jq '.findings | length' "$work/findings.json")
-for i in $(seq 0 $((count - 1))); do
+# Not `seq 0 $((count - 1))`: on macOS, `seq 0 -1` counts down instead of printing nothing.
+for ((i = 0; i < count; i++)); do
   finding=$(jq -c ".findings[$i]" "$work/findings.json")
   title=$(jq -r '.title' <<<"$finding")
   # A finding without a title can't be filed or matched against earlier ones.

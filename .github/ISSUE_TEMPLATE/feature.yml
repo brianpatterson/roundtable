@@ -54,6 +54,15 @@ body:
       label: Design system components
       description: Existing components to use, or new ones the change needs (ADR-0024). "None" is fine.
   - type: textarea
+    id: shared-rules
+    attributes:
+      label: Shared rules
+      description: >-
+        A rule this ticket defines that other tickets will reuse (an order, a display name, a day
+        boundary), and the one place it should live, e.g. "Round order: one function in
+        packages/contract". For a ticket that changes such a rule, what already depends on it.
+        "None" is fine.
+  - type: textarea
     id: out-of-scope
     attributes:
       label: Out of scope

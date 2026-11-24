@@ -8,3 +8,14 @@ tools/oxlint/anti-slop/
 apps/api/drizzle/
 # Matt Pocock's architecture skills, vendored as-is for the factory (provenance in .github/factory/skills/UPSTREAM.md).
 .github/factory/skills/
+# Placeholders Claude Code's sandbox creates, unreadable, in the factory's checkout root
+# (retro #180): `prettier --check .` failed on them, so agents ran `pnpm check` piecemeal.
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.idea/
+/.mcp.json
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc

@@ -139,7 +139,7 @@ jobs:
         run: |
           cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
-            .github/factory/attempt.sh .github/factory/protected-changes.sh "$RUNNER_TEMP/"
+            .github/factory/attempt.sh .github/factory/protected-changes.sh .github/factory/renumber-adr-refs.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
       - uses: ./.github/actions/isolate-agent
         if: steps.current.outputs.stale != 'true'
@@ -231,9 +231,18 @@ jobs:
       # crash counts: the first is retried by the next run, the second goes to a human. From main,
       # like the guards: pinned by test-attempt.sh.
       - name: Check and report the attempt
+        id: attempt
         if: always() && steps.current.outputs.stale != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output || steps.failure.outputs.result }}
           REASON: ${{ steps.failure.outputs.reason }}
         run: '"$RUNNER_TEMP/attempt.sh" report conflict'
+
+      # Deterministic, since the agent can't edit the description: an ADR the resolver renumbered
+      # gets its new number there too, or the reviewer flags the stale one (retro #180).
+      - name: Renumber ADRs in the description
+        if: always() && steps.attempt.outputs.outcome == 'resolved'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"$RUNNER_TEMP/renumber-adr-refs.sh"'

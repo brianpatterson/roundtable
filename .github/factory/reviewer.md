@@ -61,6 +61,10 @@ the owner always merges.
    is **minor**, and should have been left alive and named instead.
 7. **What CI can't see.** Behavior worth checking in a browser (layout, focus, themes, mobile),
    and anything only a human can judge. Say exactly what to try.
+8. **What the user reads.** Every message the change shows a user is in plain words, its own:
+   "Enter a tag.", not Effect Schema's "must not be blank, at [\"tag\"]". A test that expects a
+   library's wording ("must not be blank", "at [", "Expected …") as text the user sees is
+   **blocking**, even when it passes: the user would be reading the library (retro #180).
 
 Also note real bugs you find on the way, with the input that triggers them. Skip style
 preferences the linters don't enforce.
