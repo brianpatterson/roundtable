@@ -25,8 +25,15 @@ export async function screenshotThemes(page: Page, testInfo: TestInfo, name: str
 /** Fails on any WCAG 2.2 A or AA violation axe finds on the page as it is now. */
 export async function expectAccessible(page: Page) {
   // Mid fade-in, text is translucent and axe reports it as low contrast (a dialog opening).
+  // An endless animation (a spinner) never finishes, so it doesn't count.
   await page.waitForFunction(() =>
-    document.getAnimations().every((animation) => animation.playState !== 'running'),
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== 'running' ||
+          animation.effect?.getTiming().iterations === Infinity,
+      ),
   );
 
   const results = await new AxeBuilder({ page })
@@ -47,25 +54,21 @@ export async function expectAccessible(page: Page) {
  * instead (one JSON line from Pino), so the test reads the link from the log, as a developer does.
  */
 export async function confirmationLink(email: string): Promise<string> {
-  let link: string | undefined;
+  const latestLink = async () =>
+    (await readFile(API_LOG, 'utf8'))
+      .split('\n')
+      .filter((line) => line.includes(email))
+      .map((line) => /https?:\/\/\S+verify-email\S+/.exec(line)?.[0])
+      .findLast((match) => match !== undefined);
 
   await expect
-    .poll(
-      async () => {
-        const log = await readFile(API_LOG, 'utf8');
-
-        link = log
-          .split('\n')
-          .filter((line) => line.includes(email))
-          .map((line) => /https?:\/\/\S+verify-email\S+/.exec(line)?.[0])
-          .findLast((match) => match !== undefined);
-
-        return link;
-      },
-      { message: `no confirmation email to ${email} in ${API_LOG}` },
-    )
+    .poll(latestLink, { message: `no confirmation email to ${email} in ${API_LOG}` })
     .toBeDefined();
 
+  const link = await latestLink();
+
+  if (link === undefined) throw new Error(`the confirmation email to ${email} disappeared`);
+
   // A JSON string ends at the first quote or escaped newline after the URL.
-  return link!.replace(/(\\n|").*$/, '');
+  return link.replace(/(\\n|").*$/, '');
 }
