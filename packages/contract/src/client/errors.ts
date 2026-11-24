@@ -43,8 +43,12 @@ export function toApiError(cause: unknown): ApiError {
 
   if (isReportNotFound(cause)) return new ApiError('That report no longer exists.', { cause });
 
-  // A request body the contract rejects, caught before it's sent: says which field and why.
-  if (Schema.isSchemaError(cause)) return new ApiError(cause.message, { cause });
+  // A request body the contract rejects, caught before it's sent. The schema's own text (which
+  // field and why) is library wording, not for the user: it stays in `cause`, for logs and Sentry.
+  // A form that wants to name a field's problem checks that field itself (RoundTags does).
+  if (Schema.isSchemaError(cause)) {
+    return new ApiError('Check what you entered and try again.', { cause });
+  }
 
   return new ApiError('Something went wrong. Please try again.', { cause });
 }
