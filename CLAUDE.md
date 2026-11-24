@@ -34,6 +34,8 @@ each module is what a future service or microfrontend would become.
   - `shared/`: web-only plumbing (the API client instance).
   - Component tests: Vitest + jsdom + Testing Library, colocated (`Button.test.tsx`). Query by
     role and label, the way a user finds things, never by class name.
+  - `e2e/`: Playwright browser tests against the built app and the real API, at desktop and phone
+    sizes; use `expectAccessible` and `screenshotThemes` from `e2e/support.ts` ([ADR-0065](docs/adr/0065-browser-tests-in-ci.md)).
 - `packages/contract` (`@roundtable/contract`): the API contract, consumed as TS source, one file
   per module. `src/index.ts` composes the Effect `HttpApi` (endpoints, schemas, errors);
   `src/client/` (`@roundtable/contract/client`) is the typed client generated from it, which the
@@ -92,6 +94,7 @@ pnpm db:migrate     # apply migrations to the dev db
 pnpm check:boundaries # imports respect module boundaries (ADR-0023)
 pnpm check:adrs     # every ADR has its own number and one row in docs/adr/README.md (ADR-0058)
 pnpm check:effect   # Effect diagnostics (mistakes tsc can't see, e.g. an Effect that is never run)
+pnpm --filter @roundtable/web test:browser # Playwright (ADR-0065); needs `pnpm db:up` and, once, `pnpm --filter @roundtable/web exec playwright install chromium`
 pnpm --filter @roundtable/web test:mutation # Stryker: which web code no test really checks (ADR-0027)
 pnpm --filter @roundtable/api test:mutation # the same for the API: minutes, a test database per worker
 pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + ADRs + boundaries + tests: run before every commit

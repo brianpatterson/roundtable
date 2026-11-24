@@ -21,6 +21,8 @@ infra/tfplan
 # Mutation testing reports and scratch space (Stryker, ADR-0027)
 apps/web/reports/
 apps/api/reports/
+# Browser test runs: report, traces, screenshots, the test API's log (ADR-0065)
+apps/web/e2e/.output/
 .stryker-tmp/
 
 # The security auditor's throwaway tests and findings (ADR-0036); never committed.
