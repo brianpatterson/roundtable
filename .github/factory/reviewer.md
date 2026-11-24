@@ -72,6 +72,13 @@ the owner always merges.
    each new test, ask whether it checks behavior a user or caller sees, or only pins an
    implementation detail to kill a mutant (a class name, a call count, a log string). The second
    is **minor**, and should have been left alive and named instead.
+   Check the ticket's Stryker criterion against `./mutation/report.md`, CI's run on this commit
+   ([ADR-0069](../../docs/adr/0069-stryker-on-mutation-pull-requests.md)), not the description's
+   word. A listed mutant the pull request says a test kills, but the report shows `Survived` or
+   `NoCoverage`, is **blocking**. The report lists every `Ignored` mutant with its reason, so it
+   shows each mutant a disable silences, not only the one it was written for. With no report,
+   say the criterion isn't verified, and leave the Stryker run out of **Check by hand**: the next
+   nightly run checks it.
 7. **The browser.** When the change touches what a user sees or does (`apps/web/src`):
    - Each user-visible behavior it adds has a browser test under `apps/web/e2e/` that would fail
      without it, keyboard and focus behavior included. Each new page, dialog or state is passed
