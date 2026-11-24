@@ -146,6 +146,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
 
   const editMessage = editError ?? reschedule.error?.message;
 
+  // Stryker disable next-line ArrayDeclaration: names are read only while rounds.data is set
   const names = rounds.data ? roundNames(rounds.data) : [];
 
   return (
@@ -157,6 +158,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
       {rounds.data && rounds.data.length > 0 && (
         <ol className={styles.list} aria-label="Rounds">
           {rounds.data.map((round, i) => {
+            // Stryker disable next-line StringLiteral: roundNames names every Round, so the fallback is never used
             const name = names[i] ?? '';
 
             return (
@@ -222,6 +224,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
         onOpenChange={(open) => {
           if (!open) closeEditor();
         }}
+        // Stryker disable next-line StringLiteral: the title shows only while open, and toEdit is set before it opens
         title={toEdit ? `Schedule ${toEdit.name}` : 'Schedule'}
         description="When it happens, when it’s due, or not scheduled yet."
         actions={
