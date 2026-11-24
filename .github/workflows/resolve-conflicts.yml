@@ -137,7 +137,7 @@ jobs:
       - name: Load the implementer's instructions and the guards from main
         if: steps.current.outputs.stale != 'true'
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
             .github/factory/attempt.sh .github/factory/protected-changes.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
@@ -208,6 +208,17 @@ jobs:
         id: denials
         if: always() && steps.current.outputs.stale != 'true'
         run: '"$RUNNER_TEMP/report-denials.sh"'
+      # What the agent did, for the batch retrospective (ADR-0064): a shaped trail, never its text.
+      - name: Keep the agent's trail
+        if: always() && steps.current.outputs.stale != 'true'
+        run: '"$RUNNER_TEMP/agent-trail.sh" resolve-conflicts'
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.current.outputs.stale != 'true'
+        with:
+          name: agent-trail-pr-${{ env.PR }}-resolve-conflicts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/agent-trail/trail.json
+          if-no-files-found: ignore
+          retention-days: 90
       - name: Flag a suspicious run
         if: always() && steps.denials.outputs.suspicious == 'true' && steps.current.outputs.stale != 'true'
         env:

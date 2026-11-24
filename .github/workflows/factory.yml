@@ -125,7 +125,7 @@ jobs:
       # runs under are main's, whatever a branch contains.
       - name: Load the implementer's instructions and the guards from main
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
             .github/factory/takedown-credentials.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
@@ -204,6 +204,17 @@ jobs:
         id: denials
         if: always()
         run: '"$RUNNER_TEMP/report-denials.sh"'
+      # What the agent did, for the batch retrospective (ADR-0064): a shaped trail, never its text.
+      - name: Keep the agent's trail
+        if: always()
+        run: '"$RUNNER_TEMP/agent-trail.sh" implement'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: agent-trail-pr-${{ github.event.issue.number }}-implement-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/agent-trail/trail.json
+          if-no-files-found: ignore
+          retention-days: 90
       - name: Flag a suspicious run
         if: always() && steps.denials.outputs.suspicious == 'true'
         env:
@@ -286,7 +297,7 @@ jobs:
           persist-credentials: false
       - name: Load the implementer's instructions and the secret guard from main
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
             .github/factory/takedown-report-quotes.sh .github/factory/explain-failure.sh \
             .github/factory/flag-suspicious.sh .github/factory/takedown-credentials.sh \
@@ -388,6 +399,17 @@ jobs:
         id: denials
         if: always()
         run: '"$RUNNER_TEMP/report-denials.sh"'
+      # What the agent did, for the batch retrospective (ADR-0064): a shaped trail, never its text.
+      - name: Keep the agent's trail
+        if: always() && steps.report.outputs.fetched != 'true'
+        run: '"$RUNNER_TEMP/agent-trail.sh" build'
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.report.outputs.fetched != 'true'
+        with:
+          name: agent-trail-issue-${{ env.ISSUE }}-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/agent-trail/trail.json
+          if-no-files-found: ignore
+          retention-days: 90
       - name: Flag a suspicious run
         if: always() && steps.denials.outputs.suspicious == 'true'
         env:
@@ -633,7 +655,7 @@ jobs:
       - name: Load the implementer's instructions and the secret guard from main
         if: steps.current.outputs.stale != 'true'
         run: |
-          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh \
+          cp .github/factory/implementer.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/agent-trail.sh \
             .github/factory/explain-failure.sh .github/factory/flag-suspicious.sh \
             .github/factory/protected-changes.sh .github/factory/attempt.sh "$RUNNER_TEMP/"
       # From main too, before the branch replaces the workspace: it runs with sudo.
@@ -694,6 +716,17 @@ jobs:
         id: denials
         if: always() && steps.current.outputs.stale != 'true'
         run: '"$RUNNER_TEMP/report-denials.sh"'
+      # What the agent did, for the batch retrospective (ADR-0064): a shaped trail, never its text.
+      - name: Keep the agent's trail
+        if: always() && steps.current.outputs.stale != 'true'
+        run: '"$RUNNER_TEMP/agent-trail.sh" fix-ci'
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.current.outputs.stale != 'true'
+        with:
+          name: agent-trail-pr-${{ env.PR }}-fix-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/agent-trail/trail.json
+          if-no-files-found: ignore
+          retention-days: 90
       - name: Flag a suspicious run
         if: always() && steps.denials.outputs.suspicious == 'true' && steps.current.outputs.stale != 'true'
         env:
