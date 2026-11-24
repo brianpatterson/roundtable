@@ -13,6 +13,7 @@ export function ResetPasswordPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
 
+    // Stryker disable next-line ConditionalExpression: the form, and so this handler, only renders when there is a token
     if (!token) return;
     const result = await authClient.resetPassword({ newPassword: password, token });
 
