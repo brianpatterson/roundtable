@@ -53,10 +53,23 @@ implementer is written to expect them and won't build a ticket that lacks a clea
 testable acceptance criteria:
 
 - **Feature** (`feature.yml`, label `enhancement`): Problem, User story, Acceptance criteria (one
-  Given/When/Then per behavior), Modules touched, Design system components, Out of scope, Docs
-  impact.
+  Given/When/Then per behavior), Modules touched, Design system components, Shared rules, Out of
+  scope, Docs impact.
 - **Bug** (`bug.yml`, label `bug`): Steps to reproduce, Expected, Actual, Sentry issue, Modules
   touched.
+
+When cutting a spec into tickets, give every rule more than one ticket relies on (an order, a
+display name, a day boundary) a single home, and say where it is:
+
+- The first ticket to define a rule that others reuse names the rule's single home in **Shared
+  rules**: the module, file and function or constant, so the factory builds it once and later
+  tickets import it instead of writing it again.
+- A ticket that changes such a rule names, in Shared rules, the tickets and the code that depend on
+  it, so the change reaches every one of them.
+
+For example, Round order (`GLOSSARY.md`) lives in one function in `packages/contract`:
+`inRoundOrder` in `src/applications.ts`, which the web app and the API both use. In the Rounds
+batch it was written three times before it got that home (#166), and the copies disagreed.
 
 The factory never adds, removes or upgrades a package: its sandbox leaves `node_modules` and the
 lockfile read-only ([ADR-0050](../adr/0050-factory-adds-no-dependencies.md)). If a ticket needs a new
