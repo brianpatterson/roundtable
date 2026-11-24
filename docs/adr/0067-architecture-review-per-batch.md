@@ -53,9 +53,9 @@ Option 3, reviewing the whole codebase each time:
   current commit. It applies to the Monday run and to per-batch runs (so two tickets closing
   together review once). A dispatch by hand without `spec` always runs.
 - **No duplicates:** the issue step now skips a Strong candidate whose exact title is an open
-  `architecture` issue or one closed in the last 30 days (it was a fuzzy title search over open
-  issues). The agent's own reading of open and closed issues stays as ADR-0031 set it. Each issue
-  says which run opened it: weekly, or after which batch.
+  `architecture` issue or one closed in the last 30 days (`find-architecture-issue.sh`; it was a
+  fuzzy title search over open issues). The agent's own reading of open and closed issues stays as
+  ADR-0031 set it. Each issue says which run opened it: weekly, by hand, or after which batch.
 
 This supersedes ADR-0031's **Weekly** bullet: the review runs after each batch, and on Mondays
 only when main changed since the last one. The rest of ADR-0031 stands.

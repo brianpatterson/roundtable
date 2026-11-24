@@ -48,15 +48,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           SPEC: ${{ inputs.spec }}
           SHA: ${{ github.sha }}
-        run: |
-          # The spec number goes into the agent's prompt.
-          [[ "$SPEC" =~ ^[0-9]*$ ]] || { echo "::error::spec must be an issue number, got [$SPEC]."; exit 1; }
-          if [ "$EVENT" = workflow_dispatch ] && [ -z "$SPEC" ]; then
-            echo "Started by hand: the review runs."
-            echo "run=true" >>"$GITHUB_OUTPUT"
-          else
-            .github/factory/select-architecture.sh "$SHA"
-          fi
+        run: .github/factory/select-architecture.sh "$EVENT" "$SHA" "$SPEC"
 
   review:
     needs: select
@@ -72,8 +64,8 @@ jobs:
         with:
           fetch-depth: 0 # the skill reads the commit history to find hot spots
           persist-credentials: false
-      - name: Load the instructions, the secret guard and the denial report from main
-        run: cp .github/factory/architect.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh "$RUNNER_TEMP/"
+      - name: Load the instructions, the secret guard, the denial report and the issue finder from main
+        run: cp .github/factory/architect.md .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/find-architecture-issue.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
 
       - name: Review the architecture
@@ -131,7 +123,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ steps.claude.outputs.structured_output }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          ORIGIN: "${{ inputs.spec && format('after the batch of #{0} closed', inputs.spec) || 'weekly' }}"
+          ORIGIN: "${{ inputs.spec && format('after the batch of #{0} closed', inputs.spec) || github.event_name == 'schedule' && 'weekly' || 'started by hand' }}"
         run: |
           "$RUNNER_TEMP/guard-secrets.sh" <<<"$RESULT" || exit 1
 
@@ -149,11 +141,7 @@ jobs:
             title="Architecture: $(jq -r .title <<<"$candidate")"
             # The weekly and per-batch runs can both find a candidate (ADR-0067): skip one an open
             # issue tracks, or one closed in the last 30 days, by exact title.
-            existing=$(gh issue list -R "$GITHUB_REPOSITORY" --label architecture --state all \
-              --search "\"$title\" in:title" --limit 20 --json number,title,state,closedAt |
-              jq -r --arg title "$title" '[.[] | select(.title == $title)
-                | select(.state == "OPEN" or ((.closedAt | fromdateiso8601) > now - 30 * 86400))
-                | .number] | first // empty')
+            existing=$("$RUNNER_TEMP/find-architecture-issue.sh" "$title")
             if [ -n "$existing" ]; then
               echo "#$existing already tracks \"$title\", or closed it in the last 30 days."
               continue
