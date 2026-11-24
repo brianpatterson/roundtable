@@ -39,7 +39,9 @@ trap report EXIT
 [ -f "$file" ] || { echo "No execution output; nothing to report."; exit 0; }
 
 # One line per denial: "<kind>\t<label>", where kind is "suspicious" or "gap".
-denials=$(python3 -I - "$file" "$GITHUB_WORKSPACE" <<'PY'
+# The classifier, read into a variable first: macOS's bash 3.2 misparses a heredoc inside $( )
+# whose text has an odd backtick or quote, as this one's comments do.
+read -r -d '' classify <<'PY' || true
 import json
 import os
 import re
@@ -206,7 +208,7 @@ for denial in (results[-1].get("permission_denials") or []) if results else []:
     kind, label = classify(denial, sys.argv[2])
     print(kind + "\t" + label.replace("\t", " ").replace("\n", " "))
 PY
-)
+denials=$(python3 -I -c "$classify" "$file" "$GITHUB_WORKSPACE")
 
 [ -n "$denials" ] || { echo "No tool calls were denied."; exit 0; }
 
