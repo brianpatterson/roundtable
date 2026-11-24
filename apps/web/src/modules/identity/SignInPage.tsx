@@ -31,9 +31,12 @@ export function SignInPage({ sessionEnded }: { sessionEnded: boolean }) {
 
   useEffect(() => {
     // Drop ?error=… from the address bar so a reload doesn't show it again.
+    // Stryker disable next-line StringLiteral: browsers ignore replaceState's title argument
     if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
+    // Stryker disable next-line ArrayDeclaration: any constant dependency list runs the effect once
   }, []);
 
+  // Stryker disable next-line ArrayDeclaration,StringLiteral: any key no other query uses caches the same
   const config = useQuery({ queryKey: ['auth-config'], queryFn: api.authConfig });
 
   async function onSubmit(e: FormEvent) {
