@@ -1,7 +1,7 @@
 # Glossary
 
 Roundtable's domain language: the words the code, tickets and reviews use for things in the
-product. The weekly architecture review proposes entries in its issues (ADR-0031); the pull
+product. The architecture review proposes entries in its issues (ADR-0031); the pull
 request that builds one adds them here. Terms marked _(planned)_ were designed ahead for Phase 4
 (`docs/roadmap.md`) and aren't built yet: until the pull request that builds one removes the
 mark, the code is what's true.

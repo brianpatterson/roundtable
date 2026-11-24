@@ -251,7 +251,8 @@ Building blocks, in order:
 8. ✅ **Weekly architecture review** ([ADR-0031](adr/0031-weekly-architecture-review.md)): Matt
    Pocock's `improve-codebase-architecture` skill runs unattended every Monday and turns each Strong
    candidate into an `architecture` issue, which the owner labels `ready` to build or closes with
-   a reason. The reviewer checks every PR's design in the same vocabulary. Later: Strong findings
+   a reason. Since [ADR-0067](adr/0067-architecture-review-per-batch.md) it runs when each spec's
+   batch closes, with Monday as a backstop when main changed since. The reviewer checks every PR's design in the same vocabulary. Later: Strong findings
    straight to implementation, once several have been accepted unchanged.
 
 9. **Fewer checks by hand** (2026-11-20): the reviewer's "Check by hand" list is the owner's

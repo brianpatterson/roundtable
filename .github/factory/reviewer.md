@@ -54,7 +54,7 @@ the owner always merges.
    what it hides), add a pass-through that fails the deletion test, put a seam where nothing
    varies (one adapter), or leak across a module's interface (reaching into another module's
    internals, or making callers know its ordering or error modes)? Judge only what the diff
-   changes; the weekly architecture review covers the rest (ADR-0031). A finding here is
+   changes; the architecture review covers the rest (ADR-0031, ADR-0067). A finding here is
    **minor** unless it breaks one of `CLAUDE.md`'s module rules.
 5. **Security**, against the OWASP Top 10:2025 in the next section. Go through every category
    for every change; most won't apply, and saying which do is part of the review.

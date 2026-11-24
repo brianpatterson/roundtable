@@ -67,7 +67,9 @@ each module is what a future service or microfrontend would become.
   they stop and name it, and a human adds it ([ADR-0050](docs/adr/0050-factory-adds-no-dependencies.md)).
   Agent jobs keep no dependency cache: theirs would be saved under main ([ADR-0030](docs/adr/0030-factory-code-scanning-findings.md)).
   `.github/workflows/architecture.yml` runs the vendored architecture skills in `.github/factory/skills/`
-  weekly and opens `architecture` issues ([ADR-0031](docs/adr/0031-weekly-architecture-review.md)); don't edit those skills, update them from upstream.
+  and opens `architecture` issues ([ADR-0031](docs/adr/0031-weekly-architecture-review.md)); don't edit those skills, update them from upstream.
+  Retro starts it when a spec's batch closes; the Monday run is a backstop that `.github/factory/select-architecture.sh`
+  skips when main hasn't changed since a review ([ADR-0067](docs/adr/0067-architecture-review-per-batch.md)).
   `.github/workflows/review.yml` and `.github/factory/reviewer.md`: the reviewer agent, which
   comments on every PR but Dependabot's once CI is green ([ADR-0026](docs/adr/0026-software-factory-reviewer.md),
   [ADR-0033](docs/adr/0033-review-every-pull-request.md)). `.github/factory/post-review.sh` sets the verdict from the blocking findings ([ADR-0053](docs/adr/0053-review-verdict-from-blocking-findings.md)),

@@ -1,6 +1,7 @@
 # 0031. Review the architecture weekly with Matt Pocock's skill, and check design on every PR
 
-- **Status:** Accepted
+- **Status:** Accepted; the weekly schedule superseded by
+  [ADR-0067](0067-architecture-review-per-batch.md)
 - **Date:** 2026-11-17
 
 ## Context

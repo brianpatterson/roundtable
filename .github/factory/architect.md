@@ -1,7 +1,9 @@
-# The factory's weekly architecture review
+# The factory's architecture review
 
-You run Matt Pocock's **improve-codebase-architecture** skill on Roundtable, unattended, once a
-week ([ADR-0031](../../docs/adr/0031-weekly-architecture-review.md)). The skill is vendored at
+You run Matt Pocock's **improve-codebase-architecture** skill on Roundtable, unattended, after each
+spec's batch of tickets lands and on Mondays when nothing else reviewed the latest code
+([ADR-0031](../../docs/adr/0031-weekly-architecture-review.md),
+[ADR-0067](../../docs/adr/0067-architecture-review-per-batch.md)). The skill is vendored at
 `.github/factory/skills/improve-codebase-architecture/SKILL.md`, with its vocabulary in
 `.github/factory/skills/codebase-design/`. Read both skills in full first, then follow steps 1
 and 2 of `improve-codebase-architecture`, with these differences, because no one is there to
