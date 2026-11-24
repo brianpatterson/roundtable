@@ -263,7 +263,7 @@ Building blocks, in order:
      artifacts for the reviewer to look at. The implementer writes these for UI changes, and the
      reviewer lists only what a test truly can't check. No secrets and no production access, so
      no new risk. Covers the Acceptance tests, Visual regression and Accessibility rows below.
-   - **Check config at startup**: the API parses the problem-report App's private key when it
+   - ✅ **Check config at startup** (2026-11-24): the API parses the problem-report App's private key when it
      starts, not on the first report, so a bad key fails the deploy's health check and rolls
      back, instead of being found when the owner sends a test report. (The 2026-11-20 quoting bug,
      [#110](https://github.com/brianpatterson/roundtable/pull/110), failed earlier, in `deploy.sh`:

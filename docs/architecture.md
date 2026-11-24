@@ -526,7 +526,10 @@ flowchart LR
 - **GitHub:** problem reports open issues through GitHub's REST API as a GitHub App: an
   installation token from the App's signed JWT, then the issue, one attempt within a 10-second
   timeout and no retry; a failure is logged and
-  reported to Sentry as `IssueOpenFailed` with GitHub's status only (`modules/support/`).
+  reported to Sentry as `IssueOpenFailed` with GitHub's status only (`modules/support/`). The
+  App's private key is parsed once, when the API starts: a malformed or truncated key fails
+  startup with `GitHubAppKeyInvalid`, which names `GITHUB_ISSUES_PRIVATE_KEY` but never quotes
+  it, so the deploy's health check fails and the deploy rolls back (ADR-0014).
 - **Monitoring:** Better Stack checks `/api/health` (must report the database up) every 3
   minutes from outside, and opens an incident only if it's still failing 60 seconds later, so a
   deploy's ~10-second gap doesn't page anyone, and expects a ping from every nightly backup and from every successful factory sweep (sweeper and dispatcher), alerting after an hour without one ([ADR-0060](adr/0060-factory-clock.md)). Sentry receives unexpected
