@@ -70,6 +70,9 @@ each module is what a future service or microfrontend would become.
   edits its one comment on each re-review and posts a short new one when it asks for changes, so Auto-fix sees it ([ADR-0046](docs/adr/0046-review-posts-new-comment-on-changes.md)).
   Review, Rework and the sweeper set the `factory` commit status through `.github/factory/factory-status.sh`:
   pending while the factory works on a commit, success when it's the owner's turn ([ADR-0063](docs/adr/0063-factory-status-check.md)).
+  `.github/workflows/retro.yml` and `.github/factory/retro.md`: when every sub-issue of a spec closes, the batch
+  retrospective reads how the factory built it, from the trails `.github/factory/agent-trail.sh` keeps of each agent run,
+  and opens one `retro` issue of fixes to the factory's environment ([ADR-0064](docs/adr/0064-factory-retro-per-batch.md)).
   `.github/workflows/mutation.yml`: Stryker on the web app and the API, nightly on main, advisory;
   not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
   It then tops up to five open tests-only `mutation` tickets, one per file, through `.github/factory/file-mutation-issue.sh`,
