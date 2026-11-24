@@ -213,3 +213,13 @@ jobs:
           else
             gh issue comment "$PARENT" -R "$GITHUB_REPOSITORY" --body "Retrospective: $url"
           fi
+
+          # A close by this job's token starts no workflow. So when the spec was itself a finding of
+          # an earlier retrospective, closing the spec may have finished that retro: close it here.
+          decided=$(mktemp)
+          GITHUB_OUTPUT=$decided .github/factory/select-retro.sh --issue "$PARENT"
+          retro=$(sed -n 's/^close=//p' "$decided")
+          if [ -n "$retro" ]; then
+            gh issue close "$retro" -R "$GITHUB_REPOSITORY" --reason completed \
+              --comment "Every finding filed from this retrospective is closed. ADR-0064."
+          fi

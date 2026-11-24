@@ -72,6 +72,8 @@ batch=$("$GH" api graphql -F owner="$owner" -F name="$name" -F number="$parent" 
 if jq -e 'any(.labels.nodes[]; .name == "retro")' <<<"$batch" >/dev/null; then
   [ "$by_hand" = false ] || { say "#$parent is a retrospective, not a spec: it gets no retrospective of its own."; exit 0; }
   [ "$(jq -r .state <<<"$batch")" = OPEN ] || { say "Retrospective #$parent is already closed."; exit 0; }
+  jq -e '.subIssues.totalCount <= (.subIssues.nodes | length)' <<<"$batch" >/dev/null ||
+    { say "Retrospective #$parent has more than 100 findings: close it by hand."; exit 0; }
   open=$(jq -r '[.subIssues.nodes[] | select(.state != "CLOSED") | "#\(.number)"] | join(", ")' <<<"$batch")
   [ -z "$open" ] || { say "Retrospective #$parent still has open findings: $open."; exit 0; }
   say "Every finding of retrospective #$parent is closed."

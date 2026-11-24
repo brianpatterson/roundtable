@@ -107,6 +107,12 @@ batch CLOSED 11:CLOSED:claude/issue-11-a
 run --issue 11
 expect "leaves a closed retro alone" "" "$closing"
 
+batch OPEN 11:CLOSED:claude/issue-11-a
+sed -i.bak 's/"totalCount":1/"totalCount":101/' "$work/batch.json"
+run --issue 11
+expect "leaves a retro with more findings than one query reads to the owner" "" "$closing"
+expect_in "and says so" "$out" "more than 100 findings"
+
 run --parent 10
 expect "by hand, never reviews a retro" "" "$selected"
 expect "by hand, doesn't close one either" "" "$closing"
