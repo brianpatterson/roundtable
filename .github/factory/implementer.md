@@ -272,8 +272,9 @@ at the same time usually conflict because both took the next ADR number and adde
    and what this pull request adds. Never drop either side's change to make the conflict go away.
 3. **An ADR number taken by `main`:** `main` keeps it. Renumber this pull request's ADR after the
    highest in `docs/adr/` with `git mv`, then change its heading, its index row (in order, after
-   `main`'s) and every link to it on the branch. `pnpm check:adrs` confirms it. You can't edit the
-   pull request's description, so give the old and new number in your summary.
+   `main`'s) and every link to it on the branch. `pnpm check:adrs` confirms it. The workflow gives the
+   ADR its new number in the pull request's description after you push; give the old and new
+   number in your summary too.
 4. **A migration:** never edit `main`'s. If both sides added one, keep `main`'s, remove this pull
    request's, and generate it again with `pnpm db:generate --name <the same name>` so it comes
    after `main`'s.
