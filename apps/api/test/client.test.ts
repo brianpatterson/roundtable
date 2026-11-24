@@ -1,5 +1,6 @@
 // The web app's typed client (packages/shared/src/client.ts) against the real server: the same
 // code the browser runs, with fetch pointed at the app in-process instead of the network.
+import { Schema } from 'effect';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ApplicationNotFound, MAX_TAGS, Unauthorized, isApplicationId } from '@roundtable/contract';
 import { ApiError, makeApiClient } from '@roundtable/contract/client';
@@ -101,7 +102,7 @@ describe('the web client', () => {
     expect(await api.listRounds(application.id)).toEqual([due]);
     await expect(
       api.scheduleRound(application.id, round.id, { durationMinutes: 30 }),
-    ).rejects.toThrow('A duration needs a start time');
+    ).rejects.toThrow('Check what you entered and try again.');
   });
 
   it('rates a Round, and refuses a rating outside 1–5 before it is sent', async () => {
@@ -195,18 +196,28 @@ describe('the web client', () => {
       },
     });
 
-    await expect(counting.createApplication({ company: '  ', jobTitle: 'SWE' })).rejects.toThrow(
-      'must not be blank',
-    );
-    await expect(
+    // In plain words, without the schema's own wording, which stays in `cause` for logs and Sentry.
+    const refusedPlainly = async (request: Promise<unknown>) => {
+      try {
+        await request;
+      } catch (error) {
+        if (!(error instanceof ApiError)) return expect.fail(`expected an ApiError, got ${error}`);
+
+        expect(error.message).toBe('Check what you entered and try again.');
+        expect(Schema.isSchemaError(error.cause)).toBe(true);
+
+        return;
+      }
+
+      expect.fail('the client sent a body the contract rejects');
+    };
+
+    await refusedPlainly(counting.createApplication({ company: '  ', jobTitle: 'SWE' }));
+    await refusedPlainly(
       counting.createApplication({ company: 'A', jobTitle: 'B', jobUrl: 'javascript:alert(1)' }),
-    ).rejects.toThrow('must be an http(s) URL');
-    await expect(counting.addTag(crypto.randomUUID(), crypto.randomUUID(), ' ')).rejects.toThrow(
-      'must not be blank',
     );
-    await expect(
-      counting.addTag(crypto.randomUUID(), crypto.randomUUID(), 'x'.repeat(41)),
-    ).rejects.toThrow('must be at most 40 characters');
+    await refusedPlainly(counting.addTag(crypto.randomUUID(), crypto.randomUUID(), ' '));
+    await refusedPlainly(counting.addTag(crypto.randomUUID(), crypto.randomUUID(), 'x'.repeat(41)));
     expect(requests).toBe(0);
   });
 });
