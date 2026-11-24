@@ -22,7 +22,7 @@ infra/tfplan
 apps/web/reports/
 apps/api/reports/
 # Browser test runs: report, traces, screenshots, the test API's log (ADR-0065)
-apps/web/e2e/.output/
+apps/web/test-results/
 .stryker-tmp/
 
 # The security auditor's throwaway tests and findings (ADR-0036); never committed.

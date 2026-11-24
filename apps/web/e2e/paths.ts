@@ -1,7 +1,10 @@
 import path from 'node:path';
 
-/** Everything a run writes: report, traces, screenshots, the API's log. Git-ignored. */
-export const OUTPUT_DIR = path.join(import.meta.dirname, '.output');
+/**
+ * Everything a run writes: report, traces, screenshots, the API's log. Git-ignored. Not a hidden
+ * folder: CI's upload-artifact skips those, and uploaded nothing from `e2e/.output/`.
+ */
+export const OUTPUT_DIR = path.join(import.meta.dirname, '..', 'test-results');
 
 /** The browser tests' API writes its log here (playwright.config.ts). */
 export const API_LOG = path.join(OUTPUT_DIR, 'api.log');

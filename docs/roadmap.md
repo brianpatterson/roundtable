@@ -256,7 +256,7 @@ Building blocks, in order:
 
 9. **Fewer checks by hand** (2026-11-20): the reviewer's "Check by hand" list is the owner's
    remaining manual work on most pull requests. Shrink it, cheapest first:
-   - 🏗️ **Browser tests in CI** ([ADR-0065](adr/0065-browser-tests-in-ci.md); harness and first tests ✅ 2026-11-23, the factory's part next): Playwright against the built app. Assertions for keyboard and
+   - ✅ **Browser tests in CI** ([ADR-0065](adr/0065-browser-tests-in-ci.md), [ADR-0066](adr/0066-factory-writes-and-reads-browser-tests.md); harness 2026-11-23, the factory's part 2026-11-24): Playwright against the built app. Assertions for keyboard and
      focus behavior (focus returns to the button that opened a dialog), screenshots at phone and
      desktop widths in light and dark themes, and an axe scan. The screenshots go in the run's
      artifacts for the reviewer to look at. The implementer writes these for UI changes, and the

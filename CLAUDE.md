@@ -61,6 +61,8 @@ each module is what a future service or microfrontend would become.
   catches two ADRs taking one number, the usual cause ([ADR-0058](docs/adr/0058-factory-resolves-conflicts.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
   publish only through `.github/factory/guard-secrets.sh` ([ADR-0029](docs/adr/0029-software-factory-credential-hardening.md)).
+  Before the agent starts, main's `.github/factory/install-browsers.sh` installs Chromium for the browser tests, running
+  no code from the branch; the reviewer reads the CI run's screenshots ([ADR-0066](docs/adr/0066-factory-writes-and-reads-browser-tests.md)).
   That isolation leaves the lockfile and `node_modules/.bin` read-only, so agents never add a package:
   they stop and name it, and a human adds it ([ADR-0050](docs/adr/0050-factory-adds-no-dependencies.md)).
   Agent jobs keep no dependency cache: theirs would be saved under main ([ADR-0030](docs/adr/0030-factory-code-scanning-findings.md)).

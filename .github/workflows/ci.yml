@@ -145,13 +145,17 @@ jobs:
         run: pnpm --filter @roundtable/web exec playwright install-deps chromium
       - name: Browser tests
         run: pnpm --filter @roundtable/web test:browser
-      # Screenshots, the HTML report, traces of failures and the test API's log, pass or fail.
+      # Screenshots and the HTML report (with traces of failures), pass or fail. Not the rest of
+      # test-results/: artifacts are public here, and it holds the test user's session cookie
+      # (auth.json) and the test API's log (ADR-0066).
       - name: Upload screenshots and report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: browser-tests
-          path: apps/web/e2e/.output/
+          path: |
+            apps/web/test-results/screenshots/
+            apps/web/test-results/report/
           retention-days: 14
 
   # The production images must build. They're not pushed here; the deploy pipeline does that.
