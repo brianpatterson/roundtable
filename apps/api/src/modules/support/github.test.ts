@@ -3,7 +3,13 @@ import { generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { Cause, Effect, ErrorReporter, Exit, Redacted, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/http';
-import { IssueOpenFailed, appJwt, makeGitHubIssues, type NewIssue } from './github.js';
+import {
+  GitHubAppKeyInvalid,
+  IssueOpenFailed,
+  appJwt,
+  makeGitHubIssues,
+  type NewIssue,
+} from './github.js';
 
 const issue: NewIssue = {
   title: 'User report 1: /',
@@ -51,21 +57,31 @@ function scriptedFetch(answers: {
   return { fetch, sent };
 }
 
+const options = (key: string) => ({
+  appId: '123',
+  installationId: '42',
+  privateKey: Redacted.make(key),
+  repository: 'owner/repo',
+});
+
+const build = (fetch: typeof globalThis.fetch, key: string) =>
+  Effect.runPromiseExit(
+    makeGitHubIssues(options(key)).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+    ),
+  );
+
 const open = (fetch: typeof globalThis.fetch, key = pem) =>
   Effect.runPromiseExit(
-    makeGitHubIssues({
-      appId: '123',
-      installationId: '42',
-      privateKey: Redacted.make(key),
-      repository: 'owner/repo',
-    }).pipe(
+    makeGitHubIssues(options(key)).pipe(
       Effect.flatMap((issues) => issues.open(issue)),
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(FetchHttpClient.Fetch, fetch),
     ),
   );
 
-const failureOf = <A>(exit: Exit.Exit<A, IssueOpenFailed>) =>
+const failureOf = <A, E>(exit: Exit.Exit<A, E>) =>
   Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
 
 const decodeSegment = (segment: string | undefined) =>
@@ -119,13 +135,64 @@ describe('GitHub issues client', () => {
     expect(Exit.isSuccess(await open(fetch, pem.replaceAll('\n', '\\n')))).toBe(true);
   });
 
-  it('fails without sending anything, or quoting the key, when the key is invalid', async () => {
-    const { fetch, sent } = scriptedFetch({});
-    const failure = failureOf(await open(fetch, 'not-a-key-secret-material'));
+  it.each([
+    ['malformed', 'not-a-key-secret-material'],
+    ['truncated partway through', pem.slice(0, pem.length / 2)],
+  ])(
+    'fails to build, without sending anything or quoting the key, when the key is %s',
+    async (_, key) => {
+      const { fetch, sent } = scriptedFetch({});
+      const exit = await build(fetch, key);
+      const failure = failureOf(exit);
 
-    expect(failure).toMatchObject({ message: 'The GitHub App private key is invalid' });
-    expect(JSON.stringify(failure)).not.toContain('secret-material');
-    expect(sent).toHaveLength(0);
+      expect(failure).toBeInstanceOf(GitHubAppKeyInvalid);
+      expect(failure).toMatchObject({
+        message: expect.stringMatching(/GITHUB_ISSUES_PRIVATE_KEY.*invalid/),
+      });
+
+      const shown = `${JSON.stringify(failure)} ${String(failure)} ${Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ''}`;
+
+      expect(shown).not.toContain('secret-material');
+
+      // No line of the key, beyond the PEM header every key shares.
+      for (const line of key.split('\n').slice(1).filter(Boolean)) {
+        expect(shown).not.toContain(line);
+      }
+
+      expect(sent).toHaveLength(0);
+    },
+  );
+
+  it('parses the key once, when built, and reuses it for every issue', async () => {
+    const { fetch, sent } = scriptedFetch({});
+    const settings = options(pem);
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const issues = yield* makeGitHubIssues(settings);
+
+        // From here, reading the key's text throws: only the key parsed at build time can sign.
+        Redacted.wipeUnsafe(settings.privateKey);
+
+        const first = yield* issues.open(issue);
+        const second = yield* issues.open(issue);
+
+        return [first, second];
+      }).pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, fetch),
+      ),
+    );
+
+    const opened = { url: 'https://github.com/owner/repo/issues/7' };
+
+    expect(exit).toEqual(Exit.succeed([opened, opened]));
+    expect(sent.map((request) => request.url)).toEqual([
+      TOKEN_URL,
+      ISSUES_URL,
+      TOKEN_URL,
+      ISSUES_URL,
+    ]);
   });
 
   it('fails with GitHub’s status when it refuses the token or the issue, without retrying', async () => {

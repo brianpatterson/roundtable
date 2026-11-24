@@ -31,6 +31,18 @@ export class IssueOpenFailed extends Schema.TaggedError<
 }
 
 /**
+ * The configured GitHub App private key isn't a PEM key (malformed, or cut short). Building the
+ * GitHub client fails with it, so the API doesn't start and the deploy rolls back (ADR-0014).
+ * It names the variable, never the key or the parser's message, which can quote it.
+ */
+export class GitHubAppKeyInvalid extends Schema.TaggedError<
+  GitHubAppKeyInvalid,
+  { readonly brand: unique symbol }
+>()('GitHubAppKeyInvalid', {
+  message: Schema.String,
+}) {}
+
+/**
  * Opens GitHub issues for problem reports: GitHub's REST API as a GitHub App, `skipped` when none is configured
  * (development, tests), or a test's capture. `undefined` means the issue was skipped.
  */
@@ -115,13 +127,25 @@ const GITHUB_HEADERS = {
  * Per issue: a short-lived installation token, narrowed to this repository and Issues: write,
  * then one POST to https://docs.github.com/rest/issues/issues#create-an-issue with it. No SDK and
  * no retries (the ticket leaves retrying out: a failure is reported and the report is still
- * stored). At most `REPORT_LIMIT_PER_DAY` issues a day, so the token isn't cached.
+ * stored). At most `REPORT_LIMIT_PER_DAY` issues a day, so the token isn't cached. The private
+ * key is parsed once, when the client is built: an invalid one fails with GitHubAppKeyInvalid,
+ * which stops the API from starting.
  */
 export const makeGitHubIssues = Effect.fnUntraced(function* (options: GitHubIssuesOptions) {
   const client = yield* HttpClient.HttpClient;
   const [, repositoryName] = options.repository.split('/');
   const tokenUrl = `https://api.github.com/app/installations/${options.installationId}/access_tokens`;
   const issuesUrl = `https://api.github.com/repos/${options.repository}/issues`;
+
+  // Parsed once, here: a bad key fails the client's construction (startup), not each report.
+  const key = yield* Effect.try({
+    try: () => createPrivateKey(Redacted.value(options.privateKey).replaceAll('\\n', '\n')),
+    // Never the key or the parser's message, which can quote it.
+    catch: () =>
+      new GitHubAppKeyInvalid({
+        message: 'GITHUB_ISSUES_PRIVATE_KEY: the GitHub App private key is invalid',
+      }),
+  });
 
   /** Sends one request; a failure carries GitHub's status and its answer, never the request. */
   const call = Effect.fnUntraced(function* (
@@ -162,12 +186,6 @@ export const makeGitHubIssues = Effect.fnUntraced(function* (options: GitHubIssu
       );
 
   const installationToken = Effect.fnUntraced(function* () {
-    const key = yield* Effect.try({
-      try: () => createPrivateKey(Redacted.value(options.privateKey).replaceAll('\\n', '\n')),
-      // Never the key or the parser's message, which can quote it.
-      catch: () => new IssueOpenFailed({ message: 'The GitHub App private key is invalid' }),
-    });
-
     const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
 
     const answer = yield* call(

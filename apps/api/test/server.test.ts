@@ -3,7 +3,8 @@
 // logs to the console unredacted under the real server, so this checks the real one.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ErrorEvent } from '@sentry/node';
-import { Effect, Fiber, Layer, Redacted, Schema } from 'effect';
+import { Cause, Effect, Exit, Fiber, Layer, Redacted, Schema } from 'effect';
+import { generateKeyPairSync } from 'node:crypto';
 import { createServer } from 'node:net';
 import { serveApp } from '../src/server.js';
 import { scrubEvent, Sentry } from '../src/platform/observability/error-tracking.js';
@@ -129,5 +130,65 @@ describe('the production server (serveApp)', () => {
     server = undefined;
 
     expect(lines.map((line) => JSON.parse(line).msg)).toContain('Shutting down');
+  });
+});
+
+// A bad GitHub App key fails the deploy's health check and rolls it back (ADR-0014), instead of
+// going live and losing the first user report.
+describe('starting the production server with the GitHub App', () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+  const start = async (key: string | undefined) => {
+    const port = await freePort();
+
+    // Builds the whole server, port and all, then stops it: success means it started.
+    return Effect.runPromiseExit(
+      Effect.scoped(
+        Layer.build(
+          serveApp({
+            env: {
+              ...env,
+              ...(key !== undefined && {
+                GITHUB_ISSUES_APP_ID: '123',
+                GITHUB_ISSUES_INSTALLATION_ID: '42',
+                GITHUB_ISSUES_PRIVATE_KEY: Redacted.make(key),
+                GITHUB_ISSUES_REPOSITORY: 'owner/repo',
+              }),
+            },
+            log: createLogger({ enabled: false }),
+            port,
+            host: '127.0.0.1',
+          }),
+        ),
+      ),
+    );
+  };
+
+  it.each([
+    ['malformed', 'not-a-key-secret-material'],
+    ['truncated partway through', pem.slice(0, pem.length / 2)],
+  ])('refuses to start when the key is %s, naming it but not quoting it', async (_, key) => {
+    const exit = await start(key);
+
+    expect(Exit.isFailure(exit)).toBe(true);
+
+    const shown = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : '';
+
+    expect(shown).toMatch(/GITHUB_ISSUES_PRIVATE_KEY.*invalid/);
+    expect(shown).not.toContain('secret-material');
+
+    // No line of the key, beyond the PEM header every key shares.
+    for (const line of key.split('\n').slice(1).filter(Boolean)) {
+      expect(shown).not.toContain(line);
+    }
+  });
+
+  it.each([
+    ['a valid key with real newlines', pem],
+    ['a valid key on one line, with \\n for its newlines', pem.replaceAll('\n', '\\n')],
+    ['no GitHub App configured', undefined],
+  ])('starts with %s', async (_, key) => {
+    expect(Exit.isSuccess(await start(key))).toBe(true);
   });
 });
