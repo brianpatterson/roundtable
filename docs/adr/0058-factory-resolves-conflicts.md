@@ -99,6 +99,9 @@ Option 1, with option 3 as its check.
   new code, even when the conflict was only an index row.
 - A pull request's description can still mention its old ADR number: the agent can't edit it, so
   its summary gives the old and new number.
+  _Update, 2026-11-24:_ after the resolver pushes, a deterministic step now rewrites the
+  renumbered ADR's number and file name in the description and comments with the lines it changed
+  (`.github/factory/renumber-adr-refs.sh`, from retro #180). The decision is unchanged.
 - Two ADRs can no longer share a number on main, whichever path led there.
 - While main is red, a conflicting factory pull request waits without a label: the resolver merges
   nothing until main is green, and says so only in its run log. The `main-broken` issue

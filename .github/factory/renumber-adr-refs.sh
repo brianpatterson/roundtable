@@ -7,8 +7,10 @@
 # resolver started from) and GITHUB_REPOSITORY. Finds the ADR files renamed between SHA and HEAD
 # (`git diff --find-renames`), rewrites each one's `ADR-NNNN` and `NNNN-<slug>.md` in the
 # description, and comments with what it changed. A link to an ADR with the old number but another
-# slug (main's ADR, which kept the number) is left alone. Does nothing unless HEAD is what the pull
-# request now points at. GH overrides the gh binary (tests).
+# slug (main's ADR, which kept the number) is left alone. A bare `ADR-NNNN` can't be told apart, so
+# it is always taken to mean this pull request's ADR: a description is nearly always written before
+# the collision. The comment quotes every line it changed, so a wrong rewrite is easy to spot. Does
+# nothing unless HEAD is what the pull request now points at. GH overrides the gh binary (tests).
 #
 #   renumber-adr-refs.sh --rewrite <old-path> <new-path> […]   rewrite stdin to stdout (tests)
 set -euo pipefail
@@ -104,5 +106,13 @@ rm -f "$file"
 changes=$(for ((i = 0; i < ${#pairs[@]}; i += 2)); do
   printf -- '- `%s` → `%s`\n' "${pairs[i]##*/}" "${pairs[i + 1]##*/}"
 done)
-"$GH" pr comment "$PR" -R "$repo" --body "$(printf 'Renumbered in the description, after the merge with main:\n\n%s\n\n<sub>ADR-0058.</sub>' "$changes")"
+# The rewrite keeps every line in place, so the changed lines pair up one to one.
+lines=$(paste -d '\n' <(printf '%s\n' "$body") <(printf '%s\n' "$new_body") | python3 -I -c '
+import sys
+rows = sys.stdin.read().split("\n")
+for before, after in zip(rows[0::2], rows[1::2]):
+    if before != after:
+        print("- Was: " + before.strip()[:300] + "\n  Now: " + after.strip()[:300])
+')
+"$GH" pr comment "$PR" -R "$repo" --body "$(printf 'Renumbered in the description, after the merge with main:\n\n%s\n\nThe lines it changed. A bare ADR number is taken to mean this pull request'"'"'s ADR, so check none of these meant main'"'"'s:\n\n%s\n\n<sub>ADR-0058.</sub>' "$changes" "$lines")"
 echo "Renumbered the description: ${pairs[*]}"

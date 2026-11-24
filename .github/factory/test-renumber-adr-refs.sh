@@ -62,6 +62,8 @@ expect "edits the description" "Closes #1
 
 Adds [ADR-0059](docs/adr/0059-round-outcome.md)." "$(cat "$work/edited" 2>/dev/null)"
 expect_in "comments with what it changed" "$(cat "$work/calls" 2>/dev/null)" "0057-round-outcome.md\` → \`0059-round-outcome.md"
+expect_in "quotes each line it changed, before" "$(cat "$work/calls" 2>/dev/null)" "Was: Adds [ADR-0057](docs/adr/0057-round-outcome.md)."
+expect_in "and after" "$(cat "$work/calls" 2>/dev/null)" "Now: Adds [ADR-0059](docs/adr/0059-round-outcome.md)."
 
 run "$start"
 expect "a pull request that moved on exits 0" 0 "$status"
