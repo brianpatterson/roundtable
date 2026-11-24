@@ -131,6 +131,10 @@ in the run's report.
   because it can download and run a package.
 - **Output:** don't pipe through `grep`, `head`, `tail` or `sed`. They're refused, and the whole
   command with them. You see the full output anyway; read files with your Read and Grep tools.
+- **Exit status:** don't append `; echo $?`, `|| true` or `&& …` to see whether a command passed:
+  you're told its exit status, and the extra part gets the whole call refused. If an allowlisted
+  command is refused, run it once more on its own before giving up on it (the Stryker check in
+  "Mutation tickets" included).
 - **Files:** change and delete them with your Edit and Write tools, or `git rm` and `git mv`, never
   `sed -i`, `rm`, `echo >` or a script: those are refused.
 - **Waiting:** don't wait for CI or anything else with `sleep`, a loop or Monitor: they're refused.
