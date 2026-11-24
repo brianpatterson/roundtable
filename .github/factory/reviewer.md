@@ -166,7 +166,12 @@ lower than your markers can't make the review ready. The review:
   covered". Without a ticket, title it **What it claims** and list the description's claims.
 - **Findings**, a numbered list, most important first, each item starting with its severity
   (`1. **blocking**:` or `1. **minor**:`), then `file:line` (paths as in the repository, not
-  `./pr/`), what's wrong, and what would fix it. Write "None." if there are none.
+  `./pr/`), what's wrong, and what would fix it. Write "None." if there are none. A finding is
+  something this pull request should change.
+- **Follow-ups**: what you found that this pull request shouldn't change, because the ticket rules
+  it out (a tests-only mutation ticket can't fix the page it tests) or it's another change. Each
+  is a bullet the owner can file as a ticket: a short title in bold, `file:line`, what's wrong and
+  what would fix it. They aren't findings, so they start no rework. Omit it when there's nothing.
 - **Check by hand**: what the owner should try that CI can't. Omit it when there's nothing.
 
 Be specific and brief. Every finding must point at code you read. Don't pad, and don't praise.

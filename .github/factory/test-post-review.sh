@@ -106,6 +106,10 @@ post_result unmarked "$(result 2 "$findings")" "$new"
 post_result prose "$(result 0 $'**Findings**\nNone.\n\nNothing here is **blocking** the merge.')" "$new"
 [ "$output" = $'verdict=ready\nminor=0' ] || fail "the word blocking in prose isn't a finding, nor a missing list a minor one: [$output]"
 
+# Follow-ups are for the owner to file, not findings: they start no minor rework pass.
+post_result follow-ups "$(result 0 $'**Findings**\nNone.\n\n**Follow-ups**\n- **Plain reset message**: `Page.tsx:9` shows "Invalid token".\n- **Split the bucket**: `h.ts:51` shares it.')" "$new"
+[ "$output" = $'verdict=ready\nminor=0' ] || fail "follow-ups count as no finding: [$output]"
+
 CASE="$work/bad" && mkdir -p "$CASE" && echo '[]' >"$CASE/comments.json"
 for bad in '{"verdict":"ready","review":""}' '{"blocking":-1,"review":""}' '{"blocking":1.5,"review":""}' '{"blocking":"1","review":""}'; do
   if GH_FIXTURES=$CASE GH=$work/gh GITHUB_REPOSITORY=o/r PR=5 SHA=$new RESULT=$bad \
