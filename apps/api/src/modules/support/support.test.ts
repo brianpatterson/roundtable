@@ -127,11 +127,17 @@ describe('reporting a problem', () => {
     expect(issue?.title).toBe(`User report ${id}: /reset-password`);
     expect(issue?.labels).toEqual(['bug', 'user-report']);
     expect(REPORT_ISSUE_LABELS).not.toContain('ready');
-    expect(issue?.body).toContain(`Report: ${id}`);
-    expect(issue?.body).toContain('Page: `/reset-password`');
-    expect(issue?.body).toContain('Release: `roundtable-api:abc123`');
-    expect(issue?.body).toContain(`Time: ${row?.createdAt.toISOString()}`);
-    expect(issue?.body).toContain('Browser: Firefox');
+    // The whole body, one line each: a note that the description is withheld, then the context.
+    expect(issue?.body.split('\n')).toEqual([
+      'A user reported a problem from the app. What they wrote is stored privately and was',
+      'emailed to the owner; it is deliberately not in this issue.',
+      '',
+      `- Report: ${id}`,
+      '- Page: `/reset-password`',
+      '- Release: `roundtable-api:abc123`',
+      `- Time: ${row?.createdAt.toISOString()}`,
+      '- Browser: Firefox',
+    ]);
 
     // Nothing the user typed or that identifies them.
     const published = `${issue?.title}\n${issue?.body}`;
@@ -182,12 +188,33 @@ describe('reporting a problem', () => {
     const [email] = t.sentEmails.filter((sent) => sent.to === OWNER);
 
     expect(row?.diagnostics).toEqual(diagnostics);
-    expect(email?.text).toContain('Window: 360×740, theme: dark');
-    expect(email?.text).toContain('2s before: POST /api/applications → network error');
-    expect(email?.text).toContain(`1s before: TypeError: ${SECRET_WORDS}`);
-    expect(email?.text).toContain('    at b (b.js:2)');
+    // The email ends with them, laid out for reading: each list counted and set apart.
+    expect(email?.text.split('What their browser saw:\n\n')[1]?.split('\n')).toEqual([
+      'Window: 360×740, theme: dark',
+      '',
+      'API requests before the report (1):',
+      '  2s before: POST /api/applications → network error',
+      '',
+      'Errors before the report (1):',
+      `  1s before: TypeError: ${SECRET_WORDS}`,
+      '    at a (a.js:1)',
+      '    at b (b.js:2)',
+    ]);
     expect(`${issues[0]?.title}\n${issues[0]?.body}`).not.toContain('TypeError');
     expect(`${issues[0]?.title}\n${issues[0]?.body}`).not.toContain('/api/applications');
+  });
+
+  it('says in the email what the diagnostics left out', async () => {
+    await report(t, { ...valid, diagnostics: {} });
+    const [email] = t.sentEmails.filter((sent) => sent.to === OWNER);
+
+    expect(email?.text.split('What their browser saw:\n\n')[1]?.split('\n')).toEqual([
+      'Window: unknown, theme: unknown',
+      '',
+      'API requests before the report (0):',
+      '',
+      'Errors before the report (0):',
+    ]);
   });
 
   it('says so in the email when no diagnostics were sent', async () => {
@@ -271,6 +298,30 @@ describe('reporting a problem', () => {
     expect((await report(t, valid, { ip })).statusCode).toBe(201);
   });
 
+  it('counts a client by the last X-Forwarded-For entry, whatever comes before it', async () => {
+    const forwardedFor = () => `${randomIp()}, ${randomIp()}, 198.51.100.8`;
+
+    for (let i = 0; i < REPORTS_PER_HOUR; i++) {
+      const res = await t.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: { 'x-forwarded-for': forwardedFor() },
+        payload: valid,
+      });
+
+      expect(res.statusCode).toBe(201);
+    }
+
+    const limited = await t.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { 'x-forwarded-for': forwardedFor() },
+      payload: valid,
+    });
+
+    expect(limited.statusCode).toBe(429);
+  });
+
   it('counts IPv6 clients by their /64, so one subscriber can’t rotate addresses', async () => {
     for (let i = 1; i <= REPORTS_PER_HOUR; i++) {
       const ip = `2001:db8:1:2:${i.toString(16)}::${i}`;
@@ -313,6 +364,16 @@ describe('clientBucket', () => {
     ['::1', '0:0:0:0::/64'],
     ['fe80::1:2:3:4%eth0', 'fe80:0:0:0::/64'],
     ['64:ff9b:1:2::198.51.100.7', '64:ff9b:1:2::/64'],
+    // The groups after `::` fill the end, so the gap is only as wide as what's missing.
+    ['1::2:3:4:5:6', '1:0:0:2::/64'],
+    // An embedded IPv4 tail takes two groups.
+    ['1::2:3:4:198.51.100.7', '1:0:0:2::/64'],
+    // A zone is dropped from IPv4 and IPv4-mapped addresses too.
+    ['198.51.100.7%eth0', '198.51.100.7'],
+    ['::ffff:198.51.100.7%eth0', '198.51.100.7'],
+    ['::ffff:198.51.100.77', '198.51.100.77'],
+    // Only an address that starts with `::ffff:` is IPv4-mapped.
+    ['1::ffff:198.51.100.7', '1:0:0:0::/64'],
     ['unknown', 'unknown'],
   ])('%s counts as %s', (address, bucket) => {
     expect(clientBucket(address)).toBe(bucket);
