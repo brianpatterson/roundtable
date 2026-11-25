@@ -48,11 +48,32 @@ const read = (t: TestApp, id: string, authorization?: string) =>
     headers: authorization ? { authorization } : {},
   });
 
+const UNDECODABLE = "A report's stored diagnostics don't decode";
+const READ = 'Problem report read by the factory';
+
 describe('the factory reads a report', () => {
-  const t = setupTestApp({ env: { FACTORY_REPORTS_TOKEN: Redacted.make(TOKEN) } });
+  const lines: string[] = [];
+
+  const t = setupTestApp({
+    env: { FACTORY_REPORTS_TOKEN: Redacted.make(TOKEN) },
+    logStream: { write: (line) => void lines.push(line) },
+  });
+
+  /** The JSON log lines whose message is `msg`. */
+  const logged = (msg: string) =>
+    lines.flatMap((line) => {
+      const entry = JSON.parse(line);
+
+      return entry.msg === msg ? [entry] : [];
+    });
 
   beforeAll(() => t.migrate());
-  beforeEach(() => t.reset());
+
+  beforeEach(async () => {
+    await t.reset();
+    lines.length = 0;
+  });
+
   afterAll(() => t.close());
 
   it('with the token: what the user wrote and what their browser saw', async () => {
@@ -122,6 +143,29 @@ describe('the factory reads a report', () => {
       description: 'The list is empty after I add an application',
       diagnostics: null,
     });
+    // The owner learns from the logs which report lost its diagnostics, as a warning.
+    expect(logged(UNDECODABLE)).toEqual([expect.objectContaining({ level: 40, reportId: id })]);
+  });
+
+  it('logs which report it read, and no warning when the diagnostics decode', async () => {
+    const id = await sendReport(t);
+
+    expect((await read(t, id, `Bearer ${TOKEN}`)).statusCode).toBe(200);
+    expect(logged(READ)).toEqual([expect.objectContaining({ level: 30, reportId: id })]);
+    expect(logged(UNDECODABLE)).toEqual([]);
+  });
+
+  it('a report sent without diagnostics reads as null, with no warning', async () => {
+    const id = await sendReport(t);
+
+    await t.db.update(userReports).set({ diagnostics: null }).where(eq(userReports.id, id));
+
+    const res = await read(t, id, `Bearer ${TOKEN}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ diagnostics: unknown }>().diagnostics).toBeNull();
+    expect(logged(READ)).toHaveLength(1);
+    expect(logged(UNDECODABLE)).toEqual([]);
   });
 
   it('an unknown id is a 404, and a malformed one a 400', async () => {
