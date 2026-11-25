@@ -128,6 +128,28 @@ describe('a Round’s Prep', () => {
       prepTasks: [],
     });
   });
+
+  it('comes with its prep tasks from every endpoint that answers a Round', async () => {
+    const round = await createRound();
+    await request('PUT', `${round.url}/prep-notes`, { notes: 'Notes' });
+    await addTask(round, { title: 'Kept' });
+
+    const responses = [
+      await request('PUT', `${round.url}/schedule`, { dueOn: '2026-12-01' }),
+      await request('PUT', `${round.url}/rating`, { selfRating: 4 }),
+      await request('PUT', `${round.url}/outcome`, { outcome: 'passed' }),
+      await request('POST', `${round.url}/tags`, { tag: 'Caching' }),
+      await request('DELETE', `${round.url}/tags?tag=Caching`),
+    ];
+
+    for (const res of responses) {
+      expect(res.statusCode).toBe(200);
+      expect(res.json<RoundJson>()).toMatchObject({
+        prepNotes: 'Notes',
+        prepTasks: [{ title: 'Kept' }],
+      });
+    }
+  });
 });
 
 describe('Prep notes', () => {

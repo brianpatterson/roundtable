@@ -63,9 +63,20 @@ export const ApplicationsLive = HttpApiBuilder.group(
         Effect.map((byRound) => ({ ...round, prepTasks: byRound.get(round.id) ?? [] })),
       );
 
-    /** A Skill id a request names: the user's (archived or not), or `SkillNotFound`. */
-    const checkSkill = (userId: string, skillId: string | null | undefined) =>
-      skillId === undefined || skillId === null ? Effect.void : skills.findOwned(userId, skillId);
+    /**
+     * A Skill id a request names: the signed-in user's (archived or not), or `SkillNotFound`.
+     * Run it before `changePrep`, not inside its transaction: it's personas' read, and no
+     * transaction spans two modules (ADR-0044). Skills are never deleted, so one can't go missing
+     * in between.
+     */
+    const checkSkill = (skillId: string | null | undefined) =>
+      Effect.gen(function* () {
+        if (skillId === undefined || skillId === null) return;
+
+        const user = yield* CurrentUser;
+
+        yield* skills.findOwned(user.id, skillId);
+      });
 
     /**
      * Changes the Prep of the Round `roundId` of the user's application `id`, in one transaction
@@ -75,7 +86,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
      */
     const changePrep = <E>(
       params: { readonly id: string; readonly roundId: string },
-      change: (tx: Transaction, roundId: string, userId: string) => Effect.Effect<unknown, E>,
+      change: (tx: Transaction, roundId: string) => Effect.Effect<unknown, E>,
     ) =>
       Effect.gen(function* () {
         const user = yield* CurrentUser;
@@ -100,7 +111,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
               if (!locked) return yield* new RoundNotFound();
 
-              yield* change(tx, locked.id, user.id);
+              yield* change(tx, locked.id);
 
               const [round] = yield* tx
                 .select()
@@ -457,50 +468,54 @@ export const ApplicationsLive = HttpApiBuilder.group(
         ),
 
       addPrepTask: ({ params, payload }) =>
-        changePrep(params, (tx, roundId, userId) =>
-          Effect.gen(function* () {
-            const [existing] = yield* tx
-              .select({ count: count(), last: max(prepTasks.position) })
-              .from(prepTasks)
-              .where(eq(prepTasks.roundId, roundId))
-              .pipe(Effect.orDie);
+        Effect.andThen(
+          checkSkill(payload.skillId),
+          changePrep(params, (tx, roundId) =>
+            Effect.gen(function* () {
+              const [existing] = yield* tx
+                .select({ count: count(), last: max(prepTasks.position) })
+                .from(prepTasks)
+                .where(eq(prepTasks.roundId, roundId))
+                .pipe(Effect.orDie);
 
-            if ((existing?.count ?? 0) >= MAX_PREP_TASKS) return yield* new TooManyPrepTasks();
+              if ((existing?.count ?? 0) >= MAX_PREP_TASKS) return yield* new TooManyPrepTasks();
 
-            yield* checkSkill(userId, payload.skillId);
-
-            yield* tx
-              .insert(prepTasks)
-              .values({
-                roundId,
-                title: payload.title,
-                skillId: payload.skillId ?? null,
-                position: (existing?.last ?? -1) + 1,
-              })
-              .pipe(Effect.orDie);
-          }),
+              yield* tx
+                .insert(prepTasks)
+                .values({
+                  roundId,
+                  title: payload.title,
+                  skillId: payload.skillId ?? null,
+                  position: (existing?.last ?? -1) + 1,
+                })
+                .pipe(Effect.orDie);
+            }),
+          ),
         ),
 
       // Marking a done task done keeps the date it was first done.
       updatePrepTask: ({ params, payload }) =>
-        changePrep(params, (tx, roundId, userId) =>
-          Effect.gen(function* () {
-            const task = yield* findTask(tx, roundId, params.taskId);
+        Effect.andThen(
+          checkSkill(payload.skillId),
+          changePrep(params, (tx, roundId) =>
+            Effect.gen(function* () {
+              const task = yield* findTask(tx, roundId, params.taskId);
 
-            yield* checkSkill(userId, payload.skillId);
-
-            yield* tx
-              .update(prepTasks)
-              .set({
-                ...(payload.title !== undefined && { title: payload.title }),
-                ...(payload.skillId !== undefined && { skillId: payload.skillId }),
-                ...(payload.done !== undefined && {
-                  completedAt: payload.done ? sql`coalesce(${prepTasks.completedAt}, now())` : null,
-                }),
-              })
-              .where(eq(prepTasks.id, task.id))
-              .pipe(Effect.orDie);
-          }),
+              yield* tx
+                .update(prepTasks)
+                .set({
+                  ...(payload.title !== undefined && { title: payload.title }),
+                  ...(payload.skillId !== undefined && { skillId: payload.skillId }),
+                  ...(payload.done !== undefined && {
+                    completedAt: payload.done
+                      ? sql`coalesce(${prepTasks.completedAt}, now())`
+                      : null,
+                  }),
+                })
+                .where(eq(prepTasks.id, task.id))
+                .pipe(Effect.orDie);
+            }),
+          ),
         ),
 
       deletePrepTask: ({ params }) =>
