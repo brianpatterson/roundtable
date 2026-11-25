@@ -1,72 +1,31 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { serverError, setUpFakeApi } from '../../shared/testing/fake-api';
 import { createTestRouter, TestRouterProvider } from '../../shared/testing/router';
 import { ApplicationPage } from './ApplicationPage';
 
-// The page calls the real typed client; only the server behind `fetch` is a stand-in, answering
-// one application's endpoint the way the API does.
+// The page calls the real typed client, answered by the in-memory API. Its Rounds have their
+// own tests (Rounds.test.tsx).
+const fake = setUpFakeApi();
+
 const ACME_ID = '00000000-0000-4000-8000-000000000001';
 const MISSING_ID = '00000000-0000-4000-8000-000000000009';
 
 const APPLIED_AT = '2026-10-30T12:00:00.000Z';
 
-const JOB_URL = 'https://jobs.example.com/acme/1';
-
-/** Acme's application as the API sends it. */
-const acme = (
-  status = 'interviewing',
-  appliedAt: string | null = APPLIED_AT,
-  jobUrl: string | null = JOB_URL,
-) => ({
-  id: ACME_ID,
-  company: 'Acme',
-  jobTitle: 'Engineer',
-  jobUrl,
-  status,
-  appliedAt,
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-02T00:00:00.000Z',
-});
-
-let stored: ReturnType<typeof acme>;
-
-/** Every path the page asked the server for. */
-let requested: string[];
-
-/** The server fails with a 500, which has nothing to do with the application. */
-let serverError: boolean;
-
-function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const request = new Request(input, init);
-  const { pathname } = new URL(request.url);
-
-  requested.push(pathname);
-
-  if (serverError) return Promise.resolve(new Response(null, { status: 500 }));
-
-  if (request.method === 'GET' && pathname === `/api/applications/${ACME_ID}`)
-    return Promise.resolve(Response.json(stored));
-
-  // Its Rounds have their own tests (Rounds.test.tsx).
-  if (request.method === 'GET' && pathname === `/api/applications/${ACME_ID}/rounds`)
-    return Promise.resolve(Response.json([]));
-
-  // A missing application and another user's answer the same (CLAUDE.md, rule 8).
-  return Promise.resolve(Response.json({ _tag: 'ApplicationNotFound' }, { status: 404 }));
-}
-
 beforeEach(() => {
-  stored = acme();
-  requested = [];
-  serverError = false;
-  vi.stubGlobal('fetch', fakeServer);
+  fake.seedApplication({
+    id: ACME_ID,
+    status: 'interviewing',
+    appliedAt: new Date(APPLIED_AT),
+    jobUrl: 'https://jobs.example.com/acme/1',
+  });
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+/** The endpoints the page called, in order. */
+const called = () => fake.calls().map((call) => call.endpoint);
 
 const renderPage = (applicationId: string) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -118,7 +77,7 @@ describe('ApplicationPage', () => {
   });
 
   it('shows a saved application as Not sent, with no job link when it has none', async () => {
-    stored = acme('saved', null, null);
+    fake.changeApplication(ACME_ID, { status: 'saved', appliedAt: null, jobUrl: null });
     renderPage(ACME_ID);
 
     expect(await screen.findByRole('heading', { name: 'Acme' })).toBeDefined();
@@ -140,18 +99,21 @@ describe('ApplicationPage', () => {
     await expectNotFound();
     // An answer, not a failure: no error, and asked only once.
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(requested).toEqual([`/api/applications/${MISSING_ID}`]);
+    expect(called()).toEqual(['applications.get']);
+    expect(fake.received('applications.get')).toEqual([{ id: MISSING_ID }]);
   });
 
   it('says a malformed id is not found, without asking the server', async () => {
     renderPage('not-an-id');
 
     await expectNotFound();
-    expect(requested).toEqual([]);
+    expect(called()).toEqual([]);
   });
 
   it('shows any other failure as an error, with the way back', async () => {
-    serverError = true;
+    // A 500 has nothing to do with the application.
+    fake.on('applications.get', serverError);
+    fake.on('applications.listRounds', serverError);
     renderPage(ACME_ID);
 
     expect((await screen.findByRole('alert')).textContent).toBe(

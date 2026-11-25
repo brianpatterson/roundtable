@@ -157,6 +157,18 @@ application to interviewing with its first Round. Both default the time zone to 
 definition, and run the pure rules in `inference.ts`. Which Rounds inference may change (pending, not set by the user) is defined once
 there, and the SQL guard against a concurrent edit by the user is written from it.
 
+**The web app's tests** ([ADR-0071](adr/0071-in-memory-api-adapter-for-web-tests.md)): the
+applications and shell component tests call the API through the real typed client, answered by
+one in-memory adapter of the contract, `apps/web/src/shared/testing/fake-api.ts`. It's the second
+adapter at the seam the modules call through, beside the real API over HTTP: the contract's own
+`HttpApiBuilder` groups with in-memory handlers, served as a web handler like the API's
+`appWebHandler`, plus Better Auth's session, sign-in and sign-out routes. Requests and answers go
+through the contract's schemas, and its rules are the contract's (`OPEN_APPLICATION_STATUSES`,
+`isUpcoming`, `inAgendaOrder`, `inRoundOrder`, `sameTag`). It infers nothing (no Outcome inference,
+no move to interviewing), which the API's tests cover. Tests seed it with factories that default
+every field, read what each endpoint received, and override an endpoint (a 500, a held request)
+until the next test; an answer that breaks the contract fails the test.
+
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
 the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its

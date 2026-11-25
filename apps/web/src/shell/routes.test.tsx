@@ -1,124 +1,22 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setUpFakeApi } from '../shared/testing/fake-api';
 
-// The app's pages (ADR-0049), through the whole shell at the browser's own URL, against a
-// stand-in `fetch`: signing in, the applications table and each application's page.
+// The app's pages (ADR-0049), through the whole shell at the browser's own URL, against the
+// in-memory API: signing in, the applications table and each application's page.
+const fake = setUpFakeApi();
+
 const ACME_ID = '00000000-0000-4000-8000-000000000001';
 const MISSING_ID = '00000000-0000-4000-8000-000000000009';
 
-const user = {
-  id: 'user-1',
-  name: 'Ada',
-  email: 'ada@example.com',
-  emailVerified: true,
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-01T00:00:00.000Z',
-};
-
-const sessionFor = (id: string) => ({
-  session: {
-    id,
-    userId: user.id,
-    token: `token-${id}`,
-    expiresAt: '2026-12-01T00:00:00.000Z',
-    createdAt: '2026-11-01T00:00:00.000Z',
-    updatedAt: '2026-11-01T00:00:00.000Z',
-  },
-  user,
-});
-
-/** The server's session: null when signed out, or once it has expired. */
-let session: ReturnType<typeof sessionFor> | null;
-
-/** The session expires at the next applications call. */
-let expires: boolean;
-
-/** Acme's application as the API sends it, in `status`. */
-const acmeIn = (status: string) => ({
-  id: ACME_ID,
-  company: 'Acme',
-  jobTitle: 'Engineer',
-  jobUrl: null,
-  status,
-  appliedAt: '2026-10-30T12:00:00.000Z',
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-02T00:00:00.000Z',
-});
-
-/** The user's one application, as the server holds it. */
-let acme: ReturnType<typeof acmeIn>;
-
-/** Acme's one Round, on the Agenda as the API sends it. */
-const acmeRound = {
-  id: '00000000-0000-4000-8000-000000000101',
-  applicationId: ACME_ID,
-  interviewType: 'coding',
-  tags: [],
-  startsAt: null,
-  durationMinutes: null,
-  dueOn: null,
-  selfRating: null,
-  ratingNote: null,
-  outcome: 'pending',
-  outcomeSetByUser: false,
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-01T00:00:00.000Z',
-  company: 'Acme',
-  jobTitle: 'Engineer',
-};
-
-async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const request = new Request(input, init);
-  const { pathname } = new URL(request.url);
-
-  if (pathname === '/api/auth/get-session') return Response.json(session);
-
-  if (pathname === '/api/auth/sign-in/email') {
-    session = sessionFor('session-2');
-
-    return Response.json({ redirect: false, token: session.session.token, user });
-  }
-
-  if (pathname === '/api/auth-config') return Response.json({ providers: [] });
-
-  const isAgenda = pathname === '/api/agenda';
-
-  if (!isAgenda && !pathname.startsWith('/api/applications'))
-    return new Response(null, { status: 404 });
-
-  // The session runs out: this call is refused, and Better Auth's next check finds no session.
-  if (expires) session = null;
-
-  if (!session) return Response.json({ _tag: 'Unauthorized' }, { status: 401 });
-
-  // Acme's one Round, unscheduled so the page reads the same whenever the test runs.
-  if (isAgenda) return Response.json([acmeRound]);
-
-  if (pathname === '/api/applications') return Response.json([acme]);
-
-  if (pathname !== `/api/applications/${acme.id}`)
-    return Response.json({ _tag: 'ApplicationNotFound' }, { status: 404 });
-
-  if (request.method === 'PATCH') {
-    // SAFETY: the typed client encoded this body with the contract's UpdateApplication schema.
-    const { status } = (await request.json()) as { status: string };
-
-    acme = acmeIn(status);
-  }
-
-  return Response.json(acme);
-}
-
 beforeEach(() => {
-  session = sessionFor('session-1');
-  expires = false;
-  acme = acmeIn('applied');
-  vi.stubGlobal('fetch', fakeServer);
+  fake.seedApplication({ id: ACME_ID, company: 'Acme', jobTitle: 'Engineer' });
+  // Unscheduled, so the Agenda reads the same whenever the test runs.
+  fake.seedRound(ACME_ID);
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   window.history.replaceState(null, '', '/');
 });
 
@@ -243,7 +141,7 @@ describe('App: an application’s page', () => {
   });
 
   it('asks a signed-out user to sign in, then shows the application they opened', async () => {
-    session = null;
+    fake.endSession();
     await openApp(`/applications/${ACME_ID}`);
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
@@ -277,7 +175,7 @@ describe('App: an application’s page', () => {
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Status for Acme' }));
     await userEvent.click(await screen.findByRole('option', { name: 'Offer' }));
-    await waitFor(() => expect(acme.status).toBe('offer'));
+    await waitFor(() => expect(fake.application(ACME_ID)?.status).toBe('offer'));
 
     await userEvent.click(screen.getByRole('link', { name: 'Acme' }));
     await findApplicationPage();
@@ -288,7 +186,8 @@ describe('App: an application’s page', () => {
   });
 
   it('returns to sign-in with a notice when the session has expired, as the table does', async () => {
-    expires = true;
+    // The session runs out at the next call: it's refused, and Better Auth then finds none.
+    fake.expireSessionAfter(0);
     await openApp(`/applications/${ACME_ID}`);
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
