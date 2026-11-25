@@ -149,9 +149,9 @@ describe('reporting a problem', () => {
   it('logs each stored report by its id', async () => {
     const { id } = (await report(t, valid)).json<{ id: string }>();
 
-    expect(
-      logged(lines).find((line) => line.msg === 'Problem report stored')?.fields,
-    ).toMatchObject({ reportId: id });
+    expect(logged(lines).filter((line) => line.fields.reportId === id)).toMatchObject([
+      { level: 30 },
+    ]);
   });
 
   it(`stores only ${REPORTS_PER_HOUR} of many reports sent at once from one address`, async () => {
@@ -509,9 +509,9 @@ describe('the daily cap on report issues and emails', () => {
     expect(issues).toHaveLength(0);
     expect(emailHead(t)).toContain('GitHub issue: not opened: daily limit reached');
 
-    const warning = logged(lines).find((line) => line.msg.includes('daily report limit reached'));
-
-    expect(warning).toMatchObject({ level: 40, fields: { limit: 2 } });
+    expect(logged(lines).filter((line) => line.level === 40)).toMatchObject([
+      { fields: { limit: 2 } },
+    ]);
   });
 
   it('opens only the cap of issues for many reports sent at once', async () => {
