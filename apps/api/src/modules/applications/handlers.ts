@@ -190,6 +190,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
                 .where(eq(rounds.id, round.id))
                 .returning();
 
+              // Stryker disable next-line StringLiteral: the row is locked, so the update always returns it and the message is never used
               if (!updated) return yield* Effect.die(new Error('update returned no row'));
 
               return updated;
@@ -245,6 +246,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
             .returning()
             .pipe(Effect.orDie);
 
+          // Stryker disable next-line StringLiteral: an insert with returning always returns its row, so the message is never used
           if (!row) return yield* Effect.die(new Error('insert returned no row'));
 
           return row;
@@ -363,6 +365,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
                   })
                   .returning();
 
+                // Stryker disable next-line StringLiteral: an insert with returning always returns its row, so the message is never used
                 if (!round) return yield* Effect.die(new Error('insert returned no row'));
 
                 yield* roundAdded(tx, application, earlier, round, payload.timeZone);
