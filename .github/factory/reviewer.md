@@ -109,44 +109,66 @@ reasoning they can't do: follow data from where it enters to where it ends up. F
 name the category, the path an attacker or a failure takes, and what they get. A security
 finding is **blocking** unless it's clearly theoretical.
 
-- **A01 Broken Access Control.** Every endpoint that touches user data is in a group behind the
-  `Authorization` middleware, and every query filters on `CurrentUser`. Another user's row is a
-  404, never a 403 or a leak through a list, count, error message or timing. A new resource
-  has a cross-user test. Ids come from the params schema, never trusted from a body. Any
-  server-side fetch of a user-supplied URL (SSRF) is refused or allowlisted.
-- **A02 Security Misconfiguration.** Caddy's headers and CSP, cookie flags, CORS and trusted
-  origins in Better Auth, the firewall and ports in `infra/`, new environment variables with
-  safe defaults, debug output or stack traces that could reach a response.
-- **A03 Software Supply Chain Failures.** A new or bumped dependency: is it needed, maintained,
-  pinned, registered in `docs/dependencies.md`, free of install scripts it doesn't need? A new
-  GitHub Action pinned by SHA, with least `permissions:`. Anything that widens what a workflow
-  can reach (secrets, environments, `pull_request_target`, `workflow_run`).
-- **A04 Cryptographic Failures.** Secrets are `Redacted` and unwrapped only where they're
-  handed over; nothing secret in code, logs, URLs or the client bundle. Tokens and links are
-  random enough, single-use and expire. No home-made crypto or hashing.
-- **A05 Injection.** SQL only through Drizzle's parameters (`sql` templates parameterize
-  their values; `sql.raw` never takes input); no `dangerouslySetInnerHTML` or HTML built from input;
-  no input in shell commands, file paths, email headers or regexes. User text that could reach
-  an LLM prompt (the factory, future features) is a prompt-injection path.
-- **A06 Insecure Design.** Missing limits: rate limits on anything that sends email or is
-  expensive, size limits on bodies and lists, and abuse paths the happy path ignores (signing up
-  as someone else's address, enumerating accounts through different responses).
-- **A07 Authentication Failures.** Sessions through Better Auth only; no custom session checks.
-  Sign-in, reset and verification flows don't reveal whether an account exists, invalidate old
-  tokens, and keep the password rule from the contract (`PASSWORD_MIN_LENGTH`).
-- **A08 Software or Data Integrity Failures.** Data decoded with Effect Schema at every trust
-  boundary (requests, environment, third-party responses, anything read back from storage) rather
-  than cast. Migrations backward-compatible with the previous release (ADR-0014). Deploy and
-  workflow changes that could run unreviewed code.
-- **A09 Security Logging and Alerting Failures.** Failures that matter are logged and reported
-  through `ErrorReporter`; expected outcomes (401, 404) are marked ignored so they don't drown
-  real ones. Logs, Sentry events and error messages never carry user data, tokens, cookies or
-  query parameters: check what leaves the process, not just what's logged on purpose (the
-  2026-11-10 leak, roadmap block 6).
-- **A10 Mishandling of Exceptional Conditions.** What happens when the database, the mailer or
-  a provider fails mid-request: the error is typed or a defect, never swallowed; nothing fails
-  open (an auth check that errors must deny); transactions roll back; resources (pooled
-  connections) are released on interruption; the user sees a safe message, not internals.
+- **A01 Broken Access Control**
+  - Every endpoint that touches user data is in a group behind the `Authorization` middleware,
+    and every query filters on `CurrentUser`.
+  - Another user's row is a 404, never a 403 or a leak through a list, count, error message or
+    timing.
+  - A new resource has a cross-user test.
+  - Ids come from the params schema, never trusted from a body.
+  - Any server-side fetch of a user-supplied URL (SSRF) is refused or allowlisted.
+- **A02 Security Misconfiguration**
+  - Caddy's headers and CSP.
+  - Cookie flags, CORS and trusted origins in Better Auth.
+  - The firewall and ports in `infra/`.
+  - New environment variables with safe defaults.
+  - Debug output or stack traces that could reach a response.
+- **A03 Software Supply Chain Failures**
+  - A new or bumped dependency: is it needed, maintained, pinned, registered in
+    `docs/dependencies.md`, free of install scripts it doesn't need?
+  - A new GitHub Action pinned by SHA, with least `permissions:`.
+  - Anything that widens what a workflow can reach (secrets, environments,
+    `pull_request_target`, `workflow_run`).
+- **A04 Cryptographic Failures**
+  - Secrets are `Redacted` and unwrapped only where they're handed over.
+  - Nothing secret in code, logs, URLs or the client bundle.
+  - Tokens and links are random enough, single-use and expire.
+  - No home-made crypto or hashing.
+- **A05 Injection**
+  - SQL only through Drizzle's parameters (`sql` templates parameterize their values;
+    `sql.raw` never takes input).
+  - No `dangerouslySetInnerHTML` or HTML built from input.
+  - No input in shell commands, file paths, email headers or regexes.
+  - User text that could reach an LLM prompt (the factory, future features) is a
+    prompt-injection path.
+- **A06 Insecure Design**
+  - Rate limits on anything that sends email or is expensive.
+  - Size limits on bodies and lists.
+  - Abuse paths the happy path ignores (signing up as someone else's address, enumerating
+    accounts through different responses).
+- **A07 Authentication Failures**
+  - Sessions through Better Auth only; no custom session checks.
+  - Sign-in, reset and verification flows don't reveal whether an account exists.
+  - Old tokens are invalidated.
+  - The password rule comes from the contract (`PASSWORD_MIN_LENGTH`).
+- **A08 Software or Data Integrity Failures**
+  - Data decoded with Effect Schema at every trust boundary (requests, environment, third-party
+    responses, anything read back from storage) rather than cast.
+  - Migrations backward-compatible with the previous release (ADR-0014).
+  - Deploy and workflow changes that could run unreviewed code.
+- **A09 Security Logging and Alerting Failures**
+  - Failures that matter are logged and reported through `ErrorReporter`.
+  - Expected outcomes (401, 404) are marked ignored so they don't drown real ones.
+  - Logs, Sentry events and error messages never carry user data, tokens, cookies or query
+    parameters: check what leaves the process, not just what's logged on purpose (the
+    2026-11-10 leak, roadmap block 6).
+- **A10 Mishandling of Exceptional Conditions**
+  - When the database, the mailer or a provider fails mid-request, the error is typed or a
+    defect, never swallowed.
+  - Nothing fails open: an auth check that errors must deny.
+  - Transactions roll back.
+  - Resources (pooled connections) are released on interruption.
+  - The user sees a safe message, not internals.
 
 In your review, put security findings under **Findings** like any other, prefixed with the
 category (`A01`). After the findings, add one line: **OWASP Top 10**, listing the categories
