@@ -5,7 +5,7 @@ import { HttpRouter, HttpServer } from 'effect/http';
 import { HttpApiBuilder, HttpApiMiddleware } from 'effect/http-api';
 import { RoundtableApi } from '@roundtable/contract';
 import { createServer } from 'node:http';
-import { ApplicationsLive } from './modules/applications/index.js';
+import { AgendaLive, ApplicationsLive } from './modules/applications/index.js';
 import { EmailLive, type EmailTransport } from './modules/email/index.js';
 import { IdentityLive } from './modules/identity/index.js';
 import { GitHubIssues, SupportLive } from './modules/support/index.js';
@@ -67,7 +67,12 @@ const ReportErrors = HttpRouter.middleware((httpEffect) => Effect.withErrorRepor
 /** Every route, with the modules and the resources they need. */
 function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
-    Layer.provide([SystemLive, ApplicationsLive, SupportLive(env, log, { githubIssues })]),
+    Layer.provide([
+      SystemLive,
+      ApplicationsLive,
+      AgendaLive,
+      SupportLive(env, log, { githubIssues }),
+    ]),
     // Identity's endpoints, the Authorization and OptionalSession middleware the groups above
     // rely on, and Better Auth's own routes, all in one.
     Layer.provide(IdentityLive(env, log)),

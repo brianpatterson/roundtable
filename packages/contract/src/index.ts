@@ -3,7 +3,7 @@
 // (apps/api) and the web app calls it through the typed client in `client/`. No server code here:
 // the web app imports this package, so everything in it ends up in the browser bundle.
 import { HttpApi, HttpApiMiddleware } from 'effect/http-api';
-import { ApplicationsApi } from './applications.js';
+import { AgendaApi, ApplicationsApi } from './applications.js';
 import { IdentityApi } from './identity.js';
 import { FactoryReportsApi, SupportApi } from './support.js';
 import { SystemApi } from './system.js';
@@ -24,6 +24,7 @@ export class RoundtableApi extends HttpApi.make('roundtable')
   .add(SystemApi)
   .add(IdentityApi)
   .add(ApplicationsApi)
+  .add(AgendaApi)
   .add(SupportApi)
   .add(FactoryReportsApi)
   .middleware(HttpApiMiddleware.ProblemDetails) {}

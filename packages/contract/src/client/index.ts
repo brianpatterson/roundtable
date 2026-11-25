@@ -79,6 +79,9 @@ export function makeApiClient(options: ApiClientOptions) {
       run((client) =>
         client.applications.removeTag({ params: { id: applicationId, roundId }, query: { tag } }),
       ),
+    /** The upcoming Rounds across open Applications, with today in `timeZone` (UTC without). */
+    agenda: (timeZone?: string) =>
+      run((client) => client.agenda.list({ query: timeZone === undefined ? {} : { timeZone } })),
     createReport: (payload: CreateReport) =>
       run((client) => client.support.createReport({ payload })),
   };
