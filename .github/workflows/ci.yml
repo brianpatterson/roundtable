@@ -163,12 +163,13 @@ jobs:
   # Stryker on a mutation ticket's one file (ADR-0051), on the factory's pull request for it, so
   # the reviewer reads which mutants are left instead of taking the implementer's word (ADR-0069).
   # Other pull requests skip it after one `gh` call. Advisory: a failure or a timeout leaves the
-  # reviewer no report, never a red CI. No secrets: the API's tests run on CI's Postgres.
+  # reviewer a "not verified" report, never a red or cancelled CI, which would hold the review
+  # back (it starts on a successful CI). So Stryker's own step has the time limit and may fail;
+  # the job's limit is only a backstop. No secrets: the API's tests run on CI's Postgres.
   mutation:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'claude/issue-')
     runs-on: ubuntu-latest
-    # The web app's file takes seconds; the API's a few minutes on a laptop.
-    timeout-minutes: 25
+    timeout-minutes: 40
     continue-on-error: true
     permissions:
       contents: read
@@ -224,8 +225,11 @@ jobs:
       - if: steps.target.outputs.file != ''
         run: pnpm install --frozen-lockfile
       # `--force`: a fresh checkout has no incremental results, but nothing here should reuse them.
+      # The web app's file takes seconds; the API's a few minutes on a laptop.
       - name: Mutate the file
         if: steps.target.outputs.file != ''
+        timeout-minutes: 25
+        continue-on-error: true
         env:
           APP: ${{ steps.target.outputs.app }}
           FILE: ${{ steps.target.outputs.file }}

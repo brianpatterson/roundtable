@@ -36,13 +36,15 @@ Option 2.
 - **CI's `mutation` job** runs on pull requests from `claude/issue-<n>-…` branches. When issue `<n>`
   is labeled `mutation` and its title names a source file in `apps/web` or `apps/api`, it runs
   `test:mutation --mutate <file> --force` on CI's Postgres and uploads `mutation.json` as the
-  `mutation-check` artifact. Other pull requests skip it after one `gh` call. It is advisory
-  (`continue-on-error`, 25 minutes): a failure or timeout leaves no report, never a red CI.
-- **The reviewer** gets `./mutation/report.md`, made by main's `load-mutation-report.sh` from that
-  artifact. The artifact was written by the pull request's code, so the script keeps a fixed shape,
-  cut short and capped: counts by status, and each mutant not killed with its line, mutator,
-  replacement and, for an ignored one, its reason. When Stryker ran and failed, the report says the
-  criterion isn't verified.
+  `mutation-check` artifact. Other pull requests skip it after one `gh` call. It is advisory:
+  Stryker's step has a 25-minute limit and may fail, so a failure or timeout never makes CI red
+  or cancelled, which would hold back the review that starts on a successful CI.
+- **The reviewer** gets `./mutation/report.md`, made by main's `load-mutation-report.sh`. Review
+  finds the ticket and its file from the branch and the ticket's title, not from the artifact,
+  which the pull request's code wrote. The script reports only that file, in a fixed shape, cut
+  short and capped: counts by status, and each mutant not killed with its line, mutator,
+  replacement and, for an ignored one, its reason. Other files in the artifact are only counted,
+  with a warning. With no artifact, the report says the criterion isn't verified.
 - A mutant the pull request says is killed but the report shows `Survived` or `NoCoverage` is a
   blocking finding. Running Stryker leaves **Check by hand**.
 

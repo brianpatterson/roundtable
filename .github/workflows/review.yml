@@ -166,26 +166,28 @@ jobs:
           "$RUNNER_TEMP/load-screenshots.sh" "$RUNNER_TEMP/browser-tests" screenshots
 
       # On a mutation ticket's pull request, what Stryker left in the ticket's file on this commit
-      # (ADR-0069). Main's load-mutation-report.sh keeps a fixed shape of it: the pull request's
-      # code wrote the artifact. Other pull requests have none, and get no ./mutation/.
+      # (ADR-0069). Which ticket and file come from the branch and the ticket's title, not from the
+      # artifact: the pull request's code wrote that, so main's load-mutation-report.sh keeps a
+      # fixed shape of it, for that file only. Other pull requests get no ./mutation/. Never fails
+      # the review: every `gh` call here falls back to skipping or to "not verified".
       - name: Load the mutation report
         env:
           GH_TOKEN: ${{ github.token }}
           CI_RUN: ${{ needs.select.outputs.ci_run }}
         run: |
-          [ -n "$CI_RUN" ] || exit 0
-          if gh run download "$CI_RUN" -R "$GITHUB_REPOSITORY" -n mutation-check -D "$RUNNER_TEMP/mutation-check"; then
-            "$RUNNER_TEMP/load-mutation-report.sh" "$RUNNER_TEMP/mutation-check" mutation
-            exit 0
-          fi
-          # No artifact: not a mutation ticket (the step was skipped), or Stryker failed or timed
-          # out. Only the second gets a report saying the criterion isn't verified.
-          ran=$(gh run view "$CI_RUN" -R "$GITHUB_REPOSITORY" --json jobs \
-            --jq '[.jobs[] | select(.name == "mutation") | .steps[] | select(.name == "Mutate the file") | .conclusion] | first // ""')
-          case "$ran" in
-            failure | cancelled) "$RUNNER_TEMP/load-mutation-report.sh" "$RUNNER_TEMP/no-mutation-check" mutation ;;
-            *) echo "No Stryker run on this pull request." ;;
-          esac
+          branch=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName) || exit 0
+          [[ "$branch" =~ ^claude/issue-([0-9]+)- ]] || { echo "Not a ticket's branch."; exit 0; }
+          n=${BASH_REMATCH[1]}
+          ticket=$(gh issue view "$n" -R "$GITHUB_REPOSITORY" --json labels,title) || { echo "No issue #$n."; exit 0; }
+          jq -e 'any(.labels[]; .name == "mutation")' <<<"$ticket" >/dev/null || { echo "#$n isn't a mutation ticket."; exit 0; }
+          title=$(jq -r .title <<<"$ticket")
+          file=
+          [[ "$title" =~ ^Mutation:\ test\ \`apps/(web|api)/(src/[^\`]+)\`$ ]] && file=${BASH_REMATCH[2]}
+          mkdir -p "$RUNNER_TEMP/mutation-check"
+          [ -z "$CI_RUN" ] ||
+            gh run download "$CI_RUN" -R "$GITHUB_REPOSITORY" -n mutation-check -D "$RUNNER_TEMP/mutation-check" ||
+            echo "No mutation-check artifact on run $CI_RUN."
+          "$RUNNER_TEMP/load-mutation-report.sh" "$RUNNER_TEMP/mutation-check" "$file" mutation
 
       - name: Review
         id: claude
