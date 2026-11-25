@@ -74,8 +74,10 @@ breaks the rules (another module's internals, the assembly, or another module's 
 ```mermaid
 flowchart TB
   subgraph api[apps/api/src]
-    server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & identity & email & support
+    server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & personas & identity & email & support
     applications[modules/applications<br/>CRUD, applications table] --> identity
+    personas[modules/personas<br/>skill library, Skills service,<br/>skills table] --> identity
+    personas --> platform
     support[modules/support<br/>problem reports, GitHub issues,<br/>user_reports] --> email
     support --> platform
     identity[modules/identity<br/>Better Auth, Authorization, auth tables] --> email
@@ -96,6 +98,7 @@ flowchart TB
 | Module       | API                                                                                                                                         | Web                                                                                                | Contract          |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------- |
 | applications | CRUD handlers for applications and their Rounds, the Agenda, `applications` and `rounds` tables                                             | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
+| personas     | One `PersonasLive` layer: `/api/skills` (the skill library), the `Skills` service other modules check Skill ids with, `skills` table        | none yet (the Skills page is #228)                                                                 | `personas.ts`     |
 | identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                     | `identity.ts`     |
 | email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                               | none              |
 | support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                                       | `support.ts`      |
@@ -181,6 +184,14 @@ reports a failed change without moving the page: a mutation opts in with
 stays for anything else. A snackbar is announced as an alert, stacks, and goes after 6 seconds or on
 Dismiss. Errors tied to a form or dialog stay inline as an `Alert`.
 
+**Personas** gives the App one layer, `PersonasLive`: so far the skill library, the Skills a user
+practices (`GLOSSARY.md`). Its handlers go through the `Skills` service, which `index.ts` also
+exports for other modules: `Skills.findOwned(userId, id)` is how one checks a Skill id before
+storing it, failing with the contract's `SkillNotFound` for any id that isn't the user's, archived
+Skills included ([ADR-0044](adr/0044-links-between-modules.md) rule 1). Skills are archived and
+restored, never deleted (rule 3). Personas, their documents and Versions come later
+(`docs/roadmap.md`).
+
 **Identity** gives the App one layer, `IdentityLive`: its endpoint (`/api/auth-config`), the
 `Authorization` middleware every protected group relies on, and Better Auth's `/api/auth/*`
 routes, with Better Auth built inside. One rule decides which sign-in providers are configured,
@@ -241,8 +252,9 @@ flushes Sentry. `test/app-lifecycle.test.ts` checks that no connection outlives 
 Each module's `index.ts` is its public interface, and its tests sit next to it. A future split
 moves a module folder and its tables out, and gives the remaining modules a second adapter at
 the seam: for identity, the `Authorization` middleware would ask the identity service instead
-of Better Auth in-process. The applications table's foreign key to `users` is the one place a
-module reaches into another's tables, and would go with that split.
+of Better Auth in-process. Foreign keys to identity's `users` (from `applications` and `skills`)
+are the one place a module reaches into another's tables, and would go with that split
+([ADR-0044](adr/0044-links-between-modules.md)).
 
 ## 4. Data model
 
@@ -250,6 +262,7 @@ module reaches into another's tables, and would go with that split.
 erDiagram
   users ||--o{ applications : owns
   applications ||--o{ rounds : has
+  users ||--o{ skills : practices
   users ||--o{ sessions : has
   users ||--o{ accounts : "signs in with"
   users {
@@ -299,6 +312,14 @@ erDiagram
     round_outcome outcome "NOT NULL DEFAULT 'pending'"
     boolean outcome_set_by_user "NOT NULL DEFAULT false"
     timestamptz created_at "orders the undated ones"
+    timestamptz updated_at
+  }
+  skills {
+    uuid id PK "gen_random_uuid()"
+    text user_id FK "NOT NULL, ON DELETE CASCADE"
+    text name "NOT NULL, 1-80 characters; UNIQUE (user_id, lower(name))"
+    timestamptz archived_at "nullable: when it was archived"
+    timestamptz created_at
     timestamptz updated_at
   }
   user_reports {
@@ -364,13 +385,21 @@ erDiagram
   Round passes the pending Rounds before it, and a change to `rejected` fails the latest pending
   ones of one day, each in the transaction that makes the change; a passed or failed Outcome with
   the flag unset is an inferred one ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
+- `skills` is the skill library, in the personas module: each user's Skills (`GLOSSARY.md`), at
+  most 200, archived ones included. Two names that differ only in case are one Skill: the unique
+  index `skills_user_id_name_key` on `(user_id, lower(name))` decides that, and the contract trims
+  names before they arrive. The same index serves the list (one user's, by `lower(name)`) and the
+  count. Adding and renaming take a per-user advisory lock, so two requests at once can't both
+  pass the limit or take one name. Skills are never deleted while the account exists, since prep
+  tasks name them by a plain id ([ADR-0044](adr/0044-links-between-modules.md)); `archived_at`
+  hides one from pickers, and the foreign key to `users` deletes them with the account.
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
   email. Indexes on `(client_key, created_at)` and `issue_requested_at` serve the hourly and daily
   limits.
 - Source of truth: each module's `schema.ts` (`apps/api/src/modules/*/schema.ts`): identity owns
-  the auth tables, applications `applications` and `rounds`, email `email_sends`, support `user_reports`. One database and one migrations
+  the auth tables, applications `applications` and `rounds`, personas `skills`, email `email_sends`, support `user_reports`. One database and one migrations
   folder. Migrations are generated into `apps/api/drizzle/`,
   one folder each (`<timestamp>_<name>/migration.sql` + `snapshot.json`, Drizzle 1.0's layout)
   ([ADR-0004](adr/0004-drizzle-orm-and-migrations.md), [ADR-0022](adr/0022-effect-for-the-api.md)).
@@ -410,6 +439,9 @@ are rejected at the API rather than left to React and the CSP.
 | POST     | `/api/applications/:id/rounds/:roundId/tags`      | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)           |
 | DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=` | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                              |
 | GET      | `/api/agenda?timeZone=`                           | session                   | 200             | 400 (an unknown `timeZone`), 401                                                                                   |
+| GET      | `/api/skills`                                     | session                   | 200             | 401 (lists archived Skills too, by name ignoring case)                                                             |
+| POST     | `/api/skills`                                     | session                   | 201             | 400 (blank or over 80 characters, or `TooManySkills`: 200), 401, 409 (`SkillNameTaken`, with `archived`)           |
+| PATCH    | `/api/skills/:id`                                 | session                   | 200 (the Skill) | 400 (body or malformed id), 401, 404 (`SkillNotFound`: unknown or not yours), 409 (`SkillNameTaken`)               |
 | POST     | `/api/reports`                                    | public (session optional) | 201             | 400, 429 (5 per client address per hour)                                                                           |
 | GET      | `/api/factory/reports/:id`                        | factory token             | 200             | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                         |
 
