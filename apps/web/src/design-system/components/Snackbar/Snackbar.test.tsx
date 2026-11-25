@@ -45,6 +45,27 @@ describe('Snackbar', () => {
     expect(screen.getByRole('alert').textContent).toBe("Couldn't save.");
   });
 
+  it('confirms with the status tone without interrupting: no alert', async () => {
+    function Confirm() {
+      const showSnackbar = useSnackbar();
+
+      return <Button onClick={() => showSnackbar('Archived.', 'status')}>Archive</Button>;
+    }
+
+    render(
+      <SnackbarProvider>
+        <Confirm />
+      </SnackbarProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Archive' }));
+
+    const snackbar = await screen.findByRole('dialog', hidden);
+
+    expect(within(snackbar).getByText('Archived.')).toBeDefined();
+    expect(querySnackbars()).toEqual([]);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('disappears when its Dismiss button is activated', async () => {
     renderExample();
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));

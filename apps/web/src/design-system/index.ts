@@ -17,6 +17,7 @@ export {
   SnackbarProvider,
   createSnackbars,
   useSnackbar,
+  type SnackbarTone,
   type Snackbars,
 } from './components/Snackbar/Snackbar';
 

@@ -60,7 +60,7 @@ mark, the code is what's true.
 - **Session expiry**: the moment the API answers `Unauthorized` for a user the web app still
   shows as signed in. Owned by the identity module, which returns the user to sign-in with a
   notice ([ADR-0032](docs/adr/0032-web-identity-owns-session-expiry.md)).
-- **Skill** _(planned)_: something the user practices ("system design", "behavioral stories"). Each user has
+- **Skill**: something the user practices ("system design", "behavioral stories"). Each user has
   one skill library, where they add, rename, archive and restore Skills; a name is up to 80
   characters, and two that differ only in case or surrounding spaces are the same Skill. An
   archived Skill can't be picked for a new prep task but still shows on the ones that name it.

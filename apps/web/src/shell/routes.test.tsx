@@ -87,6 +87,26 @@ describe('App: the Agenda and the Applications table', () => {
     expect(currentPages()).toEqual(['Applications']);
   });
 
+  it('shows the Skills page at /skills, marked as the current page, linked beside the others', async () => {
+    fake.seedSkill({ name: 'System design' });
+    await openApp('/');
+    await findAgenda();
+
+    const nav = screen.getByRole('navigation', { name: 'Pages' });
+
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Agenda', 'Applications', 'Skills']);
+
+    await userEvent.click(within(nav).getByRole('link', { name: 'Skills' }));
+    expect(await screen.findByRole('heading', { name: 'Skills' })).toBeDefined();
+    expect(window.location.pathname).toBe('/skills');
+    expect(currentPages()).toEqual(['Skills']);
+    expect(await screen.findByText('System design')).toBeDefined();
+  });
+
   it('goes between them through the header, and marks neither on an application’s page', async () => {
     await openApp('/');
     await findAgenda();
