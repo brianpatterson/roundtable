@@ -583,4 +583,19 @@ describe('the Agenda, when Prep changes', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(agendaRequests()).toBe(5));
   });
+
+  it('shows the new Prep progress after a task is ticked', async () => {
+    seedRound([task(1), task(2)]);
+    await renderPage('agenda');
+
+    const agenda = screen.getByRole('region', { name: 'Agenda' });
+
+    expect(await within(agenda).findByText('Prep 0 of 2 done')).toBeDefined();
+
+    await userEvent.click(checkbox('Task 1'));
+    expect(await within(agenda).findByText('Prep 1 of 2 done')).toBeDefined();
+
+    await userEvent.click(checkbox('Task 2'));
+    expect(await within(agenda).findByText('Prep done')).toBeDefined();
+  });
 });

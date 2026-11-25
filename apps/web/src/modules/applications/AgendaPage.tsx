@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { prepProgress, type AgendaRound } from '@roundtable/contract';
 import { Alert, Link } from '../../design-system';
 import { api } from '../../shared/api';
 import styles from './AgendaPage.module.css';
@@ -27,6 +28,26 @@ function useNow() {
   }, []);
 
   return now;
+}
+
+/**
+ * A Round's Prep progress (GLOSSARY.md): "Prep 2 of 5 done", or "Prep done" with a check mark once
+ * every task is, so complete reads differently in words as well as color. Nothing without tasks.
+ */
+function PrepProgress({ round }: { round: AgendaRound }) {
+  const progress = prepProgress(round);
+
+  if (!progress) return null;
+
+  return progress.done === progress.total ? (
+    <span className={styles.prepDone}>
+      <span aria-hidden="true">✓ </span>Prep done
+    </span>
+  ) : (
+    <span>
+      Prep {progress.done} of {progress.total} done
+    </span>
+  );
 }
 
 /**
@@ -79,6 +100,7 @@ export function AgendaPage() {
                         {round.company} – {round.jobTitle}
                       </Link>
                       <span>{interviewTypeLabel(round.interviewType)}</span>
+                      <PrepProgress round={round} />
                     </span>
                   </li>
                 ))}

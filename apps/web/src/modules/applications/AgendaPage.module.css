@@ -52,4 +52,9 @@
   & > span {
     color: var(--ds-color-on-surface-variant);
   }
+
+  /* Prep done: a check mark and its own words, and the primary color on top. */
+  & > .prepDone {
+    color: var(--ds-color-primary);
+  }
 }

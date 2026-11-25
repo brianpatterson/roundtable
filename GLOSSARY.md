@@ -8,7 +8,7 @@ mark, the code is what's true.
 
 - **Agenda**: the user's upcoming Rounds across their open Applications (not
   rejected, withdrawn or accepted), each with its Application, Interview type and time left, and
-  its Prep progress once Prep exists. A dated Round stays upcoming until the end of its day (a
+  its Prep progress. A dated Round stays upcoming until the end of its day (a
   take-home, its due day) in the user's time zone; dated Rounds come first in date order, then
   the ones not scheduled yet. The home page, and the answer to "what should I prepare for next?".
 - **Application**: one job the user is pursuing at one company, from the moment they save the
@@ -42,8 +42,9 @@ mark, the code is what's true.
 - **Prep notes**: one plain-text note per Round, written before it ("they use Go, review
   the concurrency chapter"), up to 10,000 characters. Not the Self-rating's note, which is
   written after.
-- **Prep progress** _(planned)_: a Round's prep tasks done out of its total ("2 / 5"); a Round
-  with no prep tasks has none. Prep notes don't count. Shown on the Agenda.
+- **Prep progress**: a Round's prep tasks done out of its total ("2 of 5 done", or "Prep done"
+  once all are); a Round with no prep tasks has none. Prep notes don't count. Shown on the
+  Agenda and in the Round's Prep.
 - **Prep task**: one thing to do before a Round ("redo the LRU cache problem"), up to
   200 characters, optionally naming the Skill it practices. Done when the user ticks it, which
   records when; unticking clears that. Listed in the order added, up to 50 per Round.
