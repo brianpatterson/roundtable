@@ -57,12 +57,15 @@ afterEach(() => {
 const renderPage = async ({ sessionEnded = false } = {}) => {
   vi.resetModules();
   const { SignInPage } = await import('./SignInPage');
+  const client = new QueryClient();
 
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <SignInPage sessionEnded={sessionEnded} />
     </QueryClientProvider>,
   );
+
+  return client;
 };
 
 describe('SignInPage: providers', () => {
@@ -75,11 +78,18 @@ describe('SignInPage: providers', () => {
   });
 
   it('shows neither provider buttons nor the "or" between them when the server offers none', async () => {
-    await renderPage();
+    // An empty list changes nothing on screen, so start with a provider to see the config arrive,
+    // then have the server drop it and wait for its button to go.
+    providers = ['github'];
+    const client = await renderPage();
 
-    // Nothing appears when the config arrives, so give it time to arrive before checking.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await screen.findByRole('button', { name: 'Continue with GitHub' });
+    providers = [];
+    await client.invalidateQueries();
 
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Continue with GitHub' })).toBeNull(),
+    );
     expect(screen.queryByText('or')).toBeNull();
   });
 
