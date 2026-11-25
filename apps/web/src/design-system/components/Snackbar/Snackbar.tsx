@@ -9,6 +9,15 @@ export const SNACKBAR_TIMEOUT_MS = 6000;
 /** A snackbar for an error: announced at once (an alert). */
 const errorToast = (message: string) => ({ description: message, priority: 'high' as const });
 
+/** A snackbar confirming something worked: announced once the screen reader is idle. */
+const statusToast = (message: string) => ({ description: message, priority: 'low' as const });
+
+/**
+ * What a snackbar says: that something didn't work (`error`, the default), or that it did
+ * (`status`, such as "Archived System design."), which needn't interrupt the user.
+ */
+export type SnackbarTone = 'error' | 'status';
+
 /** Brands a `Snackbars`. Only types carry it, and only `createSnackbars` adds it. */
 declare const fromCreateSnackbars: unique symbol;
 
@@ -86,11 +95,13 @@ function SnackbarList() {
 
 /**
  * Returns a function that shows a message in a snackbar: Material's short note at the bottom of the
- * screen that something didn't work, which doesn't move the page. It's announced to screen readers
- * at once (an alert), and each call shows its own message, so none is lost.
+ * screen, which doesn't move the page. By default it says something didn't work, announced to
+ * screen readers at once (an alert); with the `status` tone it confirms something did, announced
+ * politely. Each call shows its own message, so none is lost.
  */
 export function useSnackbar() {
   const { add } = Toast.useToastManager();
 
-  return (message: string) => add(errorToast(message));
+  return (message: string, tone: SnackbarTone = 'error') =>
+    add(tone === 'status' ? statusToast(message) : errorToast(message));
 }
