@@ -85,7 +85,7 @@ flowchart TB
     platform[platform/<br/>config, database, observability]
   end
   subgraph web[apps/web/src]
-    shell[shell/<br/>providers, layout, routes,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications] & wid[modules/identity] & wsup[modules/support]
+    shell[shell/<br/>providers, layout and nav, routes,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications<br/>Agenda, table, application page] & wid[modules/identity] & wsup[modules/support]
     wapps --> wshared[shared/<br/>API client]
     wid --> wshared
     wsup --> wshared
@@ -93,13 +93,13 @@ flowchart TB
   end
 ```
 
-| Module       | API                                                                                                                                         | Web                                                                                  | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------- |
-| applications | CRUD handlers for applications and their Rounds, the Agenda, `applications` and `rounds` tables                                             | `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                       | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                 | none              |
-| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                         | `support.ts`      |
-| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                                                 | `system.ts`       |
+| Module       | API                                                                                                                                         | Web                                                                                                | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers for applications and their Rounds, the Agenda, `applications` and `rounds` tables                                             | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                     | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                               | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                                       | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                                                               | `system.ts`       |
 
 **Routes** ([ADR-0049](adr/0049-tanstack-router.md)): the shell owns the web app's pages, in
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
@@ -107,10 +107,22 @@ component, passing the URL's params as props:
 
 | Path                           | Page                                                                                                                                   |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                            | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                             |
+| `/`                            | applications' `AgendaPage`: upcoming Rounds grouped by day, with time left, each linking to its application                            |
+| `/applications`                | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                             |
 | `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Outcomes, Self-ratings and Tags |
 | `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                                  |
-| anything else                  | the shell's "Page not found", with a link to the applications                                                                          |
+| anything else                  | the shell's "Page not found", with a link back to the Agenda                                                                           |
+
+Every signed-in page sits below the shell's header, which the router renders (so its links know
+the current page): the title, the user's name, the theme and sign-out, and a "Pages" navigation
+with "Agenda" and "Applications", the one for the page you're on marked `aria-current="page"`.
+The Agenda ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)) reads `GET /api/agenda` with
+the browser's time zone under `['applications', 'agenda']`, so whatever invalidates the
+applications (a status change, a new Round) refreshes it, and rescheduling or deleting a Round
+invalidates it too. It keeps the API's order, groups by day ("Today", "Tomorrow", the date, "Not
+scheduled yet") and works out the time left in the browser, in calendar days in the user's time
+zone, every minute while the page is open; those rules are pure functions in the module's
+`format.ts`.
 
 The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
 and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules

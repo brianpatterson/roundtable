@@ -6,7 +6,7 @@ request that builds one adds them here. Terms marked _(planned)_ were designed a
 (`docs/roadmap.md`) and aren't built yet: until the pull request that builds one removes the
 mark, the code is what's true.
 
-- **Agenda** _(planned)_: the user's upcoming Rounds across their open Applications (not
+- **Agenda**: the user's upcoming Rounds across their open Applications (not
   rejected, withdrawn or accepted), each with its Application, Interview type and time left, and
   its prep progress once Prep exists. A dated Round stays upcoming until the end of its day (a
   take-home, its due day) in the user's time zone; dated Rounds come first in date order, then
