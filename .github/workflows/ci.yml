@@ -72,6 +72,8 @@ jobs:
         run: scripts/test-check-adrs.sh
       - name: Format check in the agent sandbox
         run: scripts/test-check-format.sh
+      - name: Batch filing against a stand-in gh
+        run: scripts/test-file-batch.sh
       # Every .github/factory/test-*.sh, so a new one runs without being listed here. Each
       # script's header names what it pins and the ADR behind it. All run, then the step fails if
       # any did, with one error line per failed script.
