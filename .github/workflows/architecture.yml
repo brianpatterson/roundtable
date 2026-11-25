@@ -78,6 +78,9 @@ jobs:
           # It only reads, so the job's own token is enough (the App's token exchange refuses
           # some events, ADR-0026).
           github_token: ${{ github.token }}
+          # Retro dispatches with the workflow's token, so the actor is github-actions[bot], and
+          # the action refuses bots it isn't told about (as in factory.yml's dispatched build).
+          allowed_bots: github-actions[bot]
           prompt: |
             Run an architecture review of ${{ github.repository }}${{ inputs.spec && format(', now that the batch of spec #{0} has landed', inputs.spec) || '' }},
             following your instructions, and return the structured output.
