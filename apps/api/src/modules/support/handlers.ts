@@ -224,7 +224,9 @@ export const SupportApiLive = (env: Env) =>
               .where(lastHour);
 
             if (
+              // Stryker disable next-line OptionalChaining: count(*) without group by always returns one row
               (recent?.total ?? 0) >= REPORTS_PER_HOUR_TOTAL ||
+              // Stryker disable next-line OptionalChaining: count(*) without group by always returns one row
               (recent?.fromClient ?? 0) >= REPORTS_PER_HOUR
             ) {
               return undefined;
@@ -247,6 +249,7 @@ export const SupportApiLive = (env: Env) =>
               .from(userReports)
               .where(gt(userReports.issueRequestedAt, sql`now() - interval '24 hours'`));
 
+            // Stryker disable next-line OptionalChaining: count(*) without group by always returns one row
             if ((today?.count ?? 0) >= env.REPORT_LIMIT_PER_DAY) return false;
 
             yield* tx
