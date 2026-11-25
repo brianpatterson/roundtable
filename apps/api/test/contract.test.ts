@@ -204,6 +204,40 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const SKILL = '00000000-0000-4000-8000-000000000001';
+
+  const prepCases = {
+    'notes: some': [contract.RoundPrepNotes, { notes: 'Graphs' }, { notes: 'Graphs' }],
+    'notes: null': [contract.RoundPrepNotes, { notes: null }, { notes: null }],
+    'notes: 10000 characters': [
+      contract.RoundPrepNotes,
+      { notes: 'x'.repeat(10000) },
+      { notes: 'x'.repeat(10000) },
+    ],
+    'notes: 10001 characters': [contract.RoundPrepNotes, { notes: 'x'.repeat(10001) }, false],
+    'notes: missing': [contract.RoundPrepNotes, {}, false],
+    'task: a title, trimmed': [contract.CreatePrepTask, { title: ' BFS ' }, { title: 'BFS' }],
+    'task: with a Skill': [
+      contract.CreatePrepTask,
+      { title: 'BFS', skillId: SKILL },
+      { title: 'BFS', skillId: SKILL },
+    ],
+    'task: a blank title': [contract.CreatePrepTask, { title: '  ' }, false],
+    'task: a title of 201 characters': [contract.CreatePrepTask, { title: 'x'.repeat(201) }, false],
+    'task: a malformed Skill id': [contract.CreatePrepTask, { title: 'BFS', skillId: 'x' }, false],
+    'change: done': [contract.UpdatePrepTask, { done: true }, { done: true }],
+    'change: clear the Skill': [contract.UpdatePrepTask, { skillId: null }, { skillId: null }],
+    'change: nothing': [contract.UpdatePrepTask, {}, false],
+    'change: done as text': [contract.UpdatePrepTask, { done: 'yes' }, false],
+  } satisfies Record<string, readonly [Schema.Top, unknown, unknown]>;
+
+  it.each(Object.entries(prepCases))('prep: %s', (_name, [schema, input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(schema)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
   // The web app sends what the user typed, so the client must refuse the same schedules first.
   it('encodes a schedule, and refuses an inconsistent one before it is sent', () => {
     const encode = Schema.encodeUnknownExit(contract.CreateRound);
@@ -581,18 +615,22 @@ describe('expected errors stay out of Sentry', () => {
 
     expect(errorClassNames.sort()).toEqual([
       'ApplicationNotFound',
+      'PrepTaskNotFound',
       'ReportNotFound',
       'ReportRateLimited',
       'RoundNotFound',
       'SkillNameTaken',
       'SkillNotFound',
+      'TooManyPrepTasks',
       'TooManySkills',
       'TooManyTags',
       'Unauthorized',
     ]);
   });
 
-  it('ApplicationNotFound, RoundNotFound, SkillNotFound and ReportNotFound (404), TooManyTags and TooManySkills (400), Unauthorized (401), SkillNameTaken (409) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+  it('ApplicationNotFound, RoundNotFound, PrepTaskNotFound, SkillNotFound and ReportNotFound (404), TooManyTags, TooManyPrepTasks and TooManySkills (400), Unauthorized (401), SkillNameTaken (409) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+    expect(new contract.PrepTaskNotFound()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.TooManyPrepTasks()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.SkillNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.SkillNameTaken({ archived: false })[ErrorReporter.ignore]).toBe(true);
     expect(new contract.TooManySkills()[ErrorReporter.ignore]).toBe(true);

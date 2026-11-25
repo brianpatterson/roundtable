@@ -1,20 +1,25 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, max, sql } from 'drizzle-orm';
 import { Effect } from 'effect';
 import { HttpApiBuilder } from 'effect/http-api';
 import {
   ApplicationNotFound,
   CurrentUser,
+  MAX_PREP_TASKS,
   MAX_TAGS,
+  PrepTaskNotFound,
   RoundNotFound,
   RoundtableApi,
+  TooManyPrepTasks,
   TooManyTags,
   sameTag,
   type RoundRating,
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { roundAdded, statusChanged } from './round-lifecycle.js';
-import { applications, rounds } from './schema.js';
+import { Skills } from '../personas/index.js';
+import { prepTasksOf, withPrepTasks } from './prep.js';
+import { roundAdded, statusChanged, type Transaction } from './round-lifecycle.js';
+import { applications, prepTasks, rounds } from './schema.js';
 
 /** A whole schedule as columns: what the request leaves out is cleared. */
 const scheduleOf = (schedule: RoundSchedule) => ({
@@ -47,9 +52,98 @@ export const ApplicationsLive = HttpApiBuilder.group(
   'applications',
   Effect.fn(function* (handlers) {
     const db = yield* Database;
+    const skills = yield* Skills;
 
     const ownedBy = (userId: string, id: string) =>
       and(eq(applications.id, id), eq(applications.userId, userId));
+
+    /** A Round the user owns, with its prep tasks, as every endpoint answers one. */
+    const withPrep = <R extends { readonly id: string }>(round: R) =>
+      prepTasksOf(db, [round.id]).pipe(
+        Effect.map((byRound) => ({ ...round, prepTasks: byRound.get(round.id) ?? [] })),
+      );
+
+    /**
+     * A Skill id a request names: the signed-in user's (archived or not), or `SkillNotFound`.
+     * Run it before `changePrep`, not inside its transaction: it's personas' read, and no
+     * transaction spans two modules (ADR-0044). Skills are never deleted, so one can't go missing
+     * in between.
+     */
+    const checkSkill = (skillId: string | null | undefined) =>
+      Effect.gen(function* () {
+        if (skillId === undefined || skillId === null) return;
+
+        const user = yield* CurrentUser;
+
+        yield* skills.findOwned(user.id, skillId);
+      });
+
+    /**
+     * Changes the Prep of the Round `roundId` of the user's application `id`, in one transaction
+     * holding the Round's row, so two tasks added at once can't both pass the limit or take one
+     * place. Another user's application is `ApplicationNotFound`; a Round that isn't the
+     * application's, `RoundNotFound`. Answers the Round as it is afterwards, with its prep tasks.
+     */
+    const changePrep = <E>(
+      params: { readonly id: string; readonly roundId: string },
+      change: (tx: Transaction, roundId: string) => Effect.Effect<unknown, E>,
+    ) =>
+      Effect.gen(function* () {
+        const user = yield* CurrentUser;
+
+        return yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const [application] = yield* tx
+                .select({ id: applications.id })
+                .from(applications)
+                .where(ownedBy(user.id, params.id))
+                .pipe(Effect.orDie);
+
+              if (!application) return yield* new ApplicationNotFound();
+
+              const [locked] = yield* tx
+                .select({ id: rounds.id })
+                .from(rounds)
+                .where(and(eq(rounds.id, params.roundId), eq(rounds.applicationId, application.id)))
+                .for('update')
+                .pipe(Effect.orDie);
+
+              if (!locked) return yield* new RoundNotFound();
+
+              yield* change(tx, locked.id);
+
+              const [round] = yield* tx
+                .select()
+                .from(rounds)
+                .where(eq(rounds.id, locked.id))
+                .pipe(Effect.orDie);
+
+              if (!round) return yield* Effect.die(new Error('the locked round is gone'));
+
+              const [answer] = yield* withPrepTasks(tx, [round]);
+
+              if (!answer) return yield* Effect.die(new Error('the round has no answer'));
+
+              return answer;
+            }),
+          )
+          .pipe(Effect.catchTag('SqlError', Effect.die));
+      });
+
+    /** Fails with `PrepTaskNotFound` unless the Round `roundId` has the task `taskId`. */
+    const findTask = (tx: Transaction, roundId: string, taskId: string) =>
+      Effect.gen(function* () {
+        const [task] = yield* tx
+          .select({ id: prepTasks.id })
+          .from(prepTasks)
+          .where(and(eq(prepTasks.id, taskId), eq(prepTasks.roundId, roundId)))
+          .pipe(Effect.orDie);
+
+        if (!task) return yield* new PrepTaskNotFound();
+
+        return task;
+      });
 
     /** The Round `roundId` of the user's application `id`: none if either isn't theirs. */
     const ownedRound = (userId: string, id: string, roundId: string) =>
@@ -105,7 +199,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
         if (!result) return yield* new RoundNotFound();
 
-        return result;
+        return yield* withPrep(result);
       });
 
     return handlers.handleAll({
@@ -227,12 +321,14 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!owned) return yield* new ApplicationNotFound();
 
-          return yield* db
+          const listed = yield* db
             .select()
             .from(rounds)
             .where(eq(rounds.applicationId, owned.id))
             .orderBy(roundDate, asc(rounds.createdAt), asc(rounds.id))
             .pipe(Effect.orDie);
+
+          return yield* withPrepTasks(db, listed);
         }),
 
       createRound: ({ params, payload }) =>
@@ -278,7 +374,8 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new ApplicationNotFound();
 
-          return row;
+          // A new Round has no prep tasks yet.
+          return { ...row, prepTasks: [] };
         }),
 
       scheduleRound: ({ params, payload }) =>
@@ -294,7 +391,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new RoundNotFound();
 
-          return row;
+          return yield* withPrep(row);
         }),
 
       rateRound: ({ params, payload }) =>
@@ -310,7 +407,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new RoundNotFound();
 
-          return row;
+          return yield* withPrep(row);
         }),
 
       setRoundOutcome: ({ params, payload }) =>
@@ -326,7 +423,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
           if (!row) return yield* new RoundNotFound();
 
-          return row;
+          return yield* withPrep(row);
         }),
 
       deleteRound: ({ params }) =>
@@ -359,6 +456,76 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
       removeTag: ({ params, query }) =>
         changeTags(params, (tags) => tags.filter((tag) => !sameTag(tag, query.tag))),
+
+      // A blank note is no note.
+      setPrepNotes: ({ params, payload }) =>
+        changePrep(params, (tx, roundId) =>
+          tx
+            .update(rounds)
+            .set({ prepNotes: payload.notes?.trim() ? payload.notes : null })
+            .where(eq(rounds.id, roundId))
+            .pipe(Effect.orDie),
+        ),
+
+      addPrepTask: ({ params, payload }) =>
+        Effect.andThen(
+          checkSkill(payload.skillId),
+          changePrep(params, (tx, roundId) =>
+            Effect.gen(function* () {
+              const [existing] = yield* tx
+                .select({ count: count(), last: max(prepTasks.position) })
+                .from(prepTasks)
+                .where(eq(prepTasks.roundId, roundId))
+                .pipe(Effect.orDie);
+
+              if ((existing?.count ?? 0) >= MAX_PREP_TASKS) return yield* new TooManyPrepTasks();
+
+              yield* tx
+                .insert(prepTasks)
+                .values({
+                  roundId,
+                  title: payload.title,
+                  skillId: payload.skillId ?? null,
+                  position: (existing?.last ?? -1) + 1,
+                })
+                .pipe(Effect.orDie);
+            }),
+          ),
+        ),
+
+      // Marking a done task done keeps the date it was first done.
+      updatePrepTask: ({ params, payload }) =>
+        Effect.andThen(
+          checkSkill(payload.skillId),
+          changePrep(params, (tx, roundId) =>
+            Effect.gen(function* () {
+              const task = yield* findTask(tx, roundId, params.taskId);
+
+              yield* tx
+                .update(prepTasks)
+                .set({
+                  ...(payload.title !== undefined && { title: payload.title }),
+                  ...(payload.skillId !== undefined && { skillId: payload.skillId }),
+                  ...(payload.done !== undefined && {
+                    completedAt: payload.done
+                      ? sql`coalesce(${prepTasks.completedAt}, now())`
+                      : null,
+                  }),
+                })
+                .where(eq(prepTasks.id, task.id))
+                .pipe(Effect.orDie);
+            }),
+          ),
+        ),
+
+      deletePrepTask: ({ params }) =>
+        changePrep(params, (tx, roundId) =>
+          Effect.gen(function* () {
+            const task = yield* findTask(tx, roundId, params.taskId);
+
+            yield* tx.delete(prepTasks).where(eq(prepTasks.id, task.id)).pipe(Effect.orDie);
+          }),
+        ),
     });
   }),
 );

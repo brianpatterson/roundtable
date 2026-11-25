@@ -11,6 +11,7 @@ import { HttpApiClient } from 'effect/http-api';
 import {
   RoundtableApi,
   type CreateApplication,
+  type CreatePrepTask,
   type CreateReport,
   type CreateRound,
   type CreateSkill,
@@ -18,6 +19,7 @@ import {
   type RoundRating,
   type RoundSchedule,
   type UpdateApplication,
+  type UpdatePrepTask,
   type UpdateSkill,
 } from '../index.js';
 import { toApiError } from './errors.js';
@@ -80,6 +82,34 @@ export function makeApiClient(options: ApiClientOptions) {
     removeTag: (applicationId: string, roundId: string, tag: string) =>
       run((client) =>
         client.applications.removeTag({ params: { id: applicationId, roundId }, query: { tag } }),
+      ),
+    /** Sets a Round's Prep notes; blank or null clears them. */
+    setPrepNotes: (applicationId: string, roundId: string, notes: string | null) =>
+      run((client) =>
+        client.applications.setPrepNotes({
+          params: { id: applicationId, roundId },
+          payload: { notes },
+        }),
+      ),
+    addPrepTask: (applicationId: string, roundId: string, payload: CreatePrepTask) =>
+      run((client) =>
+        client.applications.addPrepTask({ params: { id: applicationId, roundId }, payload }),
+      ),
+    updatePrepTask: (
+      applicationId: string,
+      roundId: string,
+      taskId: string,
+      payload: UpdatePrepTask,
+    ) =>
+      run((client) =>
+        client.applications.updatePrepTask({
+          params: { id: applicationId, roundId, taskId },
+          payload,
+        }),
+      ),
+    deletePrepTask: (applicationId: string, roundId: string, taskId: string) =>
+      run((client) =>
+        client.applications.deletePrepTask({ params: { id: applicationId, roundId, taskId } }),
       ),
     /** The upcoming Rounds across open Applications, with today in `timeZone` (UTC without). */
     agenda: (timeZone?: string) =>

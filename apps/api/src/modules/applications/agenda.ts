@@ -9,11 +9,16 @@ import {
   isUpcoming,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
+import { withPrepTasks } from './prep.js';
 import { applications, rounds } from './schema.js';
+
+/** A Round's columns on the Agenda: all but its Prep notes, which only the Round's page shows. */
+const { prepNotes: _prepNotes, ...agendaColumns } = getTableColumns(rounds);
 
 /**
  * The Agenda (ADR-0070): the signed-in user's Rounds on their open Applications, in one query, in
- * the order they were added. The day cut-off and Agenda order are the contract's, in the user's
+ * the order they were added, then the prep tasks of the upcoming ones in a second (one for all of
+ * them, never one per Round). The day cut-off and Agenda order are the contract's, in the user's
  * time zone (UTC without one), so the server and the web app agree on both. Rounds per user are
  * few, so they're filtered here rather than in SQL.
  */
@@ -31,7 +36,7 @@ export const AgendaLive = HttpApiBuilder.group(
 
         const rows = yield* db
           .select({
-            ...getTableColumns(rounds),
+            ...agendaColumns,
             company: applications.company,
             jobTitle: applications.jobTitle,
           })
@@ -47,7 +52,7 @@ export const AgendaLive = HttpApiBuilder.group(
 
         const upcoming = rows.filter((round) => isUpcoming(round, now, timeZone));
 
-        return inAgendaOrder(upcoming, timeZone);
+        return inAgendaOrder(yield* withPrepTasks(db, upcoming), timeZone);
       }).pipe(Effect.orDie),
     );
   }),

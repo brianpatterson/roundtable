@@ -113,7 +113,11 @@ describe('the web client', () => {
 
   it('reads the Agenda in a time zone, and refuses an invalid one before it is sent', async () => {
     const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
-    const round = await api.createRound(application.id, { interviewType: 'coding' });
+
+    // The Agenda carries a Round's prep tasks but not its Prep notes.
+    const { prepNotes: _prepNotes, ...round } = await api.createRound(application.id, {
+      interviewType: 'coding',
+    });
 
     expect(await api.agenda('America/New_York')).toEqual([
       { ...round, company: 'Acme', jobTitle: 'SWE' },
@@ -148,6 +152,42 @@ describe('the web client', () => {
 
     expect(passed).toMatchObject({ outcome: 'passed', outcomeSetByUser: true });
     expect(await api.listRounds(application.id)).toEqual([passed]);
+  });
+
+  it('keeps a Round’s Prep notes and prep tasks, with dates decoded', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'coding' });
+    const skill = await api.createSkill({ name: 'Algorithms' });
+
+    expect(round).toMatchObject({ prepNotes: null, prepTasks: [] });
+
+    const noted = await api.setPrepNotes(application.id, round.id, 'Review graphs');
+
+    expect(noted.prepNotes).toBe('Review graphs');
+
+    const added = await api.addPrepTask(application.id, round.id, {
+      title: ' Practice BFS ',
+      skillId: skill.id,
+    });
+
+    const [task] = added.prepTasks;
+
+    expect(task).toMatchObject({ title: 'Practice BFS', skillId: skill.id, completedAt: null });
+
+    const done = await api.updatePrepTask(application.id, round.id, task?.id ?? '', {
+      done: true,
+    });
+
+    expect(done.prepTasks[0]?.completedAt).toBeInstanceOf(Date);
+    expect(await api.listRounds(application.id)).toEqual([done]);
+    expect((await api.agenda()).map((item) => item.prepTasks)).toEqual([done.prepTasks]);
+
+    const removed = await api.deletePrepTask(application.id, round.id, task?.id ?? '');
+
+    expect(removed.prepTasks).toEqual([]);
+    await expect(api.deletePrepTask(application.id, round.id, task?.id ?? '')).rejects.toThrow(
+      'That prep task no longer exists.',
+    );
   });
 
   it('adds, lists, renames, archives and restores Skills, with dates decoded', async () => {
