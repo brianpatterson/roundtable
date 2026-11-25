@@ -105,6 +105,17 @@ describe('the web client', () => {
     ).rejects.toThrow('Check what you entered and try again.');
   });
 
+  it('reads the Agenda in a time zone, and refuses an invalid one before it is sent', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'coding' });
+
+    expect(await api.agenda('America/New_York')).toEqual([
+      { ...round, company: 'Acme', jobTitle: 'SWE' },
+    ]);
+    expect(await api.agenda()).toHaveLength(1);
+    await expect(api.agenda('+05:30')).rejects.toThrow('Check what you entered and try again.');
+  });
+
   it('rates a Round, and refuses a rating outside 1–5 before it is sent', async () => {
     const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
     const round = await api.createRound(application.id, { interviewType: 'coding' });

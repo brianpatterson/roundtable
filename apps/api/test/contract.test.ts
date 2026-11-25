@@ -281,7 +281,17 @@ describe('what the contract accepts', () => {
       timeZone,
     });
 
-    expect([Exit.isSuccess(round), Exit.isSuccess(update)]).toEqual([valid, valid]);
+    const agenda = Schema.decodeExit(contract.AgendaQuery)({ timeZone });
+
+    expect([Exit.isSuccess(round), Exit.isSuccess(update), Exit.isSuccess(agenda)]).toEqual([
+      valid,
+      valid,
+      valid,
+    ]);
+  });
+
+  it('reads the Agenda without a time zone', () => {
+    expect(Schema.decodeExit(contract.AgendaQuery)({})).toEqual(Exit.succeed({}));
   });
 
   it('refuses an update with only a time zone: it changes nothing', () => {
@@ -463,6 +473,19 @@ describe('real responses from the current API decode with the contract', () => {
       headers: { cookie },
     });
 
+    await t.inject({
+      method: 'POST',
+      url: `/api/applications/${id}/rounds`,
+      headers: { cookie },
+      payload: { interviewType: 'coding', dueOn: '9999-12-31' },
+    });
+
+    const agenda = await t.inject({
+      method: 'GET',
+      url: '/api/agenda?timeZone=Asia/Tokyo',
+      headers: { cookie },
+    });
+
     const health = await t.inject({ method: 'GET', url: '/api/health' });
     const authConfig = await t.inject({ method: 'GET', url: '/api/auth-config' });
 
@@ -480,6 +503,9 @@ describe('real responses from the current API decode with the contract', () => {
       Schema.decodeUnknownSync(Schema.Array(contract.Application))(list.json()),
     ).not.toThrow();
     expect(() => Schema.decodeUnknownSync(contract.Application)(one.json())).not.toThrow();
+    expect(
+      Schema.decodeUnknownSync(Schema.Array(contract.AgendaRound))(agenda.json()),
+    ).toMatchObject([{ applicationId: id, company: 'Acme', jobTitle: 'SWE', dueOn: '9999-12-31' }]);
     expect(() => Schema.decodeUnknownSync(contract.Health)(health.json())).not.toThrow();
     expect(() => Schema.decodeUnknownSync(contract.AuthConfig)(authConfig.json())).not.toThrow();
     expect(receipt.statusCode).toBe(201);

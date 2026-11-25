@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-24_
+_Last updated: 2026-11-25_
 
 ## 1. What the system does
 
@@ -95,7 +95,7 @@ flowchart TB
 
 | Module       | API                                                                                                                                         | Web                                                                                  | Contract          |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------- |
-| applications | CRUD handlers for applications and their Rounds, `applications` and `rounds` tables                                                         | `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
+| applications | CRUD handlers for applications and their Rounds, the Agenda, `applications` and `rounds` tables                                             | `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
 | identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                       | `identity.ts`     |
 | email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                 | none              |
 | support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                         | `support.ts`      |
@@ -385,11 +385,20 @@ are rejected at the API rather than left to React and the CSP.
 | DELETE   | `/api/applications/:id/rounds/:roundId`           | session                   | 204             | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                     |
 | POST     | `/api/applications/:id/rounds/:roundId/tags`      | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)           |
 | DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=` | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                              |
+| GET      | `/api/agenda?timeZone=`                           | session                   | 200             | 400 (an unknown `timeZone`), 401                                                                                   |
 | POST     | `/api/reports`                                    | public (session optional) | 201             | 400, 429 (5 per client address per hour)                                                                           |
 | GET      | `/api/factory/reports/:id`                        | factory token             | 200             | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                         |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.
+
+`GET /api/agenda` is the Agenda ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)): in one
+query, the user's Rounds on Applications that are `saved`, `applied`, `interviewing` or `offer`
+(the contract's `OPEN_APPLICATION_STATUSES`), each with its Application's company and job title
+(`AgendaRound`). The handler keeps those on today or later in `timeZone` (UTC without one), and
+the undated ones, with the contract's `isUpcoming`, and sorts them with `inAgendaOrder`: Round
+order across Applications, ties by company, then the undated ones in the order they were added.
+It isn't paginated either: a user has few Rounds.
 
 ## 6. Request flows
 

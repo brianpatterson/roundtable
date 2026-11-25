@@ -23,6 +23,17 @@ export const ApplicationStatus = Schema.Literals(APPLICATION_STATUSES);
 
 export type ApplicationStatus = typeof ApplicationStatus.Type;
 
+/**
+ * The statuses of an Application still in play: the Agenda shows their Rounds (ADR-0070). An
+ * accepted, rejected or withdrawn one is over.
+ */
+export const OPEN_APPLICATION_STATUSES = [
+  'saved',
+  'applied',
+  'interviewing',
+  'offer',
+] as const satisfies readonly ApplicationStatus[];
+
 const MAX_TEXT = 200;
 
 /**
@@ -463,6 +474,49 @@ export const roundDay = ({ startsAt, dueOn }: OrderedRound, timeZone: string): s
   dueOn ?? (startsAt ? dayOf(startsAt, timeZone) : null);
 
 /**
+ * A Round on the Agenda (GLOSSARY.md, ADR-0070): the Round, with its Application's company and job
+ * title so it reads on its own. `applicationId` links to the Application.
+ */
+export const AgendaRound = Schema.Struct({
+  ...Round.fields,
+  company: Schema.String,
+  jobTitle: Schema.String,
+});
+
+export type AgendaRound = typeof AgendaRound.Type;
+
+/**
+ * Agenda order, as a sorted copy: Round order in `timeZone` across Applications, where dated Rounds
+ * at the same moment go by company. Undated Rounds come last in the order given, so give them in
+ * the order they were added.
+ */
+export function inAgendaOrder<R extends OrderedRound & { readonly company: string }>(
+  rounds: readonly R[],
+  timeZone: string,
+): R[] {
+  const byCompany = (a: R, b: R) => a.company.localeCompare(b.company, 'en');
+  const dated = rounds.filter((round) => roundDay(round, timeZone) !== null).sort(byCompany);
+  const undated = rounds.filter((round) => roundDay(round, timeZone) === null);
+
+  return [...inRoundOrder(dated, timeZone), ...undated];
+}
+
+/**
+ * Whether a Round is upcoming at `now` (ADR-0070): on today or later in `timeZone`, so it stays
+ * until its day ends even after it starts, or not scheduled yet.
+ */
+export const isUpcoming = (round: OrderedRound, now: Date, timeZone: string) => {
+  const day = roundDay(round, timeZone);
+
+  return day === null || day >= dayOf(now, timeZone);
+};
+
+/** The Agenda's query: the user's time zone, which says what today is. Without it, UTC. */
+export const AgendaQuery = Schema.Struct({ timeZone: Schema.optional(TimeZone) });
+
+export type AgendaQuery = typeof AgendaQuery.Type;
+
+/**
  * A missing Round, one of another application, or one of another user's: always 404, never 403.
  */
 export class RoundNotFound extends Schema.TaggedError<
@@ -567,3 +621,17 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
   )
   .middleware(Authorization)
   .prefix('/api/applications') {}
+
+/**
+ * The Agenda (ADR-0070): the user's upcoming Rounds across their open Applications, cut off by the
+ * day in `timeZone`. Its path doesn't name the applications module, so it can move to its own.
+ */
+export class AgendaApi extends HttpApiGroup.make('agenda')
+  .add(
+    HttpApiEndpoint.get('list', '/', {
+      query: AgendaQuery,
+      success: Schema.Array(AgendaRound),
+    }),
+  )
+  .middleware(Authorization)
+  .prefix('/api/agenda') {}
