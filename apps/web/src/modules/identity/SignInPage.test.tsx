@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { PASSWORD_MIN_LENGTH } from '@roundtable/contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The sign-in page on its own, against a stand-in for Better Auth's server and the API behind
@@ -56,12 +57,15 @@ afterEach(() => {
 const renderPage = async ({ sessionEnded = false } = {}) => {
   vi.resetModules();
   const { SignInPage } = await import('./SignInPage');
+  const client = new QueryClient();
 
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <SignInPage sessionEnded={sessionEnded} />
     </QueryClientProvider>,
   );
+
+  return client;
 };
 
 describe('SignInPage: providers', () => {
@@ -71,6 +75,79 @@ describe('SignInPage: providers', () => {
 
     expect(await screen.findByRole('button', { name: 'Continue with GitHub' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeDefined();
+  });
+
+  it('shows neither provider buttons nor the "or" between them when the server offers none', async () => {
+    // An empty list changes nothing on screen, so start with a provider to see the config arrive,
+    // then have the server drop it and wait for its button to go.
+    providers = ['github'];
+    const client = await renderPage();
+
+    await screen.findByRole('button', { name: 'Continue with GitHub' });
+    providers = [];
+    await client.invalidateQueries();
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Continue with GitHub' })).toBeNull(),
+    );
+    expect(screen.queryByText('or')).toBeNull();
+  });
+
+  it('leaves the providers off the reset-password form', async () => {
+    providers = ['github'];
+    await renderPage();
+
+    await screen.findByRole('button', { name: 'Continue with GitHub' });
+    await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+
+    expect(screen.queryByRole('button', { name: 'Continue with GitHub' })).toBeNull();
+    expect(screen.queryByText('or')).toBeNull();
+  });
+});
+
+describe('SignInPage: modes', () => {
+  const heading = () => screen.getByRole('heading', { level: 2 }).textContent;
+
+  it('names each form in its heading', async () => {
+    await renderPage();
+
+    expect(heading()).toBe('Sign in');
+    await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+    expect(heading()).toBe('Create an account');
+    await userEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    expect(heading()).toBe('Reset password');
+  });
+
+  it('goes back to the sign-in form from creating an account', async () => {
+    await renderPage();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+
+    expect(screen.queryByRole('button', { name: 'Forgot password?' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+
+    expect(heading()).toBe('Sign in');
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeDefined();
+  });
+
+  it('gives the password rule only when creating an account', async () => {
+    await renderPage();
+
+    expect(screen.queryByText(/At least/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+
+    expect(screen.getByText(`At least ${PASSWORD_MIN_LENGTH} characters`)).toBeDefined();
+  });
+
+  it('tells password managers to fill a saved password on sign-in and suggest a new one on sign-up', async () => {
+    await renderPage();
+
+    expect(screen.getByLabelText('Password').getAttribute('autocomplete')).toBe('current-password');
+    await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+
+    expect(screen.getByLabelText('Password').getAttribute('autocomplete')).toBe('new-password');
   });
 });
 
@@ -165,6 +242,70 @@ describe('SignInPage: submitting', () => {
     );
   });
 
+  it('asks the user to confirm their email when they sign in before confirming it', async () => {
+    answers = [
+      () =>
+        Promise.resolve(
+          Response.json(
+            { code: 'EMAIL_NOT_VERIFIED', message: 'Email not verified' },
+            { status: 403 },
+          ),
+        ),
+    ];
+    await renderPage();
+
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Confirm your email first: check ada@example.com (and spam) for the link.',
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('after creating an account, says where the confirmation link went and clears the password', async () => {
+    await renderPage();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Ada');
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse');
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Check ada@example.com for a link to finish creating your account.',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Password').value).toBe('');
+  });
+
+  it('after asking for a reset link, says one is on its way', async () => {
+    await renderPage();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'If that email has an account, a reset link is on its way.',
+    );
+  });
+
+  it('says nothing after a successful sign-in', async () => {
+    await renderPage();
+
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Sign in' }).hasAttribute('disabled')).toBe(false),
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>('Password').value).toBe('correct horse');
+  });
+
   it('clears the last error when the user tries again and succeeds', async () => {
     answers = [failure('Invalid email or password')];
     await renderPage();
@@ -202,6 +343,15 @@ describe('SignInPage: a failed redirect', () => {
       'That confirmation link is invalid or has expired. Sign in to get a new one.',
     );
     expect(window.location.search).toBe('');
+  });
+
+  it('explains an expired confirmation link the same way', async () => {
+    window.history.replaceState(null, '', '/?error=TOKEN_EXPIRED');
+    await renderPage();
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'That confirmation link is invalid or has expired. Sign in to get a new one.',
+    );
   });
 
   it('leaves the address bar and its history entry alone when there is nothing to drop', async () => {
