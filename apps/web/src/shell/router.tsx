@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { AgendaPage, ApplicationPage, ApplicationsPage } from '../modules/applications';
+import { SkillsPage } from '../modules/personas';
 import { NotFoundPage } from './NotFoundPage';
 
 // The web app's routes (ADR-0049). The shell owns them: each path maps to a module's root
@@ -51,7 +52,18 @@ const applicationRoute = createRoute({
   },
 });
 
-const routeTree = rootRoute.addChildren([agendaRoute, applicationsRoute, applicationRoute]);
+const skillsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/skills',
+  component: SkillsPage,
+});
+
+const routeTree = rootRoute.addChildren([
+  agendaRoute,
+  applicationsRoute,
+  applicationRoute,
+  skillsRoute,
+]);
 
 const createAppRouter = () => createRouter({ routeTree });
 

@@ -87,18 +87,19 @@ flowchart TB
     platform[platform/<br/>config, database, observability]
   end
   subgraph web[apps/web/src]
-    shell[shell/<br/>providers, layout and nav, routes,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications<br/>Agenda, table, application page] & wid[modules/identity] & wsup[modules/support]
+    shell[shell/<br/>providers, layout and nav, routes,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications<br/>Agenda, table, application page] & wper[modules/personas<br/>Skills page, useSkills] & wid[modules/identity] & wsup[modules/support]
     wapps --> wshared[shared/<br/>API client]
+    wper --> wshared
     wid --> wshared
     wsup --> wshared
-    shell & wapps & wid & wsup --> ds[design-system/<br/>tokens, theme, components on Base UI,<br/>Link on TanStack Router]
+    shell & wapps & wper & wid & wsup --> ds[design-system/<br/>tokens, theme, components on Base UI,<br/>Link on TanStack Router]
   end
 ```
 
 | Module       | API                                                                                                                                         | Web                                                                                                | Contract          |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------- |
 | applications | CRUD handlers for applications and their Rounds, the Agenda, `applications` and `rounds` tables                                             | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds`), query keys | `applications.ts` |
-| personas     | One `PersonasLive` layer: `/api/skills` (the skill library), the `Skills` service other modules check Skill ids with, `skills` table        | none yet (the Skills page is #228)                                                                 | `personas.ts`     |
+| personas     | One `PersonasLive` layer: `/api/skills` (the skill library), the `Skills` service other modules check Skill ids with, `skills` table        | `SkillsPage` (add, rename, archive, restore), `useSkills()` (every Skill, for other modules)       | `personas.ts`     |
 | identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                     | `identity.ts`     |
 | email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                               | none              |
 | support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                                       | `support.ts`      |
@@ -113,12 +114,17 @@ component, passing the URL's params as props:
 | `/`                            | applications' `AgendaPage`: upcoming Rounds grouped by day, with time left, each linking to its application                            |
 | `/applications`                | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                             |
 | `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Outcomes, Self-ratings and Tags |
+| `/skills`                      | personas' `SkillsPage`: the skill library, to add, rename, archive and restore Skills, archived ones in a collapsed section            |
 | `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                                  |
 | anything else                  | the shell's "Page not found", with a link back to the Agenda                                                                           |
 
 Every signed-in page sits below the shell's header, which the router renders (so its links know
 the current page): the title, the user's name, the theme and sign-out, and a "Pages" navigation
-with "Agenda" and "Applications", the one for the page you're on marked `aria-current="page"`.
+with "Agenda", "Applications" and "Skills", the one for the page you're on marked `aria-current="page"`.
+The Skills page reads the skill library through personas' `useSkills()`, under
+`['personas', 'skills']`: every Skill, archived ones included, which other modules import from
+the module's `index.ts` rather than asking `GET /api/skills` themselves, so adding, renaming,
+archiving or restoring a Skill (each of which invalidates that key) shows everywhere at once.
 The Agenda ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)) reads `GET /api/agenda` with
 the browser's time zone under `['applications', 'agenda']`, so whatever invalidates the
 applications (a status change, a new Round) refreshes it, and rescheduling or deleting a Round
@@ -161,7 +167,7 @@ definition, and run the pure rules in `inference.ts`. Which Rounds inference may
 there, and the SQL guard against a concurrent edit by the user is written from it.
 
 **The web app's tests** ([ADR-0071](adr/0071-in-memory-api-adapter-for-web-tests.md)): the
-applications and shell component tests call the API through the real typed client, answered by
+applications, personas and shell component tests call the API through the real typed client, answered by
 one in-memory adapter of the contract, `apps/web/src/shared/testing/fake-api.ts`. It's the second
 adapter at the seam the modules call through, beside the real API over HTTP: the contract's own
 `HttpApiBuilder` groups with in-memory handlers, served as a web handler like the API's
@@ -182,7 +188,9 @@ The shell's `Providers` mounts the `SnackbarProvider` once (on Base UI's toast),
 reports a failed change without moving the page: a mutation opts in with
 `meta: { errorSnackbar: true }` (applications does this for status changes), and `useSnackbar()`
 stays for anything else. A snackbar is announced as an alert, stacks, and goes after 6 seconds or on
-Dismiss. Errors tied to a form or dialog stay inline as an `Alert`.
+Dismiss. `useSnackbar()`'s `status` tone confirms something worked instead ("Archived System
+design."), announced politely rather than as an alert. Errors tied to a form or dialog stay inline,
+as an `Alert` or the field's own error.
 
 **Personas** gives the App one layer, `PersonasLive`: so far the skill library, the Skills a user
 practices (`GLOSSARY.md`). Its handlers go through the `Skills` service, which `index.ts` also
