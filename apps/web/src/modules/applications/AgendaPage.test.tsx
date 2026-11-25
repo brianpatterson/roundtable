@@ -104,6 +104,37 @@ describe('AgendaPage', () => {
     expect(link.getAttribute('href')).toBe(`/applications/${acme.applicationId}`);
   });
 
+  it('shows each Round’s Prep progress, complete in words, and none without prep tasks', async () => {
+    const done = new Date('2026-11-20T00:00:00Z');
+
+    const task = (n: number, completedAt: Date | null) => ({
+      id: `00000000-0000-4000-8000-${String(1000 + n).padStart(12, '0')}`,
+      title: `Task ${n}`,
+      skillId: null,
+      completedAt,
+    });
+
+    fake.seedRound(fake.seedApplication({ company: 'Acme', jobTitle: 'Engineer' }).id, {
+      interviewType: 'coding',
+      prepTasks: [task(1, done), task(2, null), task(3, done), task(4, null), task(5, null)],
+    });
+    fake.seedRound(fake.seedApplication({ company: 'Globex', jobTitle: 'Engineer' }).id, {
+      interviewType: 'behavioral',
+      prepTasks: [task(6, done), task(7, done)],
+    });
+    seedRound('Hooli', 'system_design');
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Acme – Engineer' });
+
+    expect(rowsUnder('Not scheduled yet')).toEqual([
+      'Acme – EngineerCodingPrep 2 of 5 done',
+      'Globex – EngineerBehavioral✓ Prep done',
+      'Hooli – EngineerSystem design',
+    ]);
+    expect(screen.queryAllByText(/Prep/)).toHaveLength(2);
+  });
+
   it('asks for the Agenda in the user’s time zone', async () => {
     renderPage();
 

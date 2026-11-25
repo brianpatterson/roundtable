@@ -113,7 +113,7 @@ component, passing the URL's params as props:
 
 | Path                           | Page                                                                                                                                                                           |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`                            | applications' `AgendaPage`: upcoming Rounds grouped by day, with time left, each linking to its application                                                                    |
+| `/`                            | applications' `AgendaPage`: upcoming Rounds grouped by day, with time left and Prep progress, each linking to its application                                                  |
 | `/applications`                | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                                                                     |
 | `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Outcomes, Self-ratings, Tags and Prep (notes and a prep task checklist) |
 | `/skills`                      | personas' `SkillsPage`: the skill library, to add, rename, archive and restore Skills, archived ones in a collapsed section                                                    |
@@ -136,7 +136,9 @@ applications (a status change, a new Round) refreshes it, and rescheduling or de
 invalidates it too. It keeps the API's order, groups by day ("Today", "Tomorrow", the date, "Not
 scheduled yet") and works out the time left in the browser, in calendar days in the user's time
 zone, every minute while the page is open; those rules are pure functions in the module's
-`format.ts`.
+`format.ts`. Each Round shows its Prep progress from the contract's `prepProgress` ("Prep 2 of 5
+done", or "Prep done" with a check mark once all are), and none without prep tasks; ticking a
+task on its application's page invalidates the Agenda, so it's current on the way back.
 
 The router is created inside `AuthGate`, so a page opened while signed out shows sign-in first
 and then that page at the same URL (social sign-in passes the path as its `callbackURL`). Modules
