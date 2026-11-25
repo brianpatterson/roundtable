@@ -8,7 +8,7 @@ mark, the code is what's true.
 
 - **Agenda**: the user's upcoming Rounds across their open Applications (not
   rejected, withdrawn or accepted), each with its Application, Interview type and time left, and
-  its prep progress once Prep exists. A dated Round stays upcoming until the end of its day (a
+  its Prep progress once Prep exists. A dated Round stays upcoming until the end of its day (a
   take-home, its due day) in the user's time zone; dated Rounds come first in date order, then
   the ones not scheduled yet. The home page, and the answer to "what should I prepare for next?".
 - **Application**: one job the user is pursuing at one company, from the moment they save the
@@ -37,8 +37,16 @@ mark, the code is what's true.
 - **Persona** _(planned)_: one way the user presents themselves for a kind of job (for example "Backend
   engineer" or "Engineering manager"). It holds the resume, cover letter and skills to practice
   for applications made as that persona. Not to be confused with the user's account.
-- **Prep** _(planned)_: what the user does to get ready for one Round: notes, and **prep tasks** ("redo the LRU
-  cache problem"), each of which can name the Skill it practices.
+- **Prep** _(planned)_: what the user does to get ready for one Round: its **Prep notes** and
+  its **prep tasks**. Belongs to the Round and goes with it.
+- **Prep notes** _(planned)_: one plain-text note per Round, written before it ("they use Go, review
+  the concurrency chapter"), up to 10,000 characters. Not the Self-rating's note, which is
+  written after.
+- **Prep progress** _(planned)_: a Round's prep tasks done out of its total ("2 / 5"); a Round
+  with no prep tasks has none. Prep notes don't count. Shown on the Agenda.
+- **Prep task** _(planned)_: one thing to do before a Round ("redo the LRU cache problem"), up to
+  200 characters, optionally naming the Skill it practices. Done when the user ticks it, which
+  records when; unticking clears that. Listed in the order added, up to 50 per Round.
 - **Round**: one interview within an Application, of one Interview type. An onsite of four
   back-to-back interviews is four Rounds on the same day, not one. It has a scheduled time (a
   start, and a duration when the company gave one), a due date (a take-home), or neither yet (the
@@ -53,8 +61,10 @@ mark, the code is what's true.
   shows as signed in. Owned by the identity module, which returns the user to sign-in with a
   notice ([ADR-0032](docs/adr/0032-web-identity-owns-session-expiry.md)).
 - **Skill** _(planned)_: something the user practices ("system design", "behavioral stories"). Each user has
-  one skill library; a Persona picks the Skills it needs, so practice counts for every Persona
-  that shares a Skill.
+  one skill library, where they add, rename, archive and restore Skills; a name is up to 80
+  characters, and two that differ only in case or surrounding spaces are the same Skill. An
+  archived Skill can't be picked for a new prep task but still shows on the ones that name it.
+  A Persona picks the Skills it needs, so practice counts for every Persona that shares a Skill.
 - **Tag**: a free-form label on a Round for detail the Interview type doesn't carry ("React",
   "SQL", "live debugging"). Up to 10 per Round, each up to 40 characters; two that differ only in
   case or surrounding spaces are the same Tag.
