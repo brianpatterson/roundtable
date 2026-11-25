@@ -11,7 +11,8 @@ import {
 import { Database } from '../../platform/database/effect.js';
 import { env, setupTestApp, signUp, type InjectResponse, type Json } from '#test/helpers';
 import { users } from '../identity/index.js';
-import { Skills, skills } from './index.js';
+import { Skills } from './index.js';
+import { skills } from './schema.js';
 
 const t = setupTestApp();
 let cookie: string;

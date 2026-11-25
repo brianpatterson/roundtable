@@ -6,8 +6,6 @@ import { Layer } from 'effect';
 import { SkillsApiLive } from './handlers.js';
 import { Skills } from './skills.js';
 
-export { skills } from './schema.js';
-
 export { Skills } from './skills.js';
 
 /**
