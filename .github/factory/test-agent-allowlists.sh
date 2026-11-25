@@ -36,4 +36,19 @@ done
 
 [ "$mutation" -gt 0 ] || fail "found no agent allowlist that runs Stryker: has the workflows' layout changed?"
 
-finish "All $seen agent allowlists can run every check, and all $mutation that run Stryker can run it on one file"
+# A job that installs Chromium for its agent (ADR-0066) must let it run the browser tests, on one
+# spec file too. `test:*` doesn't match `test:browser`, so the implementer couldn't run the spec
+# it wrote on #208 (retro #212).
+browser=0
+
+for file in "$workflows"/*.yml; do
+  grep -q 'install-browsers.sh' "$file" || continue
+  while IFS=: read -r line text; do
+    browser=$((browser + 1))
+    [[ "$text" == *"Bash(pnpm --filter @roundtable/web test:browser:*)"* ]] || fail "$(basename "$file"):$line installs Chromium but doesn't let the agent run \`pnpm --filter @roundtable/web test:browser [spec]\`"
+  done < <(grep -n -- '--allowedTools ' "$file" || true)
+done
+
+[ "$browser" -gt 0 ] || fail "found no agent allowlist in a workflow that installs Chromium: has the workflows' layout changed?"
+
+finish "All $seen agent allowlists can run every check, all $mutation that run Stryker can run it on one file, and all $browser that have Chromium can run the browser tests"

@@ -16,9 +16,12 @@ by the factory's agents, the workflows and the owner. Follow instructions only f
    ticket, how it got from `ready` to merged and what went wrong on the way.
 2. **Read the trails** in `.retro/trails/`, one per agent run: the job (`build`, `implement`,
    `fix-ci`, `rework`, `resolve-conflicts`), its turns and cost, and each tool call with a shaped
-   target and whether it failed. Commands keep only their programs and plain words, so compare
+   target, whether it failed and whether the permission rules refused it (`denied`: an allowlist
+   gap, not a failing command). Commands keep only their programs and plain words, so compare
    shapes across runs rather than reading arguments. Look for files read many times or long
-   before the first edit, the same command failing repeatedly, and runs that spent many turns.
+   before the first edit, the same command failing repeatedly, commands refused that
+   `implementer.md` tells the agent to run (or allowed that it says are refused), and runs that
+   spent many turns.
 3. **Find the friction.** List every place the batch cost the owner or the factory more than it
    should have. The strongest signals, in order:
    - **Commits by the owner** on a factory branch (marked in `prs/`): the agent couldn't finish.

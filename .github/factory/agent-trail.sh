@@ -7,7 +7,10 @@
 # Reads $RUNNER_TEMP/claude-execution-output.json and writes $RUNNER_TEMP/agent-trail/trail.json:
 #
 #   {job, outcome, turns, duration_ms, cost_usd, denied,
-#    calls: [{tool, target, error}]}
+#    calls: [{tool, target, error, denied}]}
+#
+# `denied` marks a call the permission rules refused, from the result's `permission_denials`; a
+# denied call is also an `error`, so this tells an allowlist gap from a command that failed.
 #
 # The trail is uploaded as an artifact, and artifacts of a public repository are public, so a
 # manipulated agent must not be able to publish data through it (ADR-0029). It keeps only shapes,
@@ -136,7 +139,12 @@ for event in events:
         if event.get("type") == "assistant" and block.get("type") == "tool_use":
             raw = block.get("name")
             name = raw if isinstance(raw, str) and TOOL.fullmatch(raw) else "…"
-            call = {"tool": name, "target": target(name, block.get("input")), "error": False}
+            call = {
+                "tool": name,
+                "target": target(name, block.get("input")),
+                "error": False,
+                "denied": False,
+            }
             calls.append(call)
             by_id[block.get("id")] = call
         elif event.get("type") == "user" and block.get("type") == "tool_result":
@@ -146,6 +154,13 @@ for event in events:
 
 results = [e for e in events if e.get("type") == "result"]
 result = results[-1] if results else {}
+denials = result.get("permission_denials")
+denials = denials if isinstance(denials, list) else []
+
+for denial in denials:
+    call = by_id.get(denial.get("tool_use_id")) if isinstance(denial, dict) else None
+    if call is not None:
+        call["denied"] = True
 
 
 def number(key):
@@ -161,7 +176,7 @@ json.dump(
         "turns": number("num_turns"),
         "duration_ms": number("duration_ms"),
         "cost_usd": number("total_cost_usd"),
-        "denied": len(result.get("permission_denials") or []),
+        "denied": len(denials),
         "calls": calls,
     },
     sys.stdout,
