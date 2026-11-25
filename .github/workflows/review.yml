@@ -131,7 +131,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Load the secret guard, the denial report and the poster from main
-        run: cp .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/post-review.sh .github/factory/load-screenshots.sh "$RUNNER_TEMP/"
+        run: cp .github/factory/guard-secrets.sh .github/factory/report-denials.sh .github/factory/post-review.sh .github/factory/load-screenshots.sh .github/factory/load-mutation-report.sh "$RUNNER_TEMP/"
       - uses: ./.github/actions/isolate-agent
       # The pull request's code, to read. Nothing in it is installed or run.
       - uses: actions/checkout@v7
@@ -164,6 +164,31 @@ jobs:
           gh run download "$CI_RUN" -R "$GITHUB_REPOSITORY" -n browser-tests -D "$RUNNER_TEMP/browser-tests" ||
             { echo "No browser-tests artifact on run $CI_RUN."; exit 0; }
           "$RUNNER_TEMP/load-screenshots.sh" "$RUNNER_TEMP/browser-tests" screenshots
+
+      # On a mutation ticket's pull request, what Stryker left in the ticket's file on this commit
+      # (ADR-0069). Which ticket and file come from the branch and the ticket's title, not from the
+      # artifact: the pull request's code wrote that, so main's load-mutation-report.sh keeps a
+      # fixed shape of it, for that file only. Other pull requests get no ./mutation/. Never fails
+      # the review: every `gh` call here falls back to skipping or to "not verified".
+      - name: Load the mutation report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ needs.select.outputs.ci_run }}
+        run: |
+          branch=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName) || exit 0
+          [[ "$branch" =~ ^claude/issue-([0-9]+)- ]] || { echo "Not a ticket's branch."; exit 0; }
+          n=${BASH_REMATCH[1]}
+          ticket=$(gh issue view "$n" -R "$GITHUB_REPOSITORY" --json labels,title) || { echo "No issue #$n."; exit 0; }
+          jq -e 'any(.labels[]; .name == "mutation")' <<<"$ticket" >/dev/null || { echo "#$n isn't a mutation ticket."; exit 0; }
+          title=$(jq -r .title <<<"$ticket")
+          file=
+          [[ "$title" =~ ^Mutation:\ test\ \`apps/(web|api)/(src/[^\`]+)\`$ ]] && file=${BASH_REMATCH[2]}
+          mkdir -p "$RUNNER_TEMP/mutation-check"
+          [ -z "$CI_RUN" ] ||
+            gh run download "$CI_RUN" -R "$GITHUB_REPOSITORY" -n mutation-check -D "$RUNNER_TEMP/mutation-check" ||
+            echo "No mutation-check artifact on run $CI_RUN."
+          "$RUNNER_TEMP/load-mutation-report.sh" "$RUNNER_TEMP/mutation-check" "$file" mutation
+
       - name: Review
         id: claude
         uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
@@ -180,6 +205,7 @@ jobs:
           prompt: |
             Review pull request #${{ env.PR }} in ${{ github.repository }} at commit ${{ env.SHA }}.
             Its code is checked out in ./pr/, and its browser tests' screenshots are in ./screenshots/.
+            On a mutation ticket's pull request, CI's Stryker report on the ticket's file is ./mutation/report.md.
             Follow your instructions and return the structured output.
           claude_args: >-
             --model claude-opus-5-5

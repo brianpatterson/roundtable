@@ -53,9 +53,7 @@ export const OptionalSessionLive = Layer.effect(
     const auth = yield* BetterAuth;
 
     return OptionalSession.of((httpEffect) =>
-      Effect.flatMap(sessionUser(auth), (viewer) =>
-        Effect.provideService(httpEffect, Viewer, viewer),
-      ),
+      Effect.provideServiceEffect(httpEffect, Viewer, sessionUser(auth)),
     );
   }),
 );

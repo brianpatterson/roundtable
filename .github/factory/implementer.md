@@ -204,11 +204,20 @@ review, so stay inside it:
   example: `a < b ? b : a` mutated to `a <= b ? b : a`). Mark it on the line above with the one
   mutator it is, and why:
   `// Stryker disable next-line EqualityOperator: equal values return the same either way`.
-  The reason ends up in the report. Never `disable all`, never a disable without `next-line`, and
-  never `mutator.excludedMutations` in the config: those hide real survivors along with the one.
+  The reason ends up in the report. Never `disable all` and never `mutator.excludedMutations` in
+  the config: those hide real survivors along with the one ([ADR-0068](../../docs/adr/0068-mutation-disables-that-would-hide-too-much.md)):
+  - A disable silences every mutant its mutator makes on the line. If that would also hide one a
+    test kills, add no comment: leave the equivalent mutant alive and name it in the pull request
+    as equivalent, with why.
+  - A `next-line` comment at the end of a block (above `}, []);`) attaches inside the block and
+    silences nothing (PR 194). There, wrap the smallest span in
+    `// Stryker disable <Mutator>: <reason>` and `// Stryker restore <Mutator>`. Never move code
+    to make room for a comment: that changes the source.
 - **Confirm each kill with Stryker, on that file alone:**
-  `pnpm --filter @roundtable/web test:mutation --mutate src/path/File.tsx` (or `@roundtable/api`,
-  whose run takes a few minutes; add `:<from>-<to>` lines to narrow it). Its
+  `pnpm --filter @roundtable/web test:mutation --mutate src/path/File.tsx --force` (or
+  `@roundtable/api`, whose run takes a few minutes; add `:<from>-<to>` lines to narrow it).
+  `--force` tests every mutant again: without it, a rerun reuses the last run's result for mutants
+  no test covers directly and can report a survivor your new test already kills (PR 203). Its
   `reports/mutation/mutation.json` shows what's still `Survived` or `NoCoverage`. The ticket's line
   numbers are from last night's run; go by the mutator and replacement if the code has moved.
 - **The pull request** names, for every listed mutant, the test that kills it, the disable comment that

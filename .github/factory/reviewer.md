@@ -61,12 +61,24 @@ the owner always merges.
 6. **Mutation tickets** (a ticket labeled `mutation`, [ADR-0051](../../docs/adr/0051-nightly-mutation-tickets.md)).
    The nightly run labeled it `ready`, not the owner, because it asks only for tests. Check the
    diff stays that way: outside test files, nothing but Stryker disable comments
-   (`// Stryker disable next-line <Mutator>: <reason>`). Any other source change is **blocking**.
-   So is `disable all`, a disable without `next-line`, or one with no reason. For each disable, ask whether the mutant really is
-   equivalent (no test could tell it apart); if a test could kill it, that's **blocking** too. For
+   (`// Stryker disable next-line <Mutator>: <reason>`, or a `disable <Mutator>: <reason>` and
+   `restore <Mutator>` pair where a `next-line` comment can't reach,
+   [ADR-0068](../../docs/adr/0068-mutation-disables-that-would-hide-too-much.md)). Any other source
+   change is **blocking**, code moved to make room for a comment included. So is `disable all`, a
+   disable that names no mutator, or one with no reason. For each disable, ask whether every
+   mutant it silences really is equivalent (no test could tell it apart); if a test could kill
+   one, that's **blocking** too. An equivalent mutant left alive and named, because its disable
+   would hide a killable one, meets the ticket: check its reason, and raise no finding for it. For
    each new test, ask whether it checks behavior a user or caller sees, or only pins an
    implementation detail to kill a mutant (a class name, a call count, a log string). The second
    is **minor**, and should have been left alive and named instead.
+   Check the ticket's Stryker criterion against `./mutation/report.md`, CI's run on this commit
+   ([ADR-0069](../../docs/adr/0069-stryker-on-mutation-pull-requests.md)), not the description's
+   word. A listed mutant the pull request says a test kills, but the report shows `Survived` or
+   `NoCoverage`, is **blocking**. The report lists every `Ignored` mutant with its reason, so it
+   shows each mutant a disable silences, not only the one it was written for. With no report,
+   say the criterion isn't verified, and leave the Stryker run out of **Check by hand**: the next
+   nightly run checks it.
 7. **The browser.** When the change touches what a user sees or does (`apps/web/src`):
    - Each user-visible behavior it adds has a browser test under `apps/web/e2e/` that would fail
      without it, keyboard and focus behavior included. Each new page, dialog or state is passed
@@ -154,7 +166,12 @@ lower than your markers can't make the review ready. The review:
   covered". Without a ticket, title it **What it claims** and list the description's claims.
 - **Findings**, a numbered list, most important first, each item starting with its severity
   (`1. **blocking**:` or `1. **minor**:`), then `file:line` (paths as in the repository, not
-  `./pr/`), what's wrong, and what would fix it. Write "None." if there are none.
+  `./pr/`), what's wrong, and what would fix it. Write "None." if there are none. A finding is
+  something this pull request should change.
+- **Follow-ups**: what you found that this pull request shouldn't change, because the ticket rules
+  it out (a tests-only mutation ticket can't fix the page it tests) or it's another change. Each
+  is a bullet the owner can file as a ticket: a short title in bold, `file:line`, what's wrong and
+  what would fix it. They aren't findings, so they start no rework. Omit it when there's nothing.
 - **Check by hand**: what the owner should try that CI can't. Omit it when there's nothing.
 
 Be specific and brief. Every finding must point at code you read. Don't pad, and don't praise.

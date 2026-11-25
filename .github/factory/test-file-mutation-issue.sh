@@ -76,7 +76,7 @@ expect_in "labeled mutation" "$created" "mutation"
 expect_in "and ready, by the workflow" "$created" "ready"
 expect_in "it lists a survivor with its line" "$created" '`apps/web/src/Page.tsx:5` Survived'
 refute "an ignored mutant isn't listed" "$created" "Page.tsx:8"
-expect_in "the command runs Stryker on that file alone" "$created" "pnpm --filter @roundtable/web test:mutation --mutate src/Page.tsx"
+expect_in "the command runs Stryker on that file alone" "$created" "pnpm --filter @roundtable/web test:mutation --mutate src/Page.tsx --force"
 expect_in "it asks for tests only" "$created" "changes only test files"
 
 # A file the owner declined is skipped; the next file down is filed, its mutants in line order and

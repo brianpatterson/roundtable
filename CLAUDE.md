@@ -80,7 +80,8 @@ each module is what a future service or microfrontend would become.
   retrospective reads how the factory built it, from the trails `.github/factory/agent-trail.sh` keeps of each agent run,
   and opens one `retro` issue of fixes to the factory's environment ([ADR-0064](docs/adr/0064-factory-retro-per-batch.md)).
   `.github/workflows/mutation.yml`: Stryker on the web app and the API, nightly on main, advisory;
-  not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)).
+  not on pull requests ([ADR-0027](docs/adr/0027-mutation-testing-stryker.md), [ADR-0039](docs/adr/0039-nightly-mutation-and-security-audit.md)),
+  except CI's run on a mutation ticket's one file, which the reviewer reads ([ADR-0069](docs/adr/0069-stryker-on-mutation-pull-requests.md)).
   It then tops up to five open tests-only `mutation` tickets, one per file, through `.github/factory/file-mutation-issue.sh`,
   labeled `ready` by the workflow, which the dispatcher accepts on that kind of ticket only and builds after the owner's ([ADR-0051](docs/adr/0051-nightly-mutation-tickets.md), [ADR-0052](docs/adr/0052-more-mutation-tickets-behind-the-owners.md)).
   `.github/workflows/security-audit.yml` and `.github/factory/auditor.md`: the nightly security

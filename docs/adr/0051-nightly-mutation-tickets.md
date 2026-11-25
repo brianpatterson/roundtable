@@ -1,6 +1,6 @@
 # 0051. File a nightly mutation ticket that the factory builds without the owner's label
 
-- **Status:** Accepted, amended by [0052](0052-more-mutation-tickets-behind-the-owners.md)
+- **Status:** Accepted, amended by [0052](0052-more-mutation-tickets-behind-the-owners.md) and [0068](0068-mutation-disables-that-would-hide-too-much.md)
 - **Date:** 2026-11-22
 
 ## Context

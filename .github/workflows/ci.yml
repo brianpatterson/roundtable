@@ -45,7 +45,7 @@ jobs:
       - name: Lint
         run: pnpm lint
       - name: Format
-        run: pnpm prettier --check .
+        run: pnpm check:format
       - name: Typecheck
         run: pnpm typecheck
       # Every shell script in the repo, the factory's guards included. .shellcheckrc lists the
@@ -70,6 +70,8 @@ jobs:
         run: pnpm check:adrs
       - name: ADR check fixtures
         run: scripts/test-check-adrs.sh
+      - name: Format check in the agent sandbox
+        run: scripts/test-check-format.sh
       # Every .github/factory/test-*.sh, so a new one runs without being listed here. Each
       # script's header names what it pins and the ADR behind it. All run, then the step fails if
       # any did, with one error line per failed script.
@@ -156,6 +158,88 @@ jobs:
           path: |
             apps/web/test-results/screenshots/
             apps/web/test-results/report/
+          retention-days: 14
+
+  # Stryker on a mutation ticket's one file (ADR-0051), on the factory's pull request for it, so
+  # the reviewer reads which mutants are left instead of taking the implementer's word (ADR-0069).
+  # Other pull requests skip it after one `gh` call. Advisory: a failure or a timeout leaves the
+  # reviewer a "not verified" report, never a red or cancelled CI, which would hold the review
+  # back (it starts on a successful CI). So Stryker's own step has the time limit and may fail;
+  # the job's limit is only a backstop. No secrets: the API's tests run on CI's Postgres.
+  mutation:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'claude/issue-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: read # the ticket's label and title
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s
+          --health-retries 15
+    env:
+      # Each Stryker worker creates and migrates its own copy, app_test_<worker>.
+      TEST_DATABASE_URL: postgres://app:app@localhost:5432/app_test
+    steps:
+      # The factory names its branch after the ticket (claude/issue-<n>-…). Only a `mutation`
+      # ticket whose title names a plain source file in one of the apps gets a run.
+      - name: Find the ticket's file
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          [[ "$BRANCH" =~ ^claude/issue-([0-9]+)- ]] || { echo "Not a ticket's branch."; exit 0; }
+          n=${BASH_REMATCH[1]}
+          ticket=$(gh issue view "$n" -R "$GITHUB_REPOSITORY" --json labels,title) ||
+            { echo "No issue #$n."; exit 0; }
+          jq -e 'any(.labels[]; .name == "mutation")' <<<"$ticket" >/dev/null ||
+            { echo "#$n isn't a mutation ticket."; exit 0; }
+          title=$(jq -r .title <<<"$ticket")
+          [[ "$title" =~ ^Mutation:\ test\ \`apps/(web|api)/(src/[A-Za-z0-9_./-]+\.tsx?)\`$ ]] && [[ "$title" != *..* ]] ||
+            { echo "::warning::Can't read a source file from the title of #$n."; exit 0; }
+          {
+            echo "app=${BASH_REMATCH[1]}"
+            echo "file=${BASH_REMATCH[2]}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        if: steps.target.outputs.file != ''
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: steps.target.outputs.file != ''
+      - uses: actions/setup-node@v7
+        if: steps.target.outputs.file != ''
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - if: steps.target.outputs.file != ''
+        run: pnpm install --frozen-lockfile
+      # `--force`: a fresh checkout has no incremental results, but nothing here should reuse them.
+      # The web app's file takes seconds; the API's a few minutes on a laptop.
+      - name: Mutate the file
+        if: steps.target.outputs.file != ''
+        timeout-minutes: 25
+        continue-on-error: true
+        env:
+          APP: ${{ steps.target.outputs.app }}
+          FILE: ${{ steps.target.outputs.file }}
+        run: pnpm --filter "@roundtable/$APP" test:mutation --mutate "$FILE" --force
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && steps.target.outputs.file != '' }}
+        with:
+          name: mutation-check
+          path: apps/${{ steps.target.outputs.app }}/reports/mutation/mutation.json
+          if-no-files-found: ignore
           retention-days: 14
 
   # The production images must build. They're not pushed here; the deploy pipeline does that.

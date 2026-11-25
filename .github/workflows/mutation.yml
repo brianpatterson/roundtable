@@ -1,6 +1,7 @@
 # Mutation testing (ADR-0027, ADR-0039), nightly on main: Stryker changes the code in small ways
 # and reports every change no test notices. Pull requests don't run it: a full API run takes about
-# half an hour on a runner, and one that timed out left a factory pull request stuck. Advisory: it
+# half an hour on a runner, and one that timed out left a factory pull request stuck. (CI's
+# `mutation` job runs it on a mutation ticket's one file, for the reviewer: ADR-0069.) Advisory: it
 # never fails on the score, only if Stryker itself can't run. The score and the survivors go to
 # each job's summary and its artifact (`web-mutation-report`, `api-mutation-report`). Then `file`
 # opens the factory's next mutation ticket from them (ADR-0051).
