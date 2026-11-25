@@ -1,11 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Schema } from 'effect';
-import {
-  AgendaRound,
-  APPLICATION_STATUSES,
-  Application,
-  OPEN_APPLICATION_STATUSES,
-} from '@roundtable/contract';
+import { AgendaRound, APPLICATION_STATUSES, Application } from '@roundtable/contract';
 import { setupTestApp, signUp, type Json } from '#test/helpers';
 
 const t = setupTestApp();
@@ -122,7 +117,7 @@ describe('agenda API', () => {
 
     const companies = (await agenda()).map((round) => round.company);
 
-    expect(companies).toEqual([...OPEN_APPLICATION_STATUSES]);
+    expect(companies).toEqual(['saved', 'applied', 'interviewing', 'offer']);
   });
 
   it('keeps a Round from earlier today, even finished, and drops one from yesterday', async () => {
