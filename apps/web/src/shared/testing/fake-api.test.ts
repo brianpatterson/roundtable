@@ -91,6 +91,31 @@ describe('the fake API', () => {
         { company: 'Acme', jobTitle: 'Engineer' },
       ]);
     });
+
+    it('gives the override the request, its body unread', async () => {
+      const seen: { method: string; path: string; body: unknown }[] = [];
+
+      fake.on('applications.create', async (request) => {
+        seen.push({
+          method: request.method,
+          path: new URL(request.url).pathname,
+          body: await request.json(),
+        });
+
+        return undefined;
+      });
+
+      const created = await client().createApplication({ company: 'Acme', jobTitle: 'Engineer' });
+
+      expect(created.company).toBe('Acme');
+      expect(seen).toEqual([
+        {
+          method: 'POST',
+          path: '/api/applications',
+          body: { company: 'Acme', jobTitle: 'Engineer' },
+        },
+      ]);
+    });
   });
 
   it('answers 401 once the session has run out, and Better Auth’s session then answers null', async () => {

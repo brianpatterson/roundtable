@@ -128,10 +128,11 @@ export interface Received {
 export type Endpoint = keyof Received;
 
 /**
- * Replaces an endpoint's answer until the next test: a Response to answer with (a 500, say), or
- * nothing to go on to the in-memory answer. It can wait first, to hold a request in flight.
+ * Replaces an endpoint's answer until the next test: given the request (a copy, its body unread),
+ * a Response to answer with (a 500, say), or nothing to go on to the in-memory answer. It can wait
+ * first, to hold a request in flight.
  */
-export type Override = () => Response | undefined | Promise<Response | undefined>;
+export type Override = (request: Request) => Response | undefined | Promise<Response | undefined>;
 
 /** One request the fake received: which endpoint answered it (none if none did), and its status. */
 export interface Call {
@@ -162,7 +163,15 @@ export function createFakeApi() {
   let reportCount = 0;
   const overrides = new Map<Endpoint, Override>();
   const received: { endpoint: Endpoint; input: Received[Endpoint] }[] = [];
-  const calls: { endpoint: Endpoint | undefined; status: number; overridden: boolean }[] = [];
+
+  const calls: {
+    endpoint: Endpoint | undefined;
+    status: number;
+    overridden: boolean;
+    /** The request as sent, its body unread, for the endpoint's override. */
+    request: Request;
+  }[] = [];
+
   const violations: FakeApiViolation[] = [];
   /** Why the fake failed unexpectedly (an answer the contract can't encode, say), not yet told. */
   const failures: string[] = [];
@@ -189,9 +198,11 @@ export function createFakeApi() {
 
     received.push({ endpoint, input });
 
-    const response = await overrides.get(endpoint)?.();
+    if (!call) return undefined;
 
-    if (response && call) call.overridden = true;
+    const response = await overrides.get(endpoint)?.(call.request);
+
+    if (response) call.overridden = true;
 
     return response;
   };
@@ -635,7 +646,10 @@ export function createFakeApi() {
   /** For the typed client and Better Auth's: answers as the API would, from memory. */
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
-    const index = calls.push({ endpoint: undefined, status: 0, overridden: false }) - 1;
+
+    const index =
+      calls.push({ endpoint: undefined, status: 0, overridden: false, request: request.clone() }) -
+      1;
 
     request.headers.set(CALL_HEADER, String(index));
 

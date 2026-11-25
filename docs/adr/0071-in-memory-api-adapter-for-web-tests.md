@@ -47,9 +47,10 @@ outside the contract as in the API.
   the real API (`inference.test.ts`, `rounds.test.ts`).
 - **Tests seed it with factories** (`application()`, `round()`) that default every field, so a test
   names only what it cares about, and a new field is one default.
-- **One override hook per endpoint**: `fake.on(endpoint, override)` answers with the Response the
-  override returns (a 500), or waits on it (a held request) and then answers from memory. Every
-  override is dropped before the next test, by `useFakeApi()`'s shared `beforeEach`.
+- **One override hook per endpoint**: `fake.on(endpoint, (request) => …)` is given the request
+  and answers with the Response the override returns (a 500), or waits on it (a held request) and
+  then answers from memory. Every override is dropped before the next test, by
+  `setUpFakeApi()`'s shared `beforeEach`.
 - **An answer that breaks the contract fails the test**: a 500 no override asked for rejects the
   request with the schema error and fails the test in `afterEach`.
 
