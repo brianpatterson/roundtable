@@ -107,6 +107,20 @@ describe('SkillsPage: adding', () => {
     },
   );
 
+  it('says a name of only spaces is blank, and sends nothing', async () => {
+    await renderPage();
+
+    await addSkill('   ');
+
+    expect(await screen.findByText('Enter a skill name.')).toBeDefined();
+    expect(nameField().getAttribute('aria-invalid')).toBe('true');
+    expect(fake.received('skills.create')).toEqual([]);
+
+    await userEvent.type(nameField(), 'Coding');
+
+    expect(screen.queryByText('Enter a skill name.')).toBeNull();
+  });
+
   it(`limits the name to ${MAX_SKILL_NAME} characters`, async () => {
     await renderPage();
 
@@ -189,6 +203,22 @@ describe('SkillsPage: renaming', () => {
     expect(field.getAttribute('aria-invalid')).toBe('true');
   });
 
+  it('says a name of only spaces is blank, keeps the dialog open and sends nothing', async () => {
+    fake.seedSkill({ name: 'Algorithms' });
+    await renderPage();
+
+    const { dialog } = await openRename('Algorithms');
+    const field = within(dialog).getByRole('textbox', { name: 'Name' });
+
+    await userEvent.clear(field);
+    await userEvent.type(field, '   ');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(await within(dialog).findByText('Enter a skill name.')).toBeDefined();
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(fake.received('skills.update')).toEqual([]);
+  });
+
   it('changes nothing on Cancel, and returns focus to the Rename button', async () => {
     fake.seedSkill({ name: 'Algorithms' });
     await renderPage();
@@ -219,6 +249,8 @@ describe('SkillsPage: archiving and restoring', () => {
 
     expect(toggle.textContent).toBe('Archived (1)');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // The pressed button is gone, so focus moves to the section it went to.
+    await waitFor(() => expect(document.activeElement).toBe(toggle));
     expect(screen.queryByRole('list', { name: 'Archived' })).toBeNull();
 
     // A confirmation, not an error: a polite dialog, no alert.
@@ -250,6 +282,7 @@ describe('SkillsPage: archiving and restoring', () => {
     await waitFor(() => expect(activeNames()).toEqual(['Algorithms', 'Coding']));
     expect(fake.received('skills.update')).toEqual([{ archived: false }]);
     expect(archivedToggle().textContent).toBe('Archived (1)');
+    await waitFor(() => expect(document.activeElement).toBe(archivedToggle()));
   });
 
   it('hides the Archived section once nothing is archived', async () => {
@@ -261,6 +294,10 @@ describe('SkillsPage: archiving and restoring', () => {
 
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Archived/ })).toBeNull());
     expect(activeNames()).toEqual(['Algorithms']);
+    // With no Archived section left, focus goes to the page's heading.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Skills' })),
+    );
   });
 
   it('shows a failure in an error snackbar and leaves the Skill where it was', async () => {

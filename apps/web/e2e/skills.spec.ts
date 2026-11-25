@@ -65,14 +65,17 @@ test('adds, renames, archives and restores a Skill on the Skills page', async ({
   await expect(page.getByRole('button', { name: `Rename ${renamed}` })).toBeFocused();
 
   // Archive: it leaves the list for the collapsed Archived section, and a snackbar confirms it.
-  await page.getByRole('button', { name: `Archive ${renamed}` }).click();
+  // From the keyboard: the pressed button goes, and focus moves to the Archived toggle.
+  await page.getByRole('button', { name: `Archive ${renamed}` }).focus();
+  await page.keyboard.press('Enter');
   await expect(page.getByText(`Archived ${renamed}.`)).toBeVisible();
   await expect(skills.getByRole('listitem').filter({ hasText: renamed })).toHaveCount(0);
 
   const toggle = page.getByRole('button', { name: /^Archived \(\d+\)$/ });
 
+  await expect(toggle).toBeFocused();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await toggle.click();
+  await page.keyboard.press('Enter');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
   const archived = page.getByRole('list', { name: 'Archived' });
@@ -81,8 +84,11 @@ test('adds, renames, archives and restores a Skill on the Skills page', async ({
   await expectAccessible(page);
   await screenshotThemes(page, testInfo, 'skills-archived');
 
-  // Restore: back in the list.
-  await archived.getByRole('button', { name: `Restore ${renamed}` }).click();
+  // Restore: back in the list, with focus on the toggle, or on the heading if it was the last one.
+  await archived.getByRole('button', { name: `Restore ${renamed}` }).focus();
+  await page.keyboard.press('Enter');
   await expect(skills.getByRole('listitem').filter({ hasText: renamed })).toBeVisible();
   await expect(archived.getByRole('listitem').filter({ hasText: renamed })).toHaveCount(0);
+  // Other projects' archived Skills share this user, so either can be the one left.
+  await expect(page.locator(':focus')).toHaveAccessibleName(/^(Archived \(\d+\)|Skills)$/);
 });

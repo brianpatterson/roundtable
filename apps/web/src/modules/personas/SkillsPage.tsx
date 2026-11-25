@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { MAX_SKILL_NAME, MAX_SKILLS, type Skill } from '@roundtable/contract';
 import { Alert, Button, Dialog, TextField, useSnackbar } from '../../design-system';
 import { api } from '../../shared/api';
-import { AddSkillForm } from './AddSkillForm';
+import { AddSkillForm, skillNameProblem } from './AddSkillForm';
 import styles from './SkillsPage.module.css';
 import { skillsQueryKey, useSkills } from './queries';
 
@@ -18,6 +18,16 @@ export function SkillsPage() {
   const skills = useSkills();
   const archivedId = useId();
   const [showArchived, setShowArchived] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const archivedToggleRef = useRef<HTMLButtonElement>(null);
+  // Archive and Restore remove the button that was pressed, so focus moves on once the list has
+  // changed: to the "Archived (n)" toggle, or the heading when nothing is archived any more.
+  // Counts the moves asked for; each new one runs the effect once, after the list has rendered.
+  const [focusMoves, setFocusMoves] = useState(0);
+
+  useEffect(() => {
+    if (focusMoves > 0) (archivedToggleRef.current ?? headingRef.current)?.focus();
+  }, [focusMoves]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: skillsQueryKey });
 
@@ -26,6 +36,7 @@ export function SkillsPage() {
       api.updateSkill(skill.id, { archived }),
     onSuccess: async (skill, { archived }) => {
       await refresh();
+      setFocusMoves((moves) => moves + 1);
       showSnackbar(`${archived ? 'Archived' : 'Restored'} ${skill.name}.`, 'status');
     },
     meta: { errorSnackbar: true },
@@ -35,6 +46,7 @@ export function SkillsPage() {
   const [toRename, setToRename] = useState<Skill>();
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
+  const [renameProblem, setRenameProblem] = useState<string>();
 
   const rename = useMutation({
     mutationFn: ({ skill, name }: { skill: Skill; name: string }) =>
@@ -44,6 +56,7 @@ export function SkillsPage() {
 
   const askToRename = (skill: Skill) => {
     rename.reset();
+    setRenameProblem(undefined);
     setToRename(skill);
     setNewName(skill.name);
     setRenaming(true);
@@ -55,7 +68,11 @@ export function SkillsPage() {
   };
 
   const save = () => {
-    if (toRename) {
+    const why = skillNameProblem(newName);
+
+    setRenameProblem(why);
+
+    if (toRename && !why) {
       rename.mutate(
         { skill: toRename, name: newName.trim() },
         { onSuccess: () => setRenaming(false) },
@@ -68,7 +85,9 @@ export function SkillsPage() {
 
   return (
     <section className={styles.page} aria-labelledby="skills-heading">
-      <h2 id="skills-heading">Skills</h2>
+      <h2 id="skills-heading" ref={headingRef} tabIndex={-1}>
+        Skills
+      </h2>
       {skills.isPending && <p>Loading…</p>}
       {skills.isError && <Alert tone="error">{skills.error.message}</Alert>}
       {skills.data?.length === 0 && (
@@ -108,6 +127,7 @@ export function SkillsPage() {
       {archived.length > 0 && (
         <div className={styles.archived}>
           <Button
+            ref={archivedToggleRef}
             variant="text"
             aria-expanded={showArchived}
             aria-controls={archivedId}
@@ -165,11 +185,12 @@ export function SkillsPage() {
           value={newName}
           onChange={(e) => {
             setNewName(e.target.value);
+            setRenameProblem(undefined);
             rename.reset();
           }}
           maxLength={MAX_SKILL_NAME}
           required
-          error={rename.error?.message}
+          error={renameProblem ?? rename.error?.message}
         />
       </Dialog>
     </section>
