@@ -1,9 +1,10 @@
 import { useMutation } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Button, useSnackbar } from '../design-system';
 import { api } from '../shared/api';
+import { serverError, setUpFakeApi } from '../shared/testing/fake-api';
 import { Providers } from './Providers';
 
 function ShowsASnackbar() {
@@ -29,20 +30,14 @@ function ChangesStatus({ errorSnackbar }: { readonly errorSnackbar: boolean }) {
   );
 }
 
-/** How the stand-in server answers every request. */
-let answer: () => Response;
+const fake = setUpFakeApi();
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', () => Promise.resolve(answer()));
+  fake.seedApplication({ id: ACME_ID });
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-const serverError = () => new Response(null, { status: 500 });
-
-const unauthorized = () => Response.json({ _tag: 'Unauthorized' }, { status: 401 });
+/** The change fails with a 500, which has nothing to do with the session. */
+const failChanges = () => fake.on('applications.update', serverError);
 
 const changeStatus = async (errorSnackbar: boolean) => {
   render(
@@ -70,7 +65,7 @@ describe('Providers', () => {
 
 describe('Providers: which mutation errors reach the snackbar', () => {
   it("shows the error's message for a mutation that opts in", async () => {
-    answer = serverError;
+    failChanges();
     await changeStatus(true);
 
     expect((await screen.findByRole('alert')).textContent).toBe(
@@ -79,14 +74,14 @@ describe('Providers: which mutation errors reach the snackbar', () => {
   });
 
   it('shows nothing for an opted-in mutation that fails because the session ended', async () => {
-    answer = unauthorized;
+    fake.endSession();
     await changeStatus(true);
 
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it("shows nothing for a mutation that doesn't opt in: it shows its own error", async () => {
-    answer = serverError;
+    failChanges();
     await changeStatus(false);
 
     expect(screen.queryByRole('alert')).toBeNull();

@@ -1,311 +1,59 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InterviewType, Round } from '@roundtable/contract';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { serverError, setUpFakeApi } from '../../shared/testing/fake-api';
 import { createTestRouter, TestRouterProvider } from '../../shared/testing/router';
 import { AgendaPage } from './AgendaPage';
 import { ApplicationPage } from './ApplicationPage';
 
-// The page calls the real typed client; only the server behind `fetch` is a stand-in, keeping one
-// application and its Rounds the way the API does.
+// The page calls the real typed client, answered by the in-memory API, which keeps one applied
+// application and its Rounds. It infers nothing: a test that needs an inferred Outcome, or the
+// move to interviewing, makes it in an override, as the API would.
+const fake = setUpFakeApi();
+
 const ACME_ID = '00000000-0000-4000-8000-000000000001';
-const ROUNDS_PATH = `/api/applications/${ACME_ID}/rounds`;
 
-/** A Round's Tags: the Round's id is the match's first group. */
-const TAGS_PATH = new RegExp(`^${ROUNDS_PATH}/([^/]+)/tags$`);
-
-const TIMESTAMP = '2026-11-01T00:00:00.000Z';
-
-interface Schedule {
-  startsAt: string | null;
-  durationMinutes: number | null;
-  dueOn: string | null;
-}
-
-interface Rating {
-  selfRating: number | null;
-  ratingNote: string | null;
-}
-
-interface Outcome {
-  outcome: string;
-  outcomeSetByUser: boolean;
-}
-
-interface StoredRound extends Schedule, Rating, Outcome {
-  id: string;
-  applicationId: string;
-  interviewType: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-const NOT_SCHEDULED: Schedule = { startsAt: null, durationMinutes: null, dueOn: null };
-
-const NOT_RATED: Rating = { selfRating: null, ratingNote: null };
-
-const NEW_OUTCOME: Outcome = { outcome: 'pending', outcomeSetByUser: false };
-
-let status: string;
-let stored: StoredRound[];
-let nextRound: number;
-
-/** What the server answers a request to add or delete a Round with, unless it's the default. */
-let failWrites: number | undefined;
-
-/** The bodies the page sent to add Rounds, without the time zone. */
-let added: unknown[];
-
-/** The time zone the page sent with each Round it added. */
-let timeZones: (string | undefined)[];
-
-/** The bodies the page sent to change a Round's schedule. */
-let scheduled: unknown[];
-
-/** The bodies the page sent to rate a Round. */
-let ratings: unknown[];
-
-/** The bodies the page sent to set a Round's Outcome. */
-let outcomes: unknown[];
-
-/** While set, the server waits for it before answering a request to set an Outcome. */
-let outcomeHeld: Promise<void> | undefined;
-
-/** While set, the server waits for it before answering a request to list the Rounds. */
-let listHeld: Promise<void> | undefined;
-
-/** What the server answers a request to list the Rounds with, unless it's the default. */
-let failList: number | undefined;
-
-/** While set, the server waits for it before answering a request to reschedule or delete a Round. */
-let writeHeld: Promise<void> | undefined;
+beforeEach(() => {
+  fake.seedApplication({ id: ACME_ID, status: 'applied' });
+});
 
 const roundId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-const notFound = (tag: string) => Response.json({ _tag: tag }, { status: 404 });
-
-async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const request = new Request(input, init);
-  const { pathname } = new URL(request.url);
-
-  if (request.method === 'GET' && pathname === `/api/applications/${ACME_ID}`) {
-    return Response.json({
-      id: ACME_ID,
-      company: 'Acme',
-      jobTitle: 'Engineer',
-      jobUrl: null,
-      status,
-      appliedAt: TIMESTAMP,
-      createdAt: TIMESTAMP,
-      updatedAt: TIMESTAMP,
-    });
-  }
-
-  if (request.method === 'GET' && pathname === ROUNDS_PATH) {
-    await listHeld;
-
-    if (failList) return new Response(null, { status: failList });
-
-    return Response.json(stored);
-  }
-
-  if (request.method === 'POST' && pathname === ROUNDS_PATH) {
-    if (failWrites) return new Response(null, { status: failWrites });
-
-    // SAFETY: the typed client encoded this body with the contract's CreateRound schema.
-    const { timeZone, ...body } = (await request.json()) as {
-      interviewType: string;
-      timeZone?: string;
-    } & Partial<Schedule>;
-
-    added.push(body);
-    timeZones.push(timeZone);
-
-    // The first Round moves an applied application to interviewing.
-    if (stored.length === 0 && status === 'applied') status = 'interviewing';
-
-    // A stand-in for inference: the pending Rounds the user hasn't set pass (unscheduled ones all
-    // come before a new Round).
-    stored = stored.map((r) =>
-      r.outcome === 'pending' && !r.outcomeSetByUser && r.startsAt === null && r.dueOn === null
-        ? { ...r, outcome: 'passed' }
-        : r,
-    );
-
-    nextRound += 1;
-
-    const round = {
-      ...NOT_SCHEDULED,
-      ...NOT_RATED,
-      ...NEW_OUTCOME,
-      ...body,
-      id: roundId(nextRound),
-      applicationId: ACME_ID,
-      tags: [],
-      createdAt: TIMESTAMP,
-      updatedAt: TIMESTAMP,
-    };
-
-    stored = [...stored, round];
-
-    return Response.json(round, { status: 201 });
-  }
-
-  const tags = TAGS_PATH.exec(pathname);
-
-  if (tags) {
-    if (failWrites) return new Response(null, { status: failWrites });
-
-    const target = stored.find((r) => r.id === tags[1]);
-
-    if (!target) return notFound('RoundNotFound');
-
-    // Matched the way the API does: trimmed, ignoring case.
-    const same = (a: string) => (b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-
-    if (request.method === 'POST') {
-      // SAFETY: the typed client encoded this body with the contract's RoundTag schema.
-      const { tag } = (await request.json()) as { tag: string };
-
-      if (!target.tags.some(same(tag))) {
-        if (target.tags.length >= 10)
-          return Response.json({ _tag: 'TooManyTags' }, { status: 400 });
-
-        target.tags = [...target.tags, tag];
-      }
-    } else {
-      const tag = new URL(request.url).searchParams.get('tag') ?? '';
-
-      target.tags = target.tags.filter((t) => !same(tag)(t));
-    }
-
-    return Response.json(target);
-  }
-
-  if (request.method === 'PUT' && pathname.endsWith('/schedule')) {
-    await writeHeld;
-
-    if (failWrites) return new Response(null, { status: failWrites });
-
-    const id = pathname.slice(ROUNDS_PATH.length + 1, -'/schedule'.length);
-    const existing = stored.find((r) => r.id === id);
-
-    if (!existing) return notFound('RoundNotFound');
-
-    // SAFETY: the typed client encoded this body with the contract's RoundSchedule schema.
-    const body = (await request.json()) as Partial<Schedule>;
-
-    scheduled.push(body);
-
-    // The whole schedule is replaced: what isn't sent is cleared.
-    const round = { ...existing, ...NOT_SCHEDULED, ...body };
-
-    stored = stored.map((r) => (r.id === id ? round : r));
-
-    return Response.json(round);
-  }
-
-  if (request.method === 'PUT' && pathname.endsWith('/rating')) {
-    if (failWrites) return new Response(null, { status: failWrites });
-
-    const id = pathname.slice(ROUNDS_PATH.length + 1, -'/rating'.length);
-    const existing = stored.find((r) => r.id === id);
-
-    if (!existing) return notFound('RoundNotFound');
-
-    // SAFETY: the typed client encoded this body with the contract's RoundRating schema.
-    const body = (await request.json()) as Partial<Rating>;
-
-    ratings.push(body);
-
-    // The whole rating is replaced: what isn't sent is cleared.
-    const round = { ...existing, ...NOT_RATED, ...body };
-
-    stored = stored.map((r) => (r.id === id ? round : r));
-
-    return Response.json(round);
-  }
-
-  if (request.method === 'PUT' && pathname.endsWith('/outcome')) {
-    if (failWrites) return new Response(null, { status: failWrites });
-
-    const id = pathname.slice(ROUNDS_PATH.length + 1, -'/outcome'.length);
-    const existing = stored.find((r) => r.id === id);
-
-    if (!existing) return notFound('RoundNotFound');
-
-    // SAFETY: the typed client encoded this body with the contract's RoundOutcome schema.
-    const body = (await request.json()) as { outcome: string };
-
-    outcomes.push(body);
-    await outcomeHeld;
-
-    const round = { ...existing, outcome: body.outcome, outcomeSetByUser: true };
-
-    stored = stored.map((r) => (r.id === id ? round : r));
-
-    return Response.json(round);
-  }
-
-  if (request.method === 'DELETE' && pathname.startsWith(`${ROUNDS_PATH}/`)) {
-    await writeHeld;
-
-    if (failWrites) return new Response(null, { status: failWrites });
-
-    const id = pathname.slice(ROUNDS_PATH.length + 1);
-
-    if (!stored.some((round) => round.id === id)) return notFound('RoundNotFound');
-
-    stored = stored.filter((round) => round.id !== id);
-
-    return new Response(null, { status: 204 });
-  }
-
-  // The Agenda: these tests' dates are all upcoming, so every Round is on it.
-  if (request.method === 'GET' && pathname === '/api/agenda')
-    return Response.json(stored.map((r) => ({ ...r, company: 'Acme', jobTitle: 'Engineer' })));
-
-  return notFound('ApplicationNotFound');
-}
-
+/** Round `n` of `interviewType`, with the fields a test cares about; a start as ISO 8601. */
 const round = (
   n: number,
-  interviewType: string,
-  { tags = [], ...rest }: Partial<Schedule & Rating & Outcome> & { tags?: string[] } = {},
-): StoredRound => ({
+  interviewType: InterviewType,
+  { startsAt, ...fields }: Partial<Omit<Round, 'startsAt'>> & { startsAt?: string } = {},
+): Partial<Round> => ({
+  ...fields,
   id: roundId(n),
-  applicationId: ACME_ID,
   interviewType,
-  tags,
-  ...NOT_SCHEDULED,
-  ...NOT_RATED,
-  ...NEW_OUTCOME,
-  ...rest,
-  createdAt: TIMESTAMP,
-  updatedAt: TIMESTAMP,
+  startsAt: startsAt === undefined ? null : new Date(startsAt),
 });
 
-beforeEach(() => {
-  status = 'applied';
-  stored = [];
-  nextRound = 100;
-  failWrites = undefined;
-  added = [];
-  timeZones = [];
-  scheduled = [];
-  ratings = [];
-  outcomes = [];
-  outcomeHeld = undefined;
-  listHeld = undefined;
-  failList = undefined;
-  writeHeld = undefined;
-  vi.stubGlobal('fetch', fakeServer);
-});
+/** Gives Acme these Rounds, in the order they were added. */
+const seed = (...rounds: Partial<Round>[]) => {
+  for (const fields of rounds) fake.seedRound(ACME_ID, fields);
+};
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+/** Acme's Rounds, as the fake holds them. */
+const stored = () => fake.rounds(ACME_ID);
+
+/** The Rounds the page added, without the time zone it sent with each. */
+const added = () =>
+  fake.received('applications.createRound').map((payload) => {
+    const { timeZone: _, ...body } = payload;
+
+    return body;
+  });
+
+const scheduled = () => fake.received('applications.scheduleRound');
+
+const ratings = () => fake.received('applications.rateRound');
+
+const outcomes = () => fake.received('applications.setRoundOutcome');
 
 const renderPage = async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -400,15 +148,24 @@ const openScheduleDialog = async (name: string) => {
   return dialog;
 };
 
-/** A request the server holds until `release` is called, e.g. `listHeld`. */
-const hold = () => {
+/**
+ * An override that holds a request until `release` is called, then answers with `answer`, or
+ * from memory without one.
+ */
+const hold = (answer?: () => Response) => {
   let release = () => {};
 
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
 
-  return { held, release };
+  const override = async () => {
+    await held;
+
+    return answer?.();
+  };
+
+  return { override, release };
 };
 
 /** The page's Rounds section. */
@@ -433,13 +190,13 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('names each Round by its type and which of that type it is, in list order', async () => {
-    stored = [
+    seed(
       round(1, 'coding'),
       round(2, 'take_home'),
       round(3, 'coding'),
       round(4, 'behavioral'),
       round(5, 'coding'),
-    ];
+    );
     await renderPage();
 
     expect(await listed()).toEqual([
@@ -475,7 +232,7 @@ describe('Rounds on an application’s page', () => {
     await addRound('Coding');
 
     await waitFor(async () => expect(await listed()).toEqual(['Coding 1']));
-    expect(added).toEqual([{ interviewType: 'coding' }]);
+    expect(added()).toEqual([{ interviewType: 'coding' }]);
     expect(screen.queryByText('No rounds yet.')).toBeNull();
   });
 
@@ -487,6 +244,12 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('shows the application as interviewing once its first Round is added', async () => {
+    // The API moves an applied application to interviewing with its first Round.
+    fake.on('applications.createRound', () => {
+      fake.changeApplication(ACME_ID, { status: 'interviewing' });
+
+      return undefined;
+    });
     await renderPage();
     expect(statusShown()).toBe('Applied');
 
@@ -496,7 +259,7 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('shows why a Round couldn’t be added', async () => {
-    failWrites = 500;
+    fake.on('applications.createRound', serverError);
     await renderPage();
     await addRound('Coding');
 
@@ -507,7 +270,7 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('deletes a Round after confirming, naming it in the dialog', async () => {
-    stored = [round(1, 'coding'), round(2, 'behavioral')];
+    seed(round(1, 'coding'), round(2, 'behavioral'));
     await renderPage();
 
     const dialog = await openDeleteDialog('Behavioral 1');
@@ -518,11 +281,11 @@ describe('Rounds on an application’s page', () => {
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(await listed()).toEqual(['Coding 1']);
-    expect(stored.map((r) => r.id)).toEqual([roundId(1)]);
+    expect(stored().map((r) => r.id)).toEqual([roundId(1)]);
   });
 
   it('keeps the Round when the user cancels', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openDeleteDialog('Coding 1');
@@ -530,17 +293,17 @@ describe('Rounds on an application’s page', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(stored).toHaveLength(1);
+    expect(stored()).toHaveLength(1);
     expect(await listed()).toEqual(['Coding 1']);
   });
 
   it('closes the dialog when the Round was already deleted elsewhere', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openDeleteDialog('Coding 1');
 
-    stored = [];
+    fake.removeRound(roundId(1));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
@@ -548,12 +311,12 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('keeps the dialog open with the error inside when the delete fails', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openDeleteDialog('Coding 1');
 
-    failWrites = 500;
+    fake.on('applications.deleteRound', serverError);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect((await within(dialog).findByRole('alert')).textContent).toBe(
@@ -563,26 +326,25 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('closes the delete dialog with Escape, keeping the Round', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await openDeleteDialog('Coding 1');
 
     await userEvent.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(stored).toHaveLength(1);
+    expect(stored()).toHaveLength(1);
     expect(await listed()).toEqual(['Coding 1']);
   });
 
   it('stays open on Escape while deleting, so a failure still shows', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openDeleteDialog('Coding 1');
-    const { held, release } = hold();
+    const { override, release } = hold(serverError);
 
-    writeHeld = held;
-    failWrites = 500;
+    fake.on('applications.deleteRound', override);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await userEvent.keyboard('{Escape}');
     release();
@@ -594,12 +356,12 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('opens the delete dialog again without the last failure', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     let dialog = await openDeleteDialog('Coding 1');
 
-    failWrites = 500;
+    fake.on('applications.deleteRound', serverError);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await within(dialog).findByRole('alert');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -611,9 +373,9 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('shows the Rounds are loading until the server answers', async () => {
-    const { held, release } = hold();
+    const { override, release } = hold();
 
-    listHeld = held;
+    fake.on('applications.listRounds', override);
     await renderPage();
 
     expect(within(roundsRegion()).getByText('Loading rounds…')).toBeDefined();
@@ -625,7 +387,7 @@ describe('Rounds on an application’s page', () => {
   });
 
   it('says why the Rounds couldn’t be loaded', async () => {
-    failList = 500;
+    fake.on('applications.listRounds', serverError);
     await renderPage();
 
     expect((await within(roundsRegion()).findByRole('alert')).textContent).toBe(
@@ -648,7 +410,7 @@ const tagField = (name: string) =>
 
 describe('Tags on a Round', () => {
   it('shows a Round’s Tags in order', async () => {
-    stored = [round(1, 'coding', { tags: ['React', 'SQL'] }), round(2, 'behavioral')];
+    seed(round(1, 'coding', { tags: ['React', 'SQL'] }), round(2, 'behavioral'));
     await renderPage();
     await listed();
 
@@ -657,7 +419,7 @@ describe('Tags on a Round', () => {
   });
 
   it('adds a Tag to that Round only, and empties the field', async () => {
-    stored = [round(1, 'coding', { tags: ['React'] }), round(2, 'behavioral')];
+    seed(round(1, 'coding', { tags: ['React'] }), round(2, 'behavioral'));
     await renderPage();
     await listed();
     await addTag('Coding 1', 'live debugging');
@@ -668,7 +430,7 @@ describe('Tags on a Round', () => {
   });
 
   it('adds a Tag with Enter', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await listed();
     await userEvent.type(tagField('Coding 1'), 'SQL[Enter]');
@@ -677,7 +439,7 @@ describe('Tags on a Round', () => {
   });
 
   it('removes a Tag', async () => {
-    stored = [round(1, 'coding', { tags: ['React', 'SQL', 'Go'] })];
+    seed(round(1, 'coding', { tags: ['React', 'SQL', 'Go'] }));
     await renderPage();
     await listed();
     await userEvent.click(
@@ -685,37 +447,34 @@ describe('Tags on a Round', () => {
     );
 
     await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['React', 'Go']));
-    expect(stored[0]?.tags).toEqual(['React', 'Go']);
+    expect(stored()[0]?.tags).toEqual(['React', 'Go']);
   });
 
   it('keeps one Tag when the same one is added in another case or with spaces', async () => {
-    stored = [round(1, 'coding', { tags: ['SQL'] })];
+    seed(round(1, 'coding', { tags: ['SQL'] }));
     await renderPage();
     await listed();
     await addTag('Coding 1', '  sql ');
 
     await waitFor(() => expect(tagField('Coding 1').value).toBe(''));
     expect(tagsShown('Coding 1')).toEqual(['SQL']);
-    expect(stored[0]?.tags).toEqual(['SQL']);
+    expect(stored()[0]?.tags).toEqual(['SQL']);
   });
 
   it('says why a blank Tag isn’t added', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await listed();
-    const server = vi.fn(fakeServer);
-
-    vi.stubGlobal('fetch', server);
     await addTag('Coding 1', '   ');
 
     expect(await within(tagsGroup('Coding 1')).findByText('Enter a tag.')).toBeDefined();
-    expect(server.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+    expect(fake.received('applications.addTag')).toEqual([]);
     expect(tagField('Coding 1').getAttribute('aria-invalid')).toBe('true');
     expect(tagsShown('Coding 1')).toEqual([]);
   });
 
   it('says why a Tag over 40 characters isn’t added', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await listed();
     await addTag('Coding 1', `  ${'x'.repeat(40)}  `);
@@ -732,7 +491,7 @@ describe('Tags on a Round', () => {
   it('says why an eleventh Tag isn’t added, keeping what was typed', async () => {
     const ten = Array.from({ length: 10 }, (_, i) => `tag ${i + 1}`);
 
-    stored = [round(1, 'coding', { tags: ten })];
+    seed(round(1, 'coding', { tags: ten }));
     await renderPage();
     await listed();
     await addTag('Coding 1', 'one more');
@@ -745,7 +504,7 @@ describe('Tags on a Round', () => {
   });
 
   it('clears the message once the user types again', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await listed();
     await addTag('Coding 1', ' ');
@@ -756,11 +515,11 @@ describe('Tags on a Round', () => {
   });
 
   it('says why a Tag couldn’t be removed', async () => {
-    stored = [round(1, 'coding', { tags: ['React'] })];
+    seed(round(1, 'coding', { tags: ['React'] }));
     await renderPage();
     await listed();
 
-    failWrites = 500;
+    fake.on('applications.removeTag', serverError);
     await userEvent.click(
       within(tagsGroup('Coding 1')).getByRole('button', { name: 'Remove React' }),
     );
@@ -772,17 +531,17 @@ describe('Tags on a Round', () => {
   });
 
   it('clears a failed removal’s message once the user types and adds a Tag', async () => {
-    stored = [round(1, 'coding', { tags: ['React'] })];
+    seed(round(1, 'coding', { tags: ['React'] }));
     await renderPage();
     await listed();
 
-    failWrites = 500;
+    fake.on('applications.removeTag', serverError);
     await userEvent.click(
       within(tagsGroup('Coding 1')).getByRole('button', { name: 'Remove React' }),
     );
     await within(tagsGroup('Coding 1')).findByRole('alert');
 
-    failWrites = undefined;
+    fake.off('applications.removeTag');
     await addTag('Coding 1', 'SQL');
 
     await waitFor(() => expect(tagsShown('Coding 1')).toEqual(['React', 'SQL']));
@@ -802,10 +561,10 @@ describe('a Round’s schedule', () => {
     await waitFor(async () =>
       expect(await whenListed()).toEqual(['Nov 25, 2026, 10:00 – 11:30 AM']),
     );
-    expect(added).toEqual([
+    expect(added()).toEqual([
       {
         interviewType: 'recruiter_screen',
-        startsAt: '2026-11-25T18:00:00.000Z',
+        startsAt: new Date('2026-11-25T18:00:00.000Z'),
         durationMinutes: 90,
       },
     ]);
@@ -818,13 +577,13 @@ describe('a Round’s schedule', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 
     await waitFor(async () => expect(await whenListed()).toEqual(['Nov 25, 2026, 4:30 PM']));
-    expect(added).toEqual([
-      { interviewType: 'recruiter_screen', startsAt: '2026-11-26T00:30:00.000Z' },
+    expect(added()).toEqual([
+      { interviewType: 'recruiter_screen', startsAt: new Date('2026-11-26T00:30:00.000Z') },
     ]);
   });
 
   it('shows a start the server sends in the user’s time zone, a day earlier than UTC', async () => {
-    stored = [round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 })];
+    seed(round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 }));
     await renderPage();
 
     expect(await whenListed()).toEqual(['Nov 25, 2026, 5:30 – 6:15 PM']);
@@ -839,7 +598,7 @@ describe('a Round’s schedule', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 
     await waitFor(async () => expect(await whenListed()).toEqual(['Due Dec 1, 2026']));
-    expect(added).toEqual([{ interviewType: 'take_home', dueOn: '2026-12-01' }]);
+    expect(added()).toEqual([{ interviewType: 'take_home', dueOn: '2026-12-01' }]);
   });
 
   it('adds a Round with neither as not scheduled yet', async () => {
@@ -847,7 +606,7 @@ describe('a Round’s schedule', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 
     await waitFor(async () => expect(await whenListed()).toEqual(['Not scheduled yet']));
-    expect(added).toEqual([{ interviewType: 'recruiter_screen' }]);
+    expect(added()).toEqual([{ interviewType: 'recruiter_screen' }]);
   });
 
   it('sends only the picked kind’s fields after switching kinds', async () => {
@@ -859,7 +618,7 @@ describe('a Round’s schedule', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 
     await waitFor(() =>
-      expect(added).toEqual([{ interviewType: 'recruiter_screen', dueOn: '2026-12-01' }]),
+      expect(added()).toEqual([{ interviewType: 'recruiter_screen', dueOn: '2026-12-01' }]),
     );
   });
 
@@ -916,7 +675,7 @@ describe('a Round’s schedule', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
 
       expect((await screen.findByRole('alert')).textContent).toBe(message);
-      expect(added).toEqual([]);
+      expect(added()).toEqual([]);
     },
   );
 
@@ -928,19 +687,19 @@ describe('a Round’s schedule', () => {
       fill(addForm(), 'Starts', '2026-11-25T10:00');
       fill(addForm(), 'Duration (minutes)', minutes);
       await userEvent.click(screen.getByRole('button', { name: 'Add round' }));
-      await waitFor(() => expect(added).toHaveLength(i + 1));
+      await waitFor(() => expect(added()).toHaveLength(i + 1));
     }
 
-    const startsAt = '2026-11-25T18:00:00.000Z';
+    const startsAt = new Date('2026-11-25T18:00:00.000Z');
 
-    expect(added).toEqual([
+    expect(added()).toEqual([
       { interviewType: 'recruiter_screen', startsAt, durationMinutes: 5 },
       { interviewType: 'recruiter_screen', startsAt, durationMinutes: 480 },
     ]);
   });
 
   it('opens the editor with the Round’s schedule filled in', async () => {
-    stored = [round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 })];
+    seed(round(1, 'coding', { startsAt: '2026-11-26T01:30:00.000Z', durationMinutes: 45 }));
     await renderPage();
 
     const dialog = await openScheduleDialog('Coding 1');
@@ -953,7 +712,7 @@ describe('a Round’s schedule', () => {
   });
 
   it('opens the editor for a take-home with its due date', async () => {
-    stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
+    seed(round(1, 'take_home', { dueOn: '2026-12-01' }));
     await renderPage();
 
     const dialog = await openScheduleDialog('Take-home 1');
@@ -965,7 +724,7 @@ describe('a Round’s schedule', () => {
   });
 
   it('sets, changes and clears a Round’s schedule', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     let dialog = await openScheduleDialog('Coding 1');
@@ -992,15 +751,15 @@ describe('a Round’s schedule', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(async () => expect(await whenListed()).toEqual(['Not scheduled yet']));
-    expect(scheduled).toEqual([
-      { startsAt: '2026-11-25T17:15:00.000Z' },
+    expect(scheduled()).toEqual([
+      { startsAt: new Date('2026-11-25T17:15:00.000Z') },
       { dueOn: '2026-11-30' },
       {},
     ]);
   });
 
   it('keeps the schedule when the user cancels', async () => {
-    stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
+    seed(round(1, 'take_home', { dueOn: '2026-12-01' }));
     await renderPage();
 
     const dialog = await openScheduleDialog('Take-home 1');
@@ -1009,30 +768,27 @@ describe('a Round’s schedule', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(scheduled).toEqual([]);
+    expect(scheduled()).toEqual([]);
     expect(await whenListed()).toEqual(['Due Dec 1, 2026']);
   });
 
   it('keeps the editor open with what’s missing, sending nothing', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openScheduleDialog('Coding 1');
-    const server = vi.fn(fakeServer);
 
-    vi.stubGlobal('fetch', server);
     await pickWhen(dialog, 'At a time');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     expect((await within(dialog).findByRole('alert')).textContent).toBe(
       'Enter the date and time it starts.',
     );
-    expect(server.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
-    expect(scheduled).toEqual([]);
+    expect(scheduled()).toEqual([]);
   });
 
   it('closes the editor with Escape, sending nothing', async () => {
-    stored = [round(1, 'take_home', { dueOn: '2026-12-01' })];
+    seed(round(1, 'take_home', { dueOn: '2026-12-01' }));
     await renderPage();
 
     const dialog = await openScheduleDialog('Take-home 1');
@@ -1041,19 +797,18 @@ describe('a Round’s schedule', () => {
     await userEvent.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(scheduled).toEqual([]);
+    expect(scheduled()).toEqual([]);
     expect(await whenListed()).toEqual(['Due Dec 1, 2026']);
   });
 
   it('stays open on Escape while saving, so a failure still shows', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openScheduleDialog('Coding 1');
-    const { held, release } = hold();
+    const { override, release } = hold(serverError);
 
-    writeHeld = held;
-    failWrites = 500;
+    fake.on('applications.scheduleRound', override);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await userEvent.keyboard('{Escape}');
     release();
@@ -1065,12 +820,12 @@ describe('a Round’s schedule', () => {
   });
 
   it('opens the editor again without the last failure', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     let dialog = await openScheduleDialog('Coding 1');
 
-    failWrites = 500;
+    fake.on('applications.scheduleRound', serverError);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await within(dialog).findByRole('alert');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -1082,7 +837,7 @@ describe('a Round’s schedule', () => {
   });
 
   it('opens the editor again without the last message about what’s missing', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     let dialog = await openScheduleDialog('Coding 1');
@@ -1102,13 +857,13 @@ describe('a Round’s schedule', () => {
     [500, 'Something went wrong. Please try again.'],
     [404, 'That round no longer exists.'],
   ])('keeps the editor open with the error when saving fails (%i)', async (code, message) => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openScheduleDialog('Coding 1');
 
-    if (code === 404) stored = [];
-    else failWrites = code;
+    if (code === 404) fake.removeRound(roundId(1));
+    else fake.on('applications.scheduleRound', serverError);
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
@@ -1119,12 +874,12 @@ describe('a Round’s schedule', () => {
   it('orders a take-home by its due day in the user’s time zone, not by midnight UTC', async () => {
     // 5 PM on Nov 30 here is 01:00 UTC on Dec 1, after the server's midnight for a take-home due
     // that day, so the server sends the take-home first.
-    stored = [
+    seed(
       round(1, 'take_home', { dueOn: '2026-12-01' }),
       round(2, 'coding', { startsAt: '2026-12-01T01:00:00.000Z' }),
       round(3, 'behavioral'),
       round(4, 'presentation', { dueOn: '2026-11-29' }),
-    ];
+    );
     await renderPage();
 
     expect(await whenListed()).toEqual([
@@ -1136,7 +891,7 @@ describe('a Round’s schedule', () => {
   });
 
   it('renames Rounds of a type when a reschedule moves one ahead of another', async () => {
-    stored = [round(1, 'coding', { startsAt: '2026-12-01T18:00:00.000Z' }), round(2, 'coding')];
+    seed(round(1, 'coding', { startsAt: '2026-12-01T18:00:00.000Z' }), round(2, 'coding'));
     await renderPage();
 
     expect(await listed()).toEqual(['Coding 1', 'Coding 2']);
@@ -1160,11 +915,11 @@ describe('a Round’s schedule', () => {
   });
 
   it('shows the Rounds in the server’s order, dated or not', async () => {
-    stored = [
+    seed(
       round(1, 'coding', { startsAt: '2026-11-25T18:00:00.000Z' }),
       round(2, 'take_home', { dueOn: '2026-12-01' }),
       round(3, 'behavioral'),
-    ];
+    );
     await renderPage();
 
     expect(await listed()).toEqual(['Coding 1', 'Take-home 1', 'Behavioral 1']);
@@ -1212,12 +967,12 @@ const saveRating = async (dialog: HTMLElement) => {
 
 describe('a Round’s Self-rating', () => {
   it('shows a Round as not rated yet, or with its rating and note', async () => {
-    stored = [
+    seed(
       round(1, 'coding', { selfRating: 2, ratingNote: 'Ran out of time' }),
       round(2, 'behavioral'),
       round(3, 'system_design', { selfRating: 5 }),
       round(4, 'presentation', { ratingNote: 'Slides too long' }),
-    ];
+    );
     await renderPage();
     await listed();
 
@@ -1235,12 +990,12 @@ describe('a Round’s Self-rating', () => {
 
   // A rating or a note alone is something to edit; neither is something to give.
   it('offers to rate a Round with neither, and to edit one with a rating or a note', async () => {
-    stored = [
+    seed(
       round(1, 'coding', { selfRating: 2, ratingNote: 'Ran out of time' }),
       round(2, 'behavioral'),
       round(3, 'system_design', { selfRating: 5 }),
       round(4, 'presentation', { ratingNote: 'Slides too long' }),
-    ];
+    );
     await renderPage();
     await listed();
 
@@ -1254,7 +1009,7 @@ describe('a Round’s Self-rating', () => {
   });
 
   it('says what the dialog is for, and that the note is optional', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
@@ -1266,7 +1021,7 @@ describe('a Round’s Self-rating', () => {
   });
 
   it('closes with Escape, sending nothing', async () => {
-    stored = [round(1, 'coding', { selfRating: 2 })];
+    seed(round(1, 'coding', { selfRating: 2 }));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
@@ -1275,12 +1030,12 @@ describe('a Round’s Self-rating', () => {
     await userEvent.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(ratings).toEqual([]);
+    expect(ratings()).toEqual([]);
     expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 2 of 5', note: null });
   });
 
   it('offers ratings from 1 (went badly) to 5 (went well), or none', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
@@ -1293,7 +1048,7 @@ describe('a Round’s Self-rating', () => {
   });
 
   it('rates a Round with a note, and shows them on it', async () => {
-    stored = [round(1, 'coding'), round(2, 'behavioral')];
+    seed(round(1, 'coding'), round(2, 'behavioral'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
@@ -1312,11 +1067,11 @@ describe('a Round’s Self-rating', () => {
       }),
     );
     expect(ratingShown('Behavioral 1')).toEqual({ line: 'Not rated yet', note: null });
-    expect(ratings).toEqual([{ selfRating: 4, ratingNote: 'Slow on the\nsecond part' }]);
+    expect(ratings()).toEqual([{ selfRating: 4, ratingNote: 'Slow on the\nsecond part' }]);
   });
 
   it('rates a Round without a note', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
@@ -1327,11 +1082,11 @@ describe('a Round’s Self-rating', () => {
     await waitFor(() =>
       expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 1 of 5', note: null }),
     );
-    expect(ratings).toEqual([{ selfRating: 1 }]);
+    expect(ratings()).toEqual([{ selfRating: 1 }]);
   });
 
   it('opens the dialog with the rating and note filled in, and changes them', async () => {
-    stored = [round(1, 'coding', { selfRating: 2, ratingNote: 'Nerves' })];
+    seed(round(1, 'coding', { selfRating: 2, ratingNote: 'Nerves' }));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
@@ -1347,11 +1102,11 @@ describe('a Round’s Self-rating', () => {
     await waitFor(() =>
       expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 5 of 5', note: 'Calmer' }),
     );
-    expect(ratings).toEqual([{ selfRating: 5, ratingNote: 'Calmer' }]);
+    expect(ratings()).toEqual([{ selfRating: 5, ratingNote: 'Calmer' }]);
   });
 
   it('clears the note, keeping the rating', async () => {
-    stored = [round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' })];
+    seed(round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' }));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
@@ -1362,11 +1117,11 @@ describe('a Round’s Self-rating', () => {
     await waitFor(() =>
       expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 3 of 5', note: null }),
     );
-    expect(ratings).toEqual([{ selfRating: 3 }]);
+    expect(ratings()).toEqual([{ selfRating: 3 }]);
   });
 
   it('sends a note of only spaces as no note', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
@@ -1375,11 +1130,11 @@ describe('a Round’s Self-rating', () => {
     await userEvent.type(noteField(dialog), '   ');
     await saveRating(dialog);
 
-    expect(ratings).toEqual([{ selfRating: 3 }]);
+    expect(ratings()).toEqual([{ selfRating: 3 }]);
   });
 
   it('clears the rating, keeping the note', async () => {
-    stored = [round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' })];
+    seed(round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' }));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
@@ -1390,11 +1145,11 @@ describe('a Round’s Self-rating', () => {
     await waitFor(() =>
       expect(ratingShown('Coding 1')).toEqual({ line: 'Not rated yet', note: 'Nerves' }),
     );
-    expect(ratings).toEqual([{ ratingNote: 'Nerves' }]);
+    expect(ratings()).toEqual([{ ratingNote: 'Nerves' }]);
   });
 
   it('clears both, back to not rated', async () => {
-    stored = [round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' })];
+    seed(round(1, 'coding', { selfRating: 3, ratingNote: 'Nerves' }));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
@@ -1407,11 +1162,11 @@ describe('a Round’s Self-rating', () => {
       expect(screen.getByRole('button', { name: 'Rate Coding 1' })).toBeDefined(),
     );
     expect(ratingShown('Coding 1')).toEqual({ line: 'Not rated yet', note: null });
-    expect(ratings).toEqual([{}]);
+    expect(ratings()).toEqual([{}]);
   });
 
   it('keeps the rating when the user cancels', async () => {
-    stored = [round(1, 'coding', { selfRating: 2 })];
+    seed(round(1, 'coding', { selfRating: 2 }));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1', 'Edit rating of Coding 1');
@@ -1420,12 +1175,12 @@ describe('a Round’s Self-rating', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(ratings).toEqual([]);
+    expect(ratings()).toEqual([]);
     expect(ratingShown('Coding 1')).toEqual({ line: 'Self-rating: 2 of 5', note: null });
   });
 
   it('accepts a note of 2000 characters, and says when one is longer, sending nothing', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
@@ -1446,20 +1201,20 @@ describe('a Round’s Self-rating', () => {
 
     await saveRating(dialog);
 
-    expect(ratings).toEqual([{ ratingNote: 'x'.repeat(2000) }]);
+    expect(ratings()).toEqual([{ ratingNote: 'x'.repeat(2000) }]);
   });
 
   it.each([
     [500, 'Something went wrong. Please try again.'],
     [404, 'That round no longer exists.'],
   ])('keeps the dialog open with the error when saving fails (%i)', async (code, message) => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     const dialog = await openRatingDialog('Coding 1');
 
-    if (code === 404) stored = [];
-    else failWrites = code;
+    if (code === 404) fake.removeRound(roundId(1));
+    else fake.on('applications.rateRound', serverError);
 
     await pickRating(dialog, '3');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
@@ -1469,12 +1224,12 @@ describe('a Round’s Self-rating', () => {
   });
 
   it('opens again without the last failure', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
 
     let dialog = await openRatingDialog('Coding 1');
 
-    failWrites = 500;
+    fake.on('applications.rateRound', serverError);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
     await within(dialog).findByRole('alert');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -1510,12 +1265,12 @@ describe('a Round’s Outcome', () => {
   });
 
   it('shows each Round’s Outcome', async () => {
-    stored = [
+    seed(
       round(1, 'coding', { outcome: 'passed', outcomeSetByUser: true }),
       round(2, 'behavioral'),
       round(3, 'system_design', { outcome: 'failed', outcomeSetByUser: true }),
       round(4, 'presentation', { outcome: 'unknown', outcomeSetByUser: true }),
-    ];
+    );
     await renderPage();
     await listed();
 
@@ -1525,12 +1280,12 @@ describe('a Round’s Outcome', () => {
   });
 
   it('marks an inferred Outcome, apart from one the user set', async () => {
-    stored = [
+    seed(
       round(1, 'coding', { outcome: 'passed' }),
       round(2, 'behavioral', { outcome: 'passed', outcomeSetByUser: true }),
       round(3, 'system_design', { outcome: 'failed' }),
       round(4, 'presentation'),
-    ];
+    );
     await renderPage();
     await listed();
 
@@ -1540,29 +1295,37 @@ describe('a Round’s Outcome', () => {
   });
 
   it('shows the Outcomes inferred from a Round it adds, sending the user’s time zone', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
+    // The API passes the pending Rounds before the new one.
+    fake.on('applications.createRound', () => {
+      fake.changeRound(roundId(1), { outcome: 'passed' });
+
+      return undefined;
+    });
     await renderPage();
     await listed();
 
     await addRound('Behavioral');
 
     await waitFor(() => expect(outcomeShown('Coding 1')).toBe('Passed (inferred)'));
-    expect(timeZones).toEqual(['America/Los_Angeles']);
+    expect(fake.received('applications.createRound').map(({ timeZone }) => timeZone)).toEqual([
+      'America/Los_Angeles',
+    ]);
   });
 
   it('sets an inferred Outcome as the user’s when they change it', async () => {
-    stored = [round(1, 'coding', { outcome: 'passed' })];
+    seed(round(1, 'coding', { outcome: 'passed' }));
     await renderPage();
     await listed();
 
     await pickOutcome('Coding 1', 'Failed');
 
     await waitFor(() => expect(outcomeShown('Coding 1')).toBe('Failed'));
-    expect(stored[0]).toMatchObject({ outcome: 'failed', outcomeSetByUser: true });
+    expect(stored()[0]).toMatchObject({ outcome: 'failed', outcomeSetByUser: true });
   });
 
   it('offers the four Outcomes, in order', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await listed();
 
@@ -1574,7 +1337,7 @@ describe('a Round’s Outcome', () => {
   });
 
   it('sets it to passed, failed, unknown and back to pending, on that Round only', async () => {
-    stored = [round(1, 'coding'), round(2, 'behavioral')];
+    seed(round(1, 'coding'), round(2, 'behavioral'));
     await renderPage();
     await listed();
 
@@ -1587,10 +1350,10 @@ describe('a Round’s Outcome', () => {
       await pickOutcome('Coding 1', label);
 
       await waitFor(() => expect(outcomeShown('Coding 1')).toBe(label));
-      expect(stored[0]).toMatchObject({ outcome, outcomeSetByUser: true });
+      expect(stored()[0]).toMatchObject({ outcome, outcomeSetByUser: true });
     }
 
-    expect(outcomes).toEqual([
+    expect(outcomes()).toEqual([
       { outcome: 'passed' },
       { outcome: 'failed' },
       { outcome: 'unknown' },
@@ -1600,19 +1363,17 @@ describe('a Round’s Outcome', () => {
   });
 
   it('shows the picked Outcome while it saves, and takes no other until it has', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderPage();
     await listed();
 
-    let answer = () => {};
+    const { override, release: answer } = hold();
 
-    outcomeHeld = new Promise((resolve) => {
-      answer = resolve;
-    });
+    fake.on('applications.setRoundOutcome', override);
 
     await pickOutcome('Coding 1', 'Passed');
 
-    await waitFor(() => expect(outcomes).toEqual([{ outcome: 'passed' }]));
+    await waitFor(() => expect(outcomes()).toEqual([{ outcome: 'passed' }]));
     expect(outcomeShown('Coding 1')).toBe('Passed');
     expect(outcomeMenu('Coding 1').hasAttribute('data-disabled')).toBe(true);
 
@@ -1626,12 +1387,12 @@ describe('a Round’s Outcome', () => {
     [500, 'Something went wrong. Please try again.'],
     [404, 'That round no longer exists.'],
   ])('says why the Outcome couldn’t be saved (%i), keeping the old one', async (code, message) => {
-    stored = [round(1, 'coding', { outcome: 'passed', outcomeSetByUser: true })];
+    seed(round(1, 'coding', { outcome: 'passed', outcomeSetByUser: true }));
     await renderPage();
     await listed();
 
-    if (code === 404) stored = [];
-    else failWrites = code;
+    if (code === 404) fake.removeRound(roundId(1));
+    else fake.on('applications.setRoundOutcome', serverError);
 
     await pickOutcome('Coding 1', 'Failed');
 
@@ -1680,7 +1441,7 @@ describe('the Agenda, when a Round changes', () => {
   });
 
   it('moves a Round once it’s rescheduled', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderWithAgenda();
     await waitFor(() => expect(agendaDays()).toEqual(['Not scheduled yet']));
 
@@ -1698,7 +1459,7 @@ describe('the Agenda, when a Round changes', () => {
   });
 
   it('drops a Round once it’s deleted', async () => {
-    stored = [round(1, 'coding')];
+    seed(round(1, 'coding'));
     await renderWithAgenda();
     await waitFor(() => expect(agendaDays()).toEqual(['Not scheduled yet']));
 

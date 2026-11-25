@@ -1,136 +1,47 @@
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { SnackbarProvider, createSnackbars } from '../../design-system';
+import { serverError, setUpFakeApi } from '../../shared/testing/fake-api';
 import { createTestRouter, TestRouterProvider, type TestRouter } from '../../shared/testing/router';
 import { AgendaPage } from './AgendaPage';
 import { ApplicationsTable } from './ApplicationsTable';
 
-// The table calls the real typed client; only the server behind `fetch` is a stand-in, holding a
-// list of applications in memory and answering the two endpoints the table uses.
+// The table calls the real typed client, answered by the in-memory API.
+const fake = setUpFakeApi();
+
 const ACME_ID = '00000000-0000-4000-8000-000000000001';
 const GLOBEX_ID = '00000000-0000-4000-8000-000000000002';
 
 const APPLIED_AT = '2026-10-30T12:00:00.000Z';
 
-const row = (
-  id: string,
-  company: string,
-  jobTitle: string,
-  appliedAt: string | null = APPLIED_AT,
-) => ({
-  id,
-  company,
-  jobTitle,
-  jobUrl: null,
-  status: 'applied',
-  appliedAt,
-  createdAt: '2026-11-01T00:00:00.000Z',
-  updatedAt: '2026-11-02T00:00:00.000Z',
-});
-
-let rows: ReturnType<typeof row>[];
-
-/** The statuses whose Rounds the API leaves off the Agenda. */
-const CLOSED = new Set(['rejected', 'withdrawn']);
-
-/** An application's one Round, as the Agenda lists it. */
-const agendaRound = (application: ReturnType<typeof row>) => ({
-  id: application.id.replace('-8000-', '-9000-'),
-  applicationId: application.id,
-  interviewType: 'coding',
-  tags: [],
-  startsAt: null,
-  durationMinutes: null,
-  dueOn: null,
-  selfRating: null,
-  ratingNote: null,
-  outcome: 'pending',
-  outcomeSetByUser: false,
-  createdAt: application.createdAt,
-  updatedAt: application.updatedAt,
-  company: application.company,
-  jobTitle: application.jobTitle,
-});
-
-let deletes: string[];
-
-/** How the server answers a DELETE; a test can make it fail, or hold it in flight. */
-let answerDelete: () => Promise<Response>;
-
-const noContent = () => Promise.resolve(new Response(null, { status: 204 }));
-
-/** How the server answers a PATCH; null applies it. A test can make it fail. */
-let failUpdate: (() => Response) | null;
-
-/** How many PATCHes reached the server. */
-let updates: number;
-
-/** The time zone the table sent with each status change. */
-let timeZones: (string | undefined)[];
-
-const serverError = () => new Response(null, { status: 500 });
-
-async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const request = new Request(input, init);
-  const { pathname } = new URL(request.url);
-
-  if (request.method === 'GET' && pathname === '/api/applications') return Response.json(rows);
-
-  // The Agenda: one unscheduled Round per application, left out once the application is closed.
-  if (request.method === 'GET' && pathname === '/api/agenda')
-    return Response.json(rows.filter((r) => !CLOSED.has(r.status)).map(agendaRound));
-
-  const id = pathname.replace('/api/applications/', '');
-  const existing = rows.find((r) => r.id === id);
-
-  if (request.method === 'PATCH' && existing) {
-    updates += 1;
-
-    if (failUpdate) return failUpdate();
-
-    // SAFETY: the typed client encoded this body with the contract's UpdateApplication schema.
-    const { status, timeZone } = (await request.json()) as { status: string; timeZone?: string };
-
-    existing.status = status;
-    timeZones.push(timeZone);
-    // Like the real API: a status change dates an application that wasn't sent yet.
-    existing.appliedAt ??= '2026-11-03T12:00:00.000Z';
-
-    return Response.json(existing);
-  }
-
-  if (request.method === 'DELETE' && rows.some((r) => r.id === id)) {
-    deletes.push(id);
-    const response = await answerDelete();
-
-    if (response.ok) rows = rows.filter((r) => r.id !== id);
-
-    return response;
-  }
-
-  // What the real API answers for an id that isn't (or is no longer) there.
-  if (request.method === 'DELETE') return Response.json({ _tag: 'ApplicationNotFound' }, notFound);
-
-  return new Response(null, notFound);
-}
-
-const notFound = { status: 404 };
-
 beforeEach(() => {
-  rows = [row(ACME_ID, 'Acme', 'Engineer'), row(GLOBEX_ID, 'Globex', 'Designer')];
-  deletes = [];
-  answerDelete = noContent;
-  failUpdate = null;
-  updates = 0;
-  timeZones = [];
-  vi.stubGlobal('fetch', fakeServer);
+  // Each with one unscheduled Round, so it's on the Agenda while it's open.
+  for (const [id, company, jobTitle] of [
+    [ACME_ID, 'Acme', 'Engineer'],
+    [GLOBEX_ID, 'Globex', 'Designer'],
+  ] as const) {
+    fake.seedApplication({ id, company, jobTitle, appliedAt: new Date(APPLIED_AT) });
+    fake.seedRound(id);
+  }
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+const statusOf = (id: string) => fake.application(id)?.status;
+
+/** The applications the table asked to delete, by id. */
+const deletes = () => fake.received('applications.delete').map(({ id }) => id);
+
+/** A request the fake holds until `release` is called. */
+const hold = () => {
+  let release = () => {};
+
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return { held, release };
+};
 
 const renderTable = async (page = <ApplicationsTable />) => {
   // The shell mounts the snackbars once, around every module, and shows the errors of mutations
@@ -198,7 +109,7 @@ describe('ApplicationsTable: changing status', () => {
     await renderTable();
     await changeStatus('Acme', 'Offer');
 
-    await waitFor(() => expect(rows[0]?.status).toBe('offer'));
+    await waitFor(() => expect(statusOf(ACME_ID)).toBe('offer'));
     await waitFor(() => expect(statusFor('Acme').textContent).toContain('Offer'));
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -208,12 +119,14 @@ describe('ApplicationsTable: changing status', () => {
     await renderTable();
     await changeStatus('Acme', 'Rejected');
 
-    await waitFor(() => expect(rows[0]?.status).toBe('rejected'));
-    expect(timeZones).toEqual(['America/Los_Angeles']);
+    await waitFor(() => expect(statusOf(ACME_ID)).toBe('rejected'));
+    expect(fake.received('applications.update')).toEqual([
+      { status: 'rejected', timeZone: 'America/Los_Angeles' },
+    ]);
   });
 
   it('shows a failure in an announced snackbar, not an alert above the table', async () => {
-    failUpdate = serverError;
+    fake.on('applications.update', serverError);
     const container = await renderTable();
 
     await changeStatus('Acme', 'Offer');
@@ -246,13 +159,11 @@ describe('ApplicationsTable: changing status', () => {
 
   it("keeps showing the server's status in the row after a failed change", async () => {
     // The PATCH fails, but meanwhile the status changed elsewhere (another tab, say).
-    failUpdate = () => {
-      const acme = rows.find((r) => r.id === ACME_ID);
-
-      if (acme) acme.status = 'interviewing';
+    fake.on('applications.update', () => {
+      fake.changeApplication(ACME_ID, { status: 'interviewing' });
 
       return serverError();
-    };
+    });
 
     await renderTable();
 
@@ -265,7 +176,7 @@ describe('ApplicationsTable: changing status', () => {
   });
 
   it('shows the snackbar until it is dismissed', async () => {
-    failUpdate = serverError;
+    fake.on('applications.update', serverError);
     await renderTable();
     await changeStatus('Acme', 'Offer');
     await screen.findByRole('alert');
@@ -278,13 +189,13 @@ describe('ApplicationsTable: changing status', () => {
   });
 
   it('shows a message for each of two failures in a row', async () => {
-    failUpdate = serverError;
+    fake.on('applications.update', serverError);
     await renderTable();
 
     await changeStatus('Acme', 'Offer');
     await changeStatus('Globex', 'Rejected');
 
-    await waitFor(() => expect(updates).toBe(2));
+    await waitFor(() => expect(fake.received('applications.update')).toHaveLength(2));
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
     expect(snackbars()).toHaveLength(2);
   });
@@ -309,18 +220,19 @@ describe('ApplicationsTable: deleting', () => {
     await dismiss();
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(deletes).toEqual([]);
+    expect(deletes()).toEqual([]);
     expect(screen.getByRole('row', { name: /Acme/ })).toBeDefined();
     expect(document.activeElement).toBe(deleteButtonFor('Acme'));
   });
 
   it('deletes on Delete, both buttons disabled while the request is in flight, then closes', async () => {
-    let respond = () => {};
+    const { held, release } = hold();
 
-    answerDelete = () =>
-      new Promise((resolve) => {
-        respond = () => resolve(new Response(null, { status: 204 }));
-      });
+    fake.on('applications.delete', async () => {
+      await held;
+
+      return undefined;
+    });
     await renderTable();
     const dialog = await openDialogFor('Acme');
     const confirmButton = within(dialog).getByRole('button', { name: 'Delete' });
@@ -329,7 +241,7 @@ describe('ApplicationsTable: deleting', () => {
     expect(cancelButton.hasAttribute('data-disabled')).toBe(false);
 
     await userEvent.click(confirmButton);
-    await waitFor(() => expect(deletes).toEqual([ACME_ID]));
+    await waitFor(() => expect(deletes()).toEqual([ACME_ID]));
     expect(confirmButton.hasAttribute('data-disabled')).toBe(true);
     expect(cancelButton.hasAttribute('data-disabled')).toBe(true);
 
@@ -337,16 +249,16 @@ describe('ApplicationsTable: deleting', () => {
     await userEvent.click(cancelButton);
     await userEvent.keyboard('{Escape}');
     expect(screen.getByRole('alertdialog')).toBe(dialog);
-    respond();
+    release();
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(deletes).toEqual([ACME_ID]);
+    expect(deletes()).toEqual([ACME_ID]);
     expect(screen.queryByRole('row', { name: /Acme/ })).toBeNull();
     expect(screen.getByRole('row', { name: /Globex/ })).toBeDefined();
   });
 
   it('keeps the dialog open and shows the error inside it when the delete fails', async () => {
-    answerDelete = () => Promise.resolve(new Response(null, { status: 500 }));
+    fake.on('applications.delete', serverError);
     await renderTable();
     const dialog = await openDialogFor('Acme');
 
@@ -361,12 +273,13 @@ describe('ApplicationsTable: deleting', () => {
   });
 
   it('enables both buttons again once an in-flight delete fails', async () => {
-    let fail = () => {};
+    const { held, release: fail } = hold();
 
-    answerDelete = () =>
-      new Promise((resolve) => {
-        fail = () => resolve(new Response(null, { status: 500 }));
-      });
+    fake.on('applications.delete', async () => {
+      await held;
+
+      return serverError();
+    });
     await renderTable();
     const dialog = await openDialogFor('Acme');
     const confirmButton = within(dialog).getByRole('button', { name: 'Delete' });
@@ -389,7 +302,7 @@ describe('ApplicationsTable: deleting', () => {
     const dialog = await openDialogFor('Acme');
 
     // Another tab deletes it while this dialog is open.
-    rows = rows.filter((r) => r.id !== ACME_ID);
+    fake.removeApplication(ACME_ID);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
@@ -399,7 +312,7 @@ describe('ApplicationsTable: deleting', () => {
   });
 
   it("opens again without the last attempt's error", async () => {
-    answerDelete = () => Promise.resolve(new Response(null, { status: 500 }));
+    fake.on('applications.delete', serverError);
     await renderTable();
     const dialog = await openDialogFor('Acme');
 
@@ -445,9 +358,7 @@ describe('ApplicationsTable: statuses and the applied date (ADR-0045)', () => {
   });
 
   it('shows a saved row as Saved and Not sent, and dates it once moved to Applied', async () => {
-    const acme = rows.find((r) => r.id === ACME_ID);
-
-    if (acme) Object.assign(acme, { status: 'saved', appliedAt: null });
+    fake.changeApplication(ACME_ID, { status: 'saved', appliedAt: null });
 
     await renderTable();
 
@@ -457,7 +368,7 @@ describe('ApplicationsTable: statuses and the applied date (ADR-0045)', () => {
     await changeStatus('Acme', 'Applied');
 
     await waitFor(() => expect(appliedCellOf('Acme')).not.toBe('Not sent'));
-    expect(rows[0]?.status).toBe('applied');
+    expect(statusOf(ACME_ID)).toBe('applied');
   });
 });
 
