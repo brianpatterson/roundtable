@@ -109,6 +109,7 @@ export function AuthGate({
 
     const succeeded = await authClient.signOut().then(
       (result) => !result.error,
+      // Stryker disable next-line ArrowFunction: undefined is falsy too, so `!succeeded` takes the same branch
       () => false,
     );
 

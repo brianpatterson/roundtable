@@ -24,8 +24,20 @@ const signedIn = {
   },
 };
 
-/** What the server answers for the session; each answer after the first is null (expired). */
-let firstSession: typeof signedIn | null;
+/** The same user signed in again: a new session. */
+const signedInAgain = { ...signedIn, session: { ...signedIn.session, id: 'session-2' } };
+
+type Session = typeof signedIn;
+
+/** What the server answers for the session's first check. */
+let firstSession: Session | null;
+
+/** What it answers for each check after the first, in order; null (expired) once they run out. */
+let laterSessions: (Session | null)[];
+
+/** Checks after the first wait for this: a test can hold them back until `releaseRecheck()`. */
+let recheckAnswered: Promise<void>;
+let releaseRecheck: () => void;
 let sessionChecks: number;
 
 /** What the server answers for sign-out; a test can hold it back until `releaseSignOut()`. */
@@ -63,7 +75,22 @@ function answer(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
   if (pathname === '/api/auth/get-session') {
     sessionChecks += 1;
 
-    return Promise.resolve(Response.json(sessionChecks === 1 ? firstSession : null));
+    if (sessionChecks === 1) return Promise.resolve(Response.json(firstSession));
+
+    const later = laterSessions[sessionChecks - 2] ?? null;
+
+    return recheckAnswered.then(() => Response.json(later));
+  }
+
+  if (pathname === '/api/auth/sign-in/email') {
+    return Promise.resolve(
+      Response.json({ redirect: false, token: 'token-2', user: signedInAgain.user }),
+    );
+  }
+
+  // Signed up, not yet confirmed: no session until the user follows the email's link.
+  if (pathname === '/api/auth/sign-up/email') {
+    return Promise.resolve(Response.json({ token: null, user: signedIn.user }));
   }
 
   if (pathname === '/api/auth/sign-out') {
@@ -98,6 +125,8 @@ let socialSignIns: string[];
 
 beforeEach(() => {
   firstSession = signedIn;
+  laterSessions = [];
+  recheckAnswered = Promise.resolve();
   sessionChecks = 0;
   signOutStatus = 200;
   signOutUnreachable = false;
@@ -114,6 +143,13 @@ afterEach(() => {
 // Better Auth's session store unsubscribes from `window` a second after the last test unmounts
 // it. Wait for that here, or it runs after jsdom has torn the window down and throws.
 afterAll(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+
+/** Holds back the server's answer to every session check after the first. */
+const holdRechecks = () => {
+  recheckAnswered = new Promise((resolve) => {
+    releaseRecheck = resolve;
+  });
+};
 
 /** Lets any request the gate would make go out, so a test can check it didn't. */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)));
@@ -174,6 +210,26 @@ describe('AuthGate: what it shows', () => {
     }
   });
 
+  it('keeps the sign-up page and its notice while the session is re-checked after signing up', async () => {
+    firstSession = null;
+    await renderGate();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Create an account' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Ada');
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText(/^Password/), 'correct horse battery');
+    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    // Better Auth re-checks the session after a sign-up; no session yet, the email isn't confirmed.
+    await vi.waitFor(() => expect(sessionChecks).toBe(2));
+    await settle();
+    expect(screen.getByRole('heading', { name: 'Create an account' })).toBeDefined();
+    expect(
+      screen.getByText('Check ada@example.com for a link to finish creating your account.'),
+    ).toBeDefined();
+    expect(screen.queryByText('Loading…')).toBeNull();
+  });
+
   it('returns a social sign-in to the page that was opened, and a failed one to the start', async () => {
     firstSession = null;
     providers = ['github'];
@@ -215,6 +271,63 @@ describe('AuthGate: session ended', () => {
     expect(sessionChecks).toBe(2);
   });
 
+  it('re-checks the session once when more requests answer 401 before the re-check answers', async () => {
+    holdRechecks();
+    const { sessionEnded, queryClient } = await renderGate();
+
+    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
+    act(() => sessionEnded());
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    await vi.waitFor(() => expect(sessionChecks).toBe(2));
+    queryClient.setQueryData(['sign-in-data'], 'cached');
+    // Better Auth still holds the ended session: another request answers 401 meanwhile.
+    act(() => sessionEnded());
+    act(() => releaseRecheck());
+    await settle();
+
+    expect(sessionChecks).toBe(2);
+    expect(queryClient.getQueryData(['sign-in-data'])).toBe('cached');
+    expect(screen.getByRole('status').textContent).toBe('You were signed out. Sign in again.');
+  });
+
+  it('keeps an ended session signed out when a later check still answers with it', async () => {
+    laterSessions = [null, signedIn];
+    const { sessionEnded } = await renderGate();
+
+    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
+    act(() => sessionEnded());
+    await vi.waitFor(() => expect(sessionChecks).toBe(2));
+    await settle();
+    // The tab is shown again, and the server answers with the session the API stopped accepting.
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await vi.waitFor(() => expect(sessionChecks).toBe(3));
+    await settle();
+
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.getByRole('status').textContent).toBe('You were signed out. Sign in again.');
+    expect(screen.queryByText('Signed in as Ada')).toBeNull();
+  });
+
+  it('forgets a failed sign-out once the session expires and the user signs in again', async () => {
+    signOutStatus = 500;
+    laterSessions = [null, signedInAgain];
+    const { sessionEnded } = await renderGate();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toBeDefined();
+    act(() => sessionEnded());
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    await vi.waitFor(() => expect(sessionChecks).toBe(2));
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse battery');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByText('Signed in as Ada')).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it("leaves the sign-in page's cache alone when a late request fails after the session ended", async () => {
     const { sessionEnded, queryClient } = await renderGate();
 
@@ -243,6 +356,20 @@ describe('AuthGate: session ended', () => {
     await settle();
     expect(screen.queryByRole('status')).toBeNull();
     expect(sessionChecks).toBe(checksAfterSignOut);
+  });
+
+  it('shows the sign-in page once sign-out succeeds, before the session re-check answers, and re-checks once', async () => {
+    holdRechecks();
+    await renderGate();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    // Better Auth still holds the session until its re-check answers: the gate doesn't wait for it.
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
+    expect(screen.queryByText('Signed in as Ada')).toBeNull();
+    act(() => releaseRecheck());
+    await settle();
+    expect(sessionChecks).toBe(2);
   });
 
   it('shows no notice when a request answers 401 while the sign-out request is in flight', async () => {
@@ -312,7 +439,15 @@ describe('AuthGate: session ended', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
     expect(await screen.findByRole('alert')).toBeDefined();
     signOutStatus = 200;
+    signOutAnswered = new Promise((resolve) => {
+      releaseSignOut = resolve;
+    });
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    // Gone as soon as the user tries again, before the server answers.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Signed in as Ada')).toBeDefined();
+    act(() => releaseSignOut());
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
     expect(screen.queryByRole('alert')).toBeNull();
