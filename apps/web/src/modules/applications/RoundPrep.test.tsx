@@ -1,7 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MAX_PREP_NOTES, MAX_PREP_TASKS, type PrepTask } from '@roundtable/contract';
+import {
+  MAX_PREP_NOTES,
+  MAX_PREP_TASK_TITLE,
+  MAX_PREP_TASKS,
+  type PrepTask,
+} from '@roundtable/contract';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SnackbarProvider, createSnackbars } from '../../design-system';
 import { SkillsPage } from '../personas';
@@ -303,6 +308,30 @@ describe('adding a prep task', () => {
     expect(fake.received('applications.addPrepTask')).toEqual([]);
   });
 
+  it('refuses a title over the limit without sending it', async () => {
+    seedRound();
+    await renderPage();
+
+    const field = within(addForm()).getByRole('textbox', { name: 'Task' });
+
+    fireEvent.change(field, { target: { value: 'x'.repeat(MAX_PREP_TASK_TITLE + 1) } });
+    await userEvent.click(within(addForm()).getByRole('button', { name: 'Add task' }));
+
+    expect(
+      within(addForm()).getByText(`A task can be at most ${MAX_PREP_TASK_TITLE} characters.`),
+    ).toBeDefined();
+    expect(fake.received('applications.addPrepTask')).toEqual([]);
+
+    fireEvent.change(field, { target: { value: 'x'.repeat(MAX_PREP_TASK_TITLE) } });
+    await userEvent.click(within(addForm()).getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() =>
+      expect(fake.received('applications.addPrepTask')).toEqual([
+        { title: 'x'.repeat(MAX_PREP_TASK_TITLE), skillId: null },
+      ]),
+    );
+  });
+
   it('disables the form with a note once the Round has the most tasks it can', async () => {
     seedRound(Array.from({ length: MAX_PREP_TASKS }, (_, i) => task(i + 1)));
     await renderPage();
@@ -477,6 +506,27 @@ describe('a prep task', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     expect(within(dialog).getByText('Enter a task.')).toBeDefined();
+    expect(fake.received('applications.updatePrepTask')).toEqual([]);
+  });
+
+  it('refuses a title over the limit in the dialog without sending it', async () => {
+    seedRound([task(1)]);
+    await renderPage();
+
+    await userEvent.click(
+      within(taskItem('Task 1')).getByRole('button', { name: 'Edit task Task 1' }),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Edit prep task' });
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'x'.repeat(MAX_PREP_TASK_TITLE + 1) },
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(
+      within(dialog).getByText(`A task can be at most ${MAX_PREP_TASK_TITLE} characters.`),
+    ).toBeDefined();
     expect(fake.received('applications.updatePrepTask')).toEqual([]);
   });
 
