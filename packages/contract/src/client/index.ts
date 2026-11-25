@@ -13,10 +13,12 @@ import {
   type CreateApplication,
   type CreateReport,
   type CreateRound,
+  type CreateSkill,
   type RoundOutcome,
   type RoundRating,
   type RoundSchedule,
   type UpdateApplication,
+  type UpdateSkill,
 } from '../index.js';
 import { toApiError } from './errors.js';
 
@@ -82,6 +84,12 @@ export function makeApiClient(options: ApiClientOptions) {
     /** The upcoming Rounds across open Applications, with today in `timeZone` (UTC without). */
     agenda: (timeZone?: string) =>
       run((client) => client.agenda.list({ query: timeZone === undefined ? {} : { timeZone } })),
+    /** Every Skill of the user's, archived ones included, by name ignoring case. */
+    listSkills: () => run((client) => client.skills.list()),
+    createSkill: (payload: CreateSkill) => run((client) => client.skills.create({ payload })),
+    /** Renames, archives (`archived: true`) or restores (`archived: false`) a Skill. */
+    updateSkill: (id: string, payload: UpdateSkill) =>
+      run((client) => client.skills.update({ params: { id }, payload })),
     createReport: (payload: CreateReport) =>
       run((client) => client.support.createReport({ payload })),
   };

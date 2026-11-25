@@ -2,7 +2,13 @@
 // code the browser runs, with fetch pointed at the app in-process instead of the network.
 import { Schema } from 'effect';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ApplicationNotFound, MAX_TAGS, Unauthorized, isApplicationId } from '@roundtable/contract';
+import {
+  ApplicationNotFound,
+  MAX_SKILLS,
+  MAX_TAGS,
+  Unauthorized,
+  isApplicationId,
+} from '@roundtable/contract';
 import { ApiError, makeApiClient } from '@roundtable/contract/client';
 import { setupTestApp, signUp } from './helpers.js';
 
@@ -142,6 +148,47 @@ describe('the web client', () => {
 
     expect(passed).toMatchObject({ outcome: 'passed', outcomeSetByUser: true });
     expect(await api.listRounds(application.id)).toEqual([passed]);
+  });
+
+  it('adds, lists, renames, archives and restores Skills, with dates decoded', async () => {
+    const skill = await api.createSkill({ name: ' System design ' });
+
+    expect(skill).toMatchObject({ name: 'System design', archivedAt: null });
+    expect(skill.createdAt).toBeInstanceOf(Date);
+
+    const archived = await api.updateSkill(skill.id, { name: 'Systems', archived: true });
+
+    expect(archived.archivedAt).toBeInstanceOf(Date);
+    expect(await api.listSkills()).toEqual([archived]);
+    expect(await api.updateSkill(skill.id, { archived: false })).toEqual({
+      ...skill,
+      name: 'Systems',
+    });
+  });
+
+  it('says when a Skill’s name is taken, and to restore an archived one instead', async () => {
+    const skill = await api.createSkill({ name: 'System design' });
+
+    await expect(api.createSkill({ name: 'system design' })).rejects.toThrow(
+      'You already have a skill with that name.',
+    );
+
+    await api.updateSkill(skill.id, { archived: true });
+
+    await expect(api.createSkill({ name: 'SYSTEM DESIGN' })).rejects.toThrow(
+      'You have an archived skill with that name. Restore it instead.',
+    );
+    await expect(api.updateSkill(crypto.randomUUID(), { archived: true })).rejects.toThrow(
+      'That skill no longer exists.',
+    );
+  });
+
+  it('says when the user has too many Skills', async () => {
+    for (let i = 0; i < MAX_SKILLS; i++) await api.createSkill({ name: `Skill ${i}` });
+
+    await expect(api.createSkill({ name: 'One more' })).rejects.toThrow(
+      `You can have at most ${MAX_SKILLS} skills, archived ones included.`,
+    );
   });
 
   it('reads the public auth config without a session', async () => {

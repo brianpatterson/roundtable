@@ -247,6 +247,45 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const skillCases = {
+    plain: [{ name: 'System design' }, { name: 'System design' }],
+    trimmed: [{ name: '  System design \n' }, { name: 'System design' }],
+    '80 characters once trimmed': [{ name: ` ${long(80)} ` }, { name: long(80) }],
+    '81 characters': [{ name: long(81) }, false],
+    blank: [{ name: '   ' }, false],
+    empty: [{ name: '' }, false],
+    missing: [{}, false],
+    'unknown key is dropped': [{ name: 'SQL', archivedAt: null }, { name: 'SQL' }],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(skillCases))('skill: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.CreateSkill)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
+  const skillUpdateCases = {
+    rename: [{ name: ' SQL ' }, { name: 'SQL' }],
+    archive: [{ archived: true }, { archived: true }],
+    restore: [{ archived: false }, { archived: false }],
+    both: [
+      { name: 'SQL', archived: true },
+      { name: 'SQL', archived: true },
+    ],
+    empty: [{}, false],
+    'only unknown keys': [{ archivedAt: null }, false],
+    'blank name': [{ name: ' ' }, false],
+    'archived as text': [{ archived: 'true' }, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(skillUpdateCases))('skill update: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.UpdateSkill)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
   it('reads a Round from a server before Tags as having none', () => {
     const round = Schema.decodeSync(contract.Round)({
       id: 'r',
@@ -545,12 +584,18 @@ describe('expected errors stay out of Sentry', () => {
       'ReportNotFound',
       'ReportRateLimited',
       'RoundNotFound',
+      'SkillNameTaken',
+      'SkillNotFound',
+      'TooManySkills',
       'TooManyTags',
       'Unauthorized',
     ]);
   });
 
-  it('ApplicationNotFound, RoundNotFound and ReportNotFound (404), TooManyTags (400), Unauthorized (401) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+  it('ApplicationNotFound, RoundNotFound, SkillNotFound and ReportNotFound (404), TooManyTags and TooManySkills (400), Unauthorized (401), SkillNameTaken (409) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
+    expect(new contract.SkillNotFound()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.SkillNameTaken({ archived: false })[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.TooManySkills()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.TooManyTags()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.ApplicationNotFound()[ErrorReporter.ignore]).toBe(true);
     expect(new contract.RoundNotFound()[ErrorReporter.ignore]).toBe(true);

@@ -28,6 +28,7 @@ import {
   ReportNotFound,
   RoundNotFound,
   RoundtableApi,
+  SkillNotFound,
   TooManyTags,
   Unauthorized,
   Viewer,
@@ -42,12 +43,15 @@ import {
   type CreateApplication,
   type CreateReport,
   type CreateRound,
+  type CreateSkill,
   type Round,
   type RoundOutcome,
   type RoundRating,
   type RoundSchedule,
   type RoundTag,
+  type Skill,
   type UpdateApplication,
+  type UpdateSkill,
 } from '@roundtable/contract';
 
 /** When factory-made Applications and Rounds were created, unless a test says otherwise. */
@@ -81,6 +85,15 @@ export const round = (fields: Partial<Round> = {}): Round => ({
   outcomeSetByUser: false,
   createdAt: CREATED,
   updatedAt: CREATED,
+  ...fields,
+});
+
+/** A Skill with every field defaulted: a test names only what it cares about. */
+export const skill = (fields: Partial<Skill> = {}): Skill => ({
+  id: crypto.randomUUID(),
+  name: 'System design',
+  archivedAt: null,
+  createdAt: CREATED,
   ...fields,
 });
 
@@ -118,6 +131,9 @@ export interface Received {
   'applications.addTag': RoundTag;
   'applications.removeTag': RoundTag;
   'agenda.list': AgendaQuery;
+  'skills.list': object;
+  'skills.create': CreateSkill;
+  'skills.update': UpdateSkill;
   'support.createReport': CreateReport;
   'factoryReports.get': Params;
   'auth.getSession': object;
@@ -156,6 +172,7 @@ const OPEN = new Set<ApplicationStatus>(OPEN_APPLICATION_STATUSES);
 export function createFakeApi() {
   let applications: Application[] = [];
   let rounds: Round[] = [];
+  let skills: Skill[] = [];
   let user: FakeUser | null = ADA;
   let protectedCallsLeft = Number.POSITIVE_INFINITY;
   let sessionNumber = 1;
@@ -504,6 +521,66 @@ export function createFakeApi() {
     ),
   );
 
+  // The skill library: stores what it's told. It enforces neither the name rule nor the limit
+  // (the API's database does both); a test that needs a 409 or a 400 overrides the endpoint.
+  const SkillsFake = HttpApiBuilder.group(RoundtableApi, 'skills', (handlers) =>
+    Effect.succeed(
+      handlers.handleAll({
+        list: () =>
+          answer(
+            'skills.list',
+            {},
+            Effect.sync(() =>
+              skills.toSorted((a, b) =>
+                a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+              ),
+            ),
+          ),
+
+        create: ({ payload }) =>
+          answer(
+            'skills.create',
+            payload,
+            Effect.sync(() => {
+              const created = skill({ name: payload.name, createdAt: new Date() });
+
+              skills = [...skills, created];
+
+              return created;
+            }),
+          ),
+
+        update: ({ params, payload }) =>
+          answer(
+            'skills.update',
+            payload,
+            Effect.suspend(() => {
+              const existing = skills.find((s) => s.id === params.id);
+
+              if (!existing) return Effect.fail(new SkillNotFound());
+
+              const archivedAt =
+                payload.archived === undefined
+                  ? existing.archivedAt
+                  : payload.archived
+                    ? (existing.archivedAt ?? new Date())
+                    : null;
+
+              const updated: Skill = {
+                ...existing,
+                name: payload.name ?? existing.name,
+                archivedAt,
+              };
+
+              skills = skills.map((s) => (s.id === updated.id ? updated : s));
+
+              return Effect.succeed(updated);
+            }),
+          ),
+      }),
+    ),
+  );
+
   const SupportFake = HttpApiBuilder.group(RoundtableApi, 'support', (handlers) =>
     Effect.succeed(
       handlers.handle('createReport', ({ payload }) =>
@@ -620,6 +697,7 @@ export function createFakeApi() {
       IdentityFake,
       ApplicationsFake,
       AgendaFake,
+      SkillsFake,
       SupportFake,
       FactoryReportsFake,
     ]),
@@ -687,6 +765,15 @@ export function createFakeApi() {
       const seeded = round({ ...fields, applicationId });
 
       rounds = [...rounds, seeded];
+
+      return seeded;
+    },
+
+    /** Adds a Skill, every field defaulted, and returns it. */
+    seedSkill(fields: Partial<Skill> = {}) {
+      const seeded = skill(fields);
+
+      skills = [...skills, seeded];
 
       return seeded;
     },
@@ -764,6 +851,7 @@ export function createFakeApi() {
     reset() {
       applications = [];
       rounds = [];
+      skills = [];
       user = ADA;
       protectedCallsLeft = Number.POSITIVE_INFINITY;
       sessionNumber = 1;
