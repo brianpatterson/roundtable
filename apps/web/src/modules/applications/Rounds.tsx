@@ -27,6 +27,7 @@ import {
 } from './format';
 import { agendaQueryKey, applicationsQueryKey, roundsQueryKey } from './queries';
 import { RoundOutcome } from './RoundOutcome';
+import { RoundPrep } from './RoundPrep';
 import { RoundRating } from './RoundRating';
 import { RoundTags } from './RoundTags';
 
@@ -192,6 +193,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
                 <RoundOutcome round={round} name={name} />
                 <RoundRating round={round} name={name} />
                 <RoundTags round={round} name={name} />
+                <RoundPrep round={round} name={name} />
               </li>
             );
           })}

@@ -37,14 +37,14 @@ mark, the code is what's true.
 - **Persona** _(planned)_: one way the user presents themselves for a kind of job (for example "Backend
   engineer" or "Engineering manager"). It holds the resume, cover letter and skills to practice
   for applications made as that persona. Not to be confused with the user's account.
-- **Prep** _(planned)_: what the user does to get ready for one Round: its **Prep notes** and
+- **Prep**: what the user does to get ready for one Round: its **Prep notes** and
   its **prep tasks**. Belongs to the Round and goes with it.
-- **Prep notes** _(planned)_: one plain-text note per Round, written before it ("they use Go, review
+- **Prep notes**: one plain-text note per Round, written before it ("they use Go, review
   the concurrency chapter"), up to 10,000 characters. Not the Self-rating's note, which is
   written after.
 - **Prep progress** _(planned)_: a Round's prep tasks done out of its total ("2 / 5"); a Round
   with no prep tasks has none. Prep notes don't count. Shown on the Agenda.
-- **Prep task** _(planned)_: one thing to do before a Round ("redo the LRU cache problem"), up to
+- **Prep task**: one thing to do before a Round ("redo the LRU cache problem"), up to
   200 characters, optionally naming the Skill it practices. Done when the user ticks it, which
   records when; unticking clears that. Listed in the order added, up to 50 per Round.
 - **Round**: one interview within an Application, of one Interview type. An onsite of four

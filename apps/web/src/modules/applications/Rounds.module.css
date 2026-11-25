@@ -17,7 +17,7 @@
   list-style: none;
 }
 
-/* A Round: its heading, its Outcome, its Self-rating, then its Tags. */
+/* A Round: its heading, its Outcome, its Self-rating, its Tags, then its Prep. */
 .round {
   display: flex;
   flex-direction: column;
@@ -95,6 +95,73 @@
 .actions {
   display: flex;
   gap: var(--ds-space-1);
+}
+
+/* A Round's Prep: its heading with the progress, its notes, its tasks, then the form to add one. */
+.prep {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+}
+
+.prepHeading {
+  margin: 0;
+  font: var(--ds-type-title-medium);
+}
+
+.progress {
+  font: var(--ds-type-body-medium);
+  color: var(--ds-color-on-surface-variant);
+}
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}
+
+/* The Checkbox, the Skill it practices and its buttons, wrapping on narrow screens. */
+.taskLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--ds-space-3);
+}
+
+/* A flex container, so the Checkbox's label is blockified and the line-through reaches its text. */
+.todo,
+.done {
+  display: flex;
+  min-width: 0;
+}
+
+.done {
+  text-decoration: line-through;
+}
+
+.skill {
+  font: var(--ds-type-body-small);
+  color: var(--ds-color-on-surface-variant);
+}
+
+.addTask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}
+
+.hint {
+  margin: 0;
+  font: var(--ds-type-body-small);
+  color: var(--ds-color-on-surface-variant);
 }
 
 /* The type picker, the schedule and the Add button on one line, wrapping on narrow screens. */
