@@ -45,6 +45,9 @@ closes, the factory runs the batch retrospective and closes the spec
   with the ticket's database id as for a blocking edge (below). Sub-issues say which batch a
   ticket belongs to; blocking edges still decide the build order.
 - Tickets published without a spec get no retrospective.
+- **File a whole batch** with `scripts/file-batch.sh <dir>` (its header has the draft format): it
+  files the spec and tickets, links the sub-issues, turns each ticket's `## Blocked by` section
+  into blocking edges, and reads them back. `--dry-run` first. The `plan-step` skill drafts for it.
 
 ### Following up a retrospective
 

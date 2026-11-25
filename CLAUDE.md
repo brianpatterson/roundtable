@@ -237,6 +237,12 @@ The API is moving to Effect 4 ([ADR-0022](docs/adr/0022-effect-for-the-api.md), 
 
 ## Agent skills
 
+### Planning a roadmap step
+
+`/plan-step` (`.claude/skills/plan-step/`) takes a step from grilling to a filed batch: docs PR,
+spec and tickets drafted for the owner, then `scripts/file-batch.sh` files them with their
+sub-issues and blocking edges.
+
 ### Issue tracker
 
 GitHub issues, written with the headings of `.github/ISSUE_TEMPLATE/`; the factory builds the
