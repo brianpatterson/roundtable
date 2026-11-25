@@ -1,0 +1,55 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+}
+
+.rounds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* When and time left in narrow columns, then the application and type; on a phone they wrap. */
+.round {
+  display: grid;
+  grid-template-columns: 6rem 8rem 1fr;
+  gap: var(--ds-space-1) var(--ds-space-4);
+  align-items: baseline;
+
+  @media (width < 600px) {
+    grid-template-columns: auto 1fr;
+  }
+}
+
+.when {
+  font-variant-numeric: tabular-nums;
+}
+
+.left {
+  color: var(--ds-color-on-surface-variant);
+}
+
+.what {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-1) var(--ds-space-3);
+  overflow-wrap: anywhere;
+
+  @media (width < 600px) {
+    grid-column: 1 / -1;
+  }
+
+  & > span {
+    color: var(--ds-color-on-surface-variant);
+  }
+}

@@ -19,9 +19,12 @@ const renderPages = () => {
     getParentRoute: () => rootRoute,
     path: '/',
     component: () => (
-      <Link to="/applications/$applicationId" params={{ applicationId: 'a1' }}>
-        Acme
-      </Link>
+      <>
+        <Link to="/">Home</Link>
+        <Link to="/applications/$applicationId" params={{ applicationId: 'a1' }}>
+          Acme
+        </Link>
+      </>
     ),
   });
 
@@ -59,5 +62,21 @@ describe('Link', () => {
     await userEvent.click(await screen.findByRole('link', { name: 'Back to my applications' }));
     expect(router.state.location.pathname).toBe('/');
     expect(await screen.findByRole('link', { name: 'Acme' })).toBeDefined();
+  });
+
+  it('marks a link to the page it’s on as the current page', async () => {
+    renderPages();
+
+    const link = await screen.findByRole('link', { name: 'Acme' });
+
+    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('aria-current')).toBe('page');
+    expect(link.getAttribute('aria-current')).toBeNull();
+
+    await userEvent.click(link);
+
+    const back = await screen.findByRole('link', { name: 'Back to my applications' });
+
+    // The home page's link, seen from another page, isn't current.
+    expect(back.getAttribute('aria-current')).toBeNull();
   });
 });

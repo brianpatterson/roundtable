@@ -7,7 +7,7 @@ export function NotFoundPage() {
       <h2>Page not found</h2>
       <p>There’s no page at this address.</p>
       <p>
-        <Link to="/">Back to my applications</Link>
+        <Link to="/">Back to the agenda</Link>
       </p>
     </section>
   );

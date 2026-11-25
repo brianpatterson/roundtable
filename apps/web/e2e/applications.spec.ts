@@ -6,7 +6,7 @@ test('add an application and open its page', async ({ page }, testInfo) => {
   // is reset per run, not per attempt).
   const company = `Acme ${testInfo.project.name} ${testInfo.retry}`;
 
-  await page.goto('/');
+  await page.goto('/applications');
   await page.getByLabel('Company').fill(company);
   await page.getByLabel('Job title').fill('Staff Engineer');
   await page.getByRole('button', { name: 'Add as applied' }).click();

@@ -25,7 +25,7 @@ import {
   roundNames,
   scheduleLabel,
 } from './format';
-import { applicationsQueryKey, roundsQueryKey } from './queries';
+import { agendaQueryKey, applicationsQueryKey, roundsQueryKey } from './queries';
 import { RoundOutcome } from './RoundOutcome';
 import { RoundRating } from './RoundRating';
 import { RoundTags } from './RoundTags';
@@ -87,8 +87,12 @@ export function Rounds({ applicationId }: { applicationId: string }) {
     },
   });
 
+  // A Round rescheduled or deleted moves on, or leaves, the Agenda too.
   const refreshRounds = () =>
-    queryClient.invalidateQueries({ queryKey: roundsQueryKey(applicationId) });
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: roundsQueryKey(applicationId) }),
+      queryClient.invalidateQueries({ queryKey: agendaQueryKey }),
+    ]);
 
   // The Round being deleted stays set while the dialog closes, so its text doesn't vanish mid-fade.
   const [toDelete, setToDelete] = useState<NamedRound>();

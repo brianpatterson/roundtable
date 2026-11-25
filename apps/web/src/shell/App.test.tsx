@@ -127,13 +127,16 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/');
 });
 
 // Better Auth's session store unsubscribes from `window` a second after the last test unmounts
 // it. Wait for that here, or it runs after jsdom has torn the window down and throws.
 afterAll(() => new Promise((resolve) => setTimeout(resolve, 1100)));
 
-const renderShell = async () => {
+/** Renders the whole app at `path`: by default the applications table, which these tests use. */
+const renderShell = async (path = '/applications') => {
+  window.history.replaceState(null, '', path);
   // Better Auth keeps the session in a store created with the client, which outlives a test
   // (it stays subscribed for a second after unmount). Fresh modules give each test a new one.
   vi.resetModules();
@@ -322,7 +325,7 @@ describe('App: report a problem', () => {
 
   it('is offered on the sign-in page, with no reply email filled in', async () => {
     session = null;
-    await renderShell();
+    await renderShell('/');
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
     await userEvent.click(screen.getByRole('button', { name: 'Report a problem' }));
@@ -361,7 +364,7 @@ describe('App: report a problem', () => {
       {
         description: 'The table is empty',
         replyEmail: 'ada@example.com',
-        pagePath: '/',
+        pagePath: '/applications',
         diagnostics: expect.objectContaining({
           requests: expect.arrayContaining([
             expect.objectContaining({ method: 'GET', path: '/api/applications', status: 200 }),

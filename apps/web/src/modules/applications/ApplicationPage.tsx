@@ -23,7 +23,7 @@ async function getApplication(id: string) {
   }
 }
 
-const backLink = <Link to="/">Back to my applications</Link>;
+const backLink = <Link to="/applications">Back to my applications</Link>;
 
 /**
  * An application's own page (ADR-0049). The shell passes the id from the URL. A malformed id is

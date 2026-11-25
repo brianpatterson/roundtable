@@ -92,7 +92,7 @@ const fields = () => {
 const expectNotFound = async () => {
   expect(await screen.findByRole('heading', { name: 'Application not found' })).toBeDefined();
   expect(screen.getByRole('link', { name: 'Back to my applications' }).getAttribute('href')).toBe(
-    '/',
+    '/applications',
   );
   expect(screen.queryByText('Acme')).toBeNull();
 };
@@ -131,7 +131,7 @@ describe('ApplicationPage', () => {
     await screen.findByRole('heading', { name: 'Acme' });
     await userEvent.click(screen.getByRole('link', { name: 'Back to my applications' }));
 
-    expect(router.state.location.pathname).toBe('/');
+    expect(router.state.location.pathname).toBe('/applications');
   });
 
   it('says the application is not found when the server has none with that id', async () => {

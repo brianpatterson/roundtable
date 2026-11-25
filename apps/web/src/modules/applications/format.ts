@@ -1,8 +1,11 @@
 import {
+  dayOf,
   inRoundOrder,
   isTimeZone,
+  roundDay,
   type ApplicationStatus,
   type InterviewType,
+  type OrderedRound,
   type Round,
 } from '@roundtable/contract';
 
@@ -102,3 +105,122 @@ export const roundNames = (rounds: readonly Round[]) => {
 /** When it was sent, or "Not sent" while it's saved (ADR-0045). */
 export const appliedLabel = (appliedAt: Date | null) =>
   appliedAt ? formatDate(appliedAt) : 'Not sent';
+
+// The Agenda (ADR-0070): which day a Round is on and how long is left, at `now` in the user's
+// `timeZone`. Days are calendar days there, not 24-hour periods, so a Round at 9:00 tomorrow is
+// "Tomorrow" at 23:00 today.
+
+/** The browser's time zone: the user's. */
+export const userTimeZone = () => new Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const MS_PER_DAY = 86_400_000;
+
+const MINUTES_PER_HOUR = 60;
+
+/** `2026-12-01` → midnight UTC that day, so two days subtract to whole days. */
+const utcDay = (date: string) => {
+  const [year = 0, month = 1, day = 1] = date.split('-').map(Number);
+
+  return Date.UTC(year, month - 1, day);
+};
+
+/** How many calendar days `day` is after today, in `timeZone`: 0 today, 1 tomorrow, −1 yesterday. */
+const daysFromToday = (day: string, now: Date, timeZone: string) =>
+  Math.round((utcDay(day) - utcDay(dayOf(now, timeZone))) / MS_PER_DAY);
+
+const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeZone: 'UTC' });
+
+/**
+ * The heading of a day on the Agenda: "Today", "Tomorrow", or the date (`Friday, December 4,
+ * 2026`). Null, for Rounds not scheduled yet, is "Not scheduled yet".
+ */
+export function dayHeading(day: string | null, now: Date, timeZone: string) {
+  if (day === null) return 'Not scheduled yet';
+
+  const days = daysFromToday(day, now, timeZone);
+
+  if (days === 0) return 'Today';
+
+  if (days === 1) return 'Tomorrow';
+
+  return fullDate.format(utcDay(day));
+}
+
+/** In `days` calendar days: "today", "tomorrow", "in 3 days". */
+const inDays = (days: number) => {
+  if (days === 0) return 'today';
+
+  return days === 1 ? 'tomorrow' : `in ${days} days`;
+};
+
+/** `135` → "2 h 15 min", `40` → "40 min", `120` → "2 h". */
+const hoursAndMinutes = (minutes: number) => {
+  const hours = Math.floor(minutes / MINUTES_PER_HOUR);
+  const rest = minutes % MINUTES_PER_HOUR;
+
+  if (hours === 0) return `${rest} min`;
+
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+};
+
+/**
+ * How long is left until a Round at `now`: "in 2 h 15 min" later today, "Started" once it has,
+ * "Tomorrow" or "in 3 days" on a later day, and "Due today", "Due tomorrow" or "Due in 3 days" for
+ * a take-home. Null for one not scheduled yet. A take-home whose day has passed (the page was left
+ * open overnight) is "Past due".
+ */
+export function timeLeft({ startsAt, dueOn }: OrderedRound, now: Date, timeZone: string) {
+  if (dueOn !== null) {
+    const days = daysFromToday(dueOn, now, timeZone);
+
+    return days < 0 ? 'Past due' : `Due ${inDays(days)}`;
+  }
+
+  if (startsAt === null) return null;
+
+  const days = daysFromToday(dayOf(startsAt, timeZone), now, timeZone);
+
+  if (days === 1) return 'Tomorrow';
+
+  if (days > 1) return inDays(days);
+
+  const minutes = Math.ceil((startsAt.getTime() - now.getTime()) / MS_PER_MINUTE);
+
+  return days < 0 || minutes <= 0 ? 'Started' : `in ${hoursAndMinutes(minutes)}`;
+}
+
+const timeOfDay = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' });
+
+/** The time a Round starts in the user's time zone, "Due" for a take-home, null if unscheduled. */
+export function agendaTime({ startsAt, dueOn }: OrderedRound) {
+  if (startsAt) return timeOfDay.format(startsAt);
+
+  return dueOn === null ? null : 'Due';
+}
+
+/** Rounds of one day on the Agenda, or of none (`day` null) for those not scheduled yet. */
+export interface AgendaDay<R> {
+  readonly day: string | null;
+  readonly rounds: readonly R[];
+}
+
+/**
+ * The Agenda's Rounds grouped by their day in `timeZone`, keeping the order given (the API's): a
+ * new group starts each time the day changes, so a day only appears once when they're in order.
+ */
+export function byDay<R extends OrderedRound>(
+  rounds: readonly R[],
+  timeZone: string,
+): AgendaDay<R>[] {
+  const days: { day: string | null; rounds: R[] }[] = [];
+
+  for (const round of rounds) {
+    const day = roundDay(round, timeZone);
+    const last = days.at(-1);
+
+    if (last?.day === day) last.rounds.push(round);
+    else days.push({ day, rounds: [round] });
+  }
+
+  return days;
+}
