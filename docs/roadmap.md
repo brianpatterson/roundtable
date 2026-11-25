@@ -289,10 +289,11 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
 2. ✅ **Rounds**: interview type (fixed list) and tags, a scheduled time or a due date, a
    self-rating, and an outcome inferred from the next round or a rejection
    ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
-3. **Agenda**: upcoming rounds in date order, with time left and prep progress.
+3. **Agenda**: the home page. Upcoming rounds across open applications in date order, then those
+   not scheduled yet, with time left ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)).
 4. **Skills and prep**: starts the `personas` module with a skill library per user (ADR-0044
    puts Skills there, so they never have to move); notes and prep tasks on a round, each task
-   optionally naming a skill.
+   optionally naming a skill, and each Round's prep progress on the Agenda.
 5. **Personas and documents**: the rest of the `personas` module, a Markdown editor, versions, forks, and
    PDF export. The editor and PDF rendering each get their own design session and ADR.
 6. **Analytics v1**: pass rate and average self-rating per interview type, with the count of
