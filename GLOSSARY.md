@@ -6,8 +6,11 @@ request that builds one adds them here. Terms marked _(planned)_ were designed a
 (`docs/roadmap.md`) and aren't built yet: until the pull request that builds one removes the
 mark, the code is what's true.
 
-- **Agenda** _(planned)_: the user's upcoming Rounds in date order, each with its Application, Interview type,
-  time left and prep progress. The answer to "what should I prepare for next?".
+- **Agenda** _(planned)_: the user's upcoming Rounds across their open Applications (not
+  rejected, withdrawn or accepted), each with its Application, Interview type and time left, and
+  its prep progress once Prep exists. A dated Round stays upcoming until the end of its day (a
+  take-home, its due day) in the user's time zone; dated Rounds come first in date order, then
+  the ones not scheduled yet. The home page, and the answer to "what should I prepare for next?".
 - **Application**: one job the user is pursuing at one company, from the moment they save the
   posting until it ends (an offer accepted, a rejection, or a withdrawal). An application can
   exist before it is sent; its **applied date** is when it was sent, not when it was saved.
