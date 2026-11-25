@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { AgendaLive, ApplicationsLive } from './modules/applications/index.js';
 import { EmailLive, type EmailTransport } from './modules/email/index.js';
 import { IdentityLive } from './modules/identity/index.js';
-import { PersonasLive } from './modules/personas/index.js';
+import { PersonasLive, Skills } from './modules/personas/index.js';
 import { GitHubIssues, SupportLive } from './modules/support/index.js';
 import type { Env } from './platform/config/env.js';
 import { Database } from './platform/database/effect.js';
@@ -70,7 +70,8 @@ function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
     Layer.provide([
       SystemLive,
-      ApplicationsLive,
+      // Applications checks the Skill ids of prep tasks through personas (ADR-0044).
+      ApplicationsLive.pipe(Layer.provide(Skills.layer)),
       AgendaLive,
       PersonasLive,
       SupportLive(env, log, { githubIssues }),

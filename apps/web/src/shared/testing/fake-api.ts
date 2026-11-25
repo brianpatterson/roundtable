@@ -22,13 +22,16 @@ import {
   ApplicationNotFound,
   Authorization,
   CurrentUser,
+  MAX_PREP_TASKS,
   MAX_TAGS,
   OPEN_APPLICATION_STATUSES,
   OptionalSession,
+  PrepTaskNotFound,
   ReportNotFound,
   RoundNotFound,
   RoundtableApi,
   SkillNotFound,
+  TooManyPrepTasks,
   TooManyTags,
   Unauthorized,
   Viewer,
@@ -41,16 +44,19 @@ import {
   type ApplicationStatus,
   type AuthProvider,
   type CreateApplication,
+  type CreatePrepTask,
   type CreateReport,
   type CreateRound,
   type CreateSkill,
   type Round,
   type RoundOutcome,
+  type RoundPrepNotes,
   type RoundRating,
   type RoundSchedule,
   type RoundTag,
   type Skill,
   type UpdateApplication,
+  type UpdatePrepTask,
   type UpdateSkill,
 } from '@roundtable/contract';
 
@@ -83,6 +89,8 @@ export const round = (fields: Partial<Round> = {}): Round => ({
   ratingNote: null,
   outcome: 'pending',
   outcomeSetByUser: false,
+  prepNotes: null,
+  prepTasks: [],
   createdAt: CREATED,
   updatedAt: CREATED,
   ...fields,
@@ -110,6 +118,8 @@ type Params = { readonly id: string };
 
 type RoundParams = { readonly id: string; readonly roundId: string };
 
+type PrepTaskParams = RoundParams & { readonly taskId: string };
+
 /**
  * What each endpoint received, as the contract decoded it: the payload, or the query, or the
  * params when that's all it has. Better Auth's own routes (outside the contract) record nothing.
@@ -130,6 +140,10 @@ export interface Received {
   'applications.deleteRound': RoundParams;
   'applications.addTag': RoundTag;
   'applications.removeTag': RoundTag;
+  'applications.setPrepNotes': RoundPrepNotes;
+  'applications.addPrepTask': CreatePrepTask;
+  'applications.updatePrepTask': UpdatePrepTask;
+  'applications.deletePrepTask': PrepTaskParams;
   'agenda.list': AgendaQuery;
   'skills.list': object;
   'skills.create': CreateSkill;
@@ -253,6 +267,32 @@ export function createFakeApi() {
         ? Effect.succeed(replaceRound({ ...change(existing), updatedAt: new Date() }))
         : Effect.fail(roundNotFound());
     });
+
+  /**
+   * Changes the Prep of Round `params` with `change`, or fails: its Application not found, then
+   * the Round. Answers the Round as it is afterwards.
+   */
+  const changePrep = <E>(
+    params: RoundParams,
+    change: (round: Round) => Effect.Effect<Round, E>,
+  ): Effect.Effect<Round, E | ApplicationNotFound | RoundNotFound> =>
+    Effect.gen(function* () {
+      if (!findApplication(params.id)) return yield* notFound();
+
+      const existing = findRound(params);
+
+      if (!existing) return yield* roundNotFound();
+
+      const changed = yield* change(existing);
+
+      return replaceRound({ ...changed, updatedAt: new Date() });
+    });
+
+  /** A Skill id a prep task names: one the fake holds, archived or not, or `SkillNotFound`. */
+  const checkSkill = (skillId: string | null | undefined) =>
+    skillId === undefined || skillId === null || skills.some((s) => s.id === skillId)
+      ? Effect.void
+      : Effect.fail(new SkillNotFound());
 
   const SystemFake = HttpApiBuilder.group(RoundtableApi, 'system', (handlers) =>
     Effect.succeed(
@@ -487,6 +527,90 @@ export function createFakeApi() {
               tags: existing.tags.filter((tag) => !sameTag(tag, query.tag)),
             })),
           ),
+
+        // A blank note is no note.
+        setPrepNotes: ({ params, payload }) =>
+          answer(
+            'applications.setPrepNotes',
+            payload,
+            changePrep(params, (existing) =>
+              Effect.succeed({
+                ...existing,
+                prepNotes: payload.notes?.trim() ? payload.notes : null,
+              }),
+            ),
+          ),
+
+        addPrepTask: ({ params, payload }) =>
+          answer(
+            'applications.addPrepTask',
+            payload,
+            changePrep(params, (existing) =>
+              Effect.gen(function* () {
+                if (existing.prepTasks.length >= MAX_PREP_TASKS) {
+                  return yield* new TooManyPrepTasks();
+                }
+
+                yield* checkSkill(payload.skillId);
+
+                const task = {
+                  id: crypto.randomUUID(),
+                  title: payload.title,
+                  skillId: payload.skillId ?? null,
+                  completedAt: null,
+                };
+
+                return { ...existing, prepTasks: [...existing.prepTasks, task] };
+              }),
+            ),
+          ),
+
+        updatePrepTask: ({ params, payload }) =>
+          answer(
+            'applications.updatePrepTask',
+            payload,
+            changePrep(params, (existing) =>
+              Effect.gen(function* () {
+                if (!existing.prepTasks.some((task) => task.id === params.taskId)) {
+                  return yield* new PrepTaskNotFound();
+                }
+
+                yield* checkSkill(payload.skillId);
+
+                const prepTasks = existing.prepTasks.map((task) =>
+                  task.id === params.taskId
+                    ? {
+                        ...task,
+                        title: payload.title ?? task.title,
+                        skillId: payload.skillId === undefined ? task.skillId : payload.skillId,
+                        completedAt:
+                          payload.done === undefined
+                            ? task.completedAt
+                            : payload.done
+                              ? (task.completedAt ?? new Date())
+                              : null,
+                      }
+                    : task,
+                );
+
+                return { ...existing, prepTasks };
+              }),
+            ),
+          ),
+
+        deletePrepTask: ({ params }) =>
+          answer(
+            'applications.deletePrepTask',
+            params,
+            changePrep(params, (existing) =>
+              existing.prepTasks.some((task) => task.id === params.taskId)
+                ? Effect.succeed({
+                    ...existing,
+                    prepTasks: existing.prepTasks.filter((task) => task.id !== params.taskId),
+                  })
+                : Effect.fail(new PrepTaskNotFound()),
+            ),
+          ),
       }),
     ),
   );
@@ -503,7 +627,8 @@ export function createFakeApi() {
             const timeZone = query.timeZone ?? 'UTC';
             const now = new Date();
 
-            const onAgenda = rounds.flatMap((r) => {
+            // Without Prep notes: the Agenda doesn't carry them.
+            const onAgenda = rounds.flatMap(({ prepNotes: _prepNotes, ...r }) => {
               const owner = findApplication(r.applicationId);
 
               return owner && OPEN.has(owner.status)

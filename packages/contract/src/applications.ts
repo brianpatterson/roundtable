@@ -3,6 +3,7 @@
 import { Effect, ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api';
 import { Authorization } from './identity.js';
+import { SkillNotFound } from './personas.js';
 
 /**
  * The stages an application can be in, in display order (ADR-0045). `saved` is a posting not yet
@@ -344,8 +345,32 @@ export type RoundOutcome = typeof RoundOutcome.Type;
 const ResponseField = <S extends Schema.Top>(schema: S) =>
   Schema.NullOr(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null)));
 
-/** A Round as the API returns it: one interview within an Application. */
-export const Round = Schema.Struct({
+/** The longest Prep notes a Round can have, in characters. */
+export const MAX_PREP_NOTES = 10000;
+
+/** The most prep tasks one Round can have. */
+export const MAX_PREP_TASKS = 50;
+
+/** The most characters a prep task's title can have, once trimmed. */
+export const MAX_PREP_TASK_TITLE = 200;
+
+/**
+ * A prep task (GLOSSARY.md, Prep): one thing to do before a Round, optionally naming a Skill of the
+ * user's, done once it has a `completedAt`.
+ */
+export const PrepTask = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  /** The Skill it practices, if any: a Skill's id, archived or not (ADR-0044). */
+  skillId: Schema.NullOr(Schema.String),
+  /** When it was done; null while it isn't. */
+  completedAt: Schema.NullOr(Schema.DateFromString),
+});
+
+export type PrepTask = typeof PrepTask.Type;
+
+/** A Round's fields the Agenda carries too: every one but its Prep notes. */
+const roundFields = {
   id: Schema.String,
   applicationId: Schema.String,
   interviewType: InterviewType,
@@ -371,11 +396,89 @@ export const Round = Schema.Struct({
    * inferred (false). A server from before Outcomes leaves it out: false.
    */
   outcomeSetByUser: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Its prep tasks, in the order they were added. A server from before Prep leaves them out: none. */
+  prepTasks: Schema.Array(PrepTask).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
+};
+
+/** A Round as the API returns it: one interview within an Application. */
+export const Round = Schema.Struct({
+  ...roundFields,
+  /** The notes the user wrote before it (Prep), if any. */
+  prepNotes: ResponseField(Schema.String),
 });
 
 export type Round = typeof Round.Type;
+
+/**
+ * How far a Round's Prep has got: how many of its prep tasks are done, of how many. Null when it
+ * has none, so there's nothing to show.
+ */
+export const prepProgress = ({ prepTasks }: Pick<Round, 'prepTasks'>) =>
+  prepTasks.length === 0
+    ? null
+    : {
+        done: prepTasks.filter((task) => task.completedAt !== null).length,
+        total: prepTasks.length,
+      };
+
+/**
+ * A Round's Prep notes, replacing the ones it had. Blank (or null) clears them; at most
+ * `MAX_PREP_NOTES` characters as sent.
+ */
+export const RoundPrepNotes = Schema.Struct({
+  notes: Schema.NullOr(Schema.String.check(Schema.isMaxLength(MAX_PREP_NOTES))),
+});
+
+export type RoundPrepNotes = typeof RoundPrepNotes.Type;
+
+/** A prep task's title: 1–200 characters once trimmed, trimmed in both directions like `Text`. */
+const PrepTaskTitle = Schema.String.pipe(
+  Schema.decodeTo(
+    Schema.String.check(
+      Schema.makeFilter((value: string) => {
+        const length = value.trim().length;
+
+        if (length === 0) return 'must not be blank';
+
+        return length > MAX_PREP_TASK_TITLE
+          ? `must be at most ${MAX_PREP_TASK_TITLE} characters`
+          : undefined;
+      }),
+    ),
+    new SchemaTransformation.Transformation(SchemaGetter.trim(), SchemaGetter.trim()),
+  ),
+);
+
+/** A Skill's id in a prep task: a UUID, or null for none. A malformed one is a 400. */
+const PrepTaskSkillId = Schema.NullOr(Schema.String.check(Schema.isUUID()));
+
+/** Adds a prep task to a Round: last, not done. */
+export const CreatePrepTask = Schema.Struct({
+  title: PrepTaskTitle,
+  skillId: Schema.optional(PrepTaskSkillId),
+});
+
+export type CreatePrepTask = typeof CreatePrepTask.Type;
+
+/**
+ * Changes a prep task: its title, its Skill (`null` clears it), or whether it's done. Marking a
+ * done task done keeps the date it was first done.
+ */
+export const UpdatePrepTask = Schema.Struct({
+  title: Schema.optional(PrepTaskTitle),
+  skillId: Schema.optional(PrepTaskSkillId),
+  done: Schema.optional(Schema.Boolean),
+}).check(
+  Schema.makeFilter((value) =>
+    value.title === undefined && value.skillId === undefined && value.done === undefined
+      ? 'At least one field is required'
+      : undefined,
+  ),
+);
+
+export type UpdatePrepTask = typeof UpdatePrepTask.Type;
 
 /**
  * Whether a Round's Outcome was inferred (GLOSSARY.md): one the user didn't set that isn't the
@@ -475,10 +578,11 @@ export const roundDay = ({ startsAt, dueOn }: OrderedRound, timeZone: string): s
 
 /**
  * A Round on the Agenda (GLOSSARY.md, ADR-0070): the Round, with its Application's company and job
- * title so it reads on its own. `applicationId` links to the Application.
+ * title so it reads on its own. `applicationId` links to the Application. It carries the Round's
+ * prep tasks, for Prep progress, but not its Prep notes.
  */
 export const AgendaRound = Schema.Struct({
-  ...Round.fields,
+  ...roundFields,
   company: Schema.String,
   jobTitle: Schema.String,
 });
@@ -534,8 +638,29 @@ export class TooManyTags extends Schema.TaggedError<
   readonly [ErrorReporter.ignore] = true;
 }
 
+/**
+ * A missing prep task, one of another Round, or one of another user's: always 404, never 403.
+ */
+export class PrepTaskNotFound extends Schema.TaggedError<
+  PrepTaskNotFound,
+  { readonly brand: unique symbol }
+>()('PrepTaskNotFound', {}, { httpApiStatus: 404 }) {
+  readonly [ErrorReporter.ignore] = true;
+}
+
+/** A Round already has `MAX_PREP_TASKS` prep tasks, so another can't be added: a 400. */
+export class TooManyPrepTasks extends Schema.TaggedError<
+  TooManyPrepTasks,
+  { readonly brand: unique symbol }
+>()('TooManyPrepTasks', {}, { httpApiStatus: 400 }) {
+  readonly [ErrorReporter.ignore] = true;
+}
+
 /** A Round's path: its application's id and its own, both UUIDs; a malformed one is a 400. */
 const RoundParams = { id: ApplicationId, roundId: Schema.String.check(Schema.isUUID()) };
+
+/** A prep task's path: its Round's, and its own id, a UUID. */
+const PrepTaskParams = { ...RoundParams, taskId: Schema.String.check(Schema.isUUID()) };
 
 export class ApplicationsApi extends HttpApiGroup.make('applications')
   .add(
@@ -617,6 +742,34 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       query: RoundTag,
       success: Round,
       error: RoundNotFound,
+    }),
+    // Prep (GLOSSARY.md). Each answers the Round, with its notes and its prep tasks. Another
+    // user's Application, Round or task, or a task of another Round, is a 404.
+    // Sets or clears a Round's Prep notes: blank clears them.
+    HttpApiEndpoint.put('setPrepNotes', '/:id/rounds/:roundId/prep-notes', {
+      params: RoundParams,
+      payload: RoundPrepNotes,
+      success: Round,
+      error: [ApplicationNotFound, RoundNotFound],
+    }),
+    // Adds a prep task, last and not done. A Skill that isn't the user's is a 404.
+    HttpApiEndpoint.post('addPrepTask', '/:id/rounds/:roundId/prep-tasks', {
+      params: RoundParams,
+      payload: CreatePrepTask,
+      success: Round.pipe(HttpApiSchema.status(201)),
+      error: [ApplicationNotFound, RoundNotFound, TooManyPrepTasks, SkillNotFound],
+    }),
+    // Renames a prep task, changes or clears its Skill, or marks it done or not done.
+    HttpApiEndpoint.patch('updatePrepTask', '/:id/rounds/:roundId/prep-tasks/:taskId', {
+      params: PrepTaskParams,
+      payload: UpdatePrepTask,
+      success: Round,
+      error: [ApplicationNotFound, RoundNotFound, PrepTaskNotFound, SkillNotFound],
+    }),
+    HttpApiEndpoint.delete('deletePrepTask', '/:id/rounds/:roundId/prep-tasks/:taskId', {
+      params: PrepTaskParams,
+      success: Round,
+      error: [ApplicationNotFound, RoundNotFound, PrepTaskNotFound],
     }),
   )
   .middleware(Authorization)

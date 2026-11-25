@@ -10,11 +10,14 @@ import {
   smallint,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
   APPLICATION_STATUSES,
   INTERVIEW_TYPES,
+  MAX_PREP_NOTES,
+  MAX_PREP_TASK_TITLE,
   MAX_RATING_NOTE,
   OUTCOMES,
   ROUND_DURATION_MINUTES,
@@ -88,6 +91,8 @@ export const rounds = pgTable(
     // and insert pending, not set by the user.
     outcome: roundOutcome().notNull().default('pending'),
     outcomeSetByUser: boolean('outcome_set_by_user').notNull().default(false),
+    // Its Prep notes (GLOSSARY.md): what the user wrote before it. Null when there are none.
+    prepNotes: text('prep_notes'),
     ...timestamps,
   },
   (t) => [
@@ -102,6 +107,40 @@ export const rounds = pgTable(
     check(
       'rounds_rating_note_check',
       sql`char_length(${t.ratingNote}) <= ${sql.raw(String(MAX_RATING_NOTE))}`,
+    ),
+    check(
+      'rounds_prep_notes_check',
+      sql`char_length(${t.prepNotes}) <= ${sql.raw(String(MAX_PREP_NOTES))}`,
+    ),
+  ],
+);
+
+// A Round's prep tasks (GLOSSARY.md, Prep): they go when it does, and with it its application.
+// Whose they are is the application's user_id, reached through the Round. `skill_id` names one of
+// the personas module's Skills: a plain id, no foreign key (ADR-0044 rule 1), checked through
+// personas' `Skills.findOwned` before it's stored. Skills are archived, never deleted.
+export const prepTasks = pgTable(
+  'prep_tasks',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    roundId: uuid('round_id')
+      .notNull()
+      .references(() => rounds.id, { onDelete: 'cascade' }),
+    title: text().notNull(),
+    skillId: uuid('skill_id'),
+    // Its place among the Round's tasks: one more than the last when it's added, so they list in
+    // the order they were added even when two land in the same instant.
+    position: integer().notNull(),
+    // When it was done; null while it isn't. Postgres's clock, like the timestamps.
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    // Every query reads the tasks of a Round, or of a few, in order.
+    uniqueIndex('prep_tasks_round_id_position_key').on(t.roundId, t.position),
+    check(
+      'prep_tasks_title_check',
+      sql`char_length(${t.title}) between 1 and ${sql.raw(String(MAX_PREP_TASK_TITLE))}`,
     ),
   ],
 );

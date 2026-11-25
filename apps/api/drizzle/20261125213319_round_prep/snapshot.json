@@ -1,0 +1,350 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "4d41252b-d3c1-400c-96ae-7ff5cd9634df",
+  "prevIds": [
+    "1841839a-79db-4b20-b9a5-3b4ea9746838"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "prep_tasks"
+      ],
+      "writes": [
+        "s|tbl|public.prep_tasks",
+        "n|tbl|public.prep_tasks",
+        "e|tbl|public.prep_tasks",
+        "n|rel|public.prep_tasks",
+        "n|type|public.prep_tasks",
+        "n|rel|public.prep_tasks_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "rounds",
+        "prep_notes"
+      ],
+      "writes": [
+        "s|col|public.rounds.prep_notes",
+        "n|col|public.rounds.prep_notes",
+        "e|col|public.rounds.prep_notes"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "prep_tasks",
+        "prep_tasks_round_id_position_key"
+      ],
+      "writes": [
+        "s|idx|public.prep_tasks_round_id_position_key",
+        "n|idx|public.prep_tasks_round_id_position_key",
+        "e|idx|public.prep_tasks_round_id_position_key",
+        "n|rel|public.prep_tasks_round_id_position_key"
+      ],
+      "reads": [
+        "n|tbl|public.prep_tasks",
+        "n|sch|public",
+        "n|col|public.prep_tasks.round_id",
+        "n|col|public.prep_tasks.position"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "prep_tasks"
+      ],
+      "writes": [
+        "s|fk|public.prep_tasks.prep_tasks_round_id_rounds_id_fkey",
+        "n|fk|public.prep_tasks.prep_tasks_round_id_rounds_id_fkey",
+        "e|fk|public.prep_tasks.prep_tasks_round_id_rounds_id_fkey",
+        "n|con|public.prep_tasks.prep_tasks_round_id_rounds_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.prep_tasks",
+        "n|sch|public",
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|col|public.prep_tasks.round_id",
+        "n|col|public.rounds.id",
+        "e|uniqueness|public.rounds.id"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": [
+        "table",
+        "public",
+        "rounds"
+      ],
+      "writes": [
+        "s|ck|public.rounds.rounds_prep_notes_check",
+        "n|ck|public.rounds.rounds_prep_notes_check",
+        "e|ck|public.rounds.rounds_prep_notes_check",
+        "n|con|public.rounds.rounds_prep_notes_check"
+      ],
+      "reads": [
+        "n|tbl|public.rounds",
+        "n|sch|public",
+        "n|col|public.rounds.prep_notes"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "prep_tasks",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "gen_random_uuid()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "round_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "title",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "skill_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "position",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "prep_notes",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "prep_tasks_round_id_position_key",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "round_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "position",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "prep_tasks_round_id_rounds_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "round_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "rounds",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "prep_tasks_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "prep_tasks",
+        "name": "prep_tasks_title_check",
+        "value": "char_length(\"title\") between 1 and 200",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "rounds",
+        "name": "rounds_prep_notes_check",
+        "value": "char_length(\"prep_notes\") <= 10000",
+        "entityType": "checks"
+      }
+    }
+  ]
+}

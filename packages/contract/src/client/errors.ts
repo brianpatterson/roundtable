@@ -1,7 +1,15 @@
 // What the user sees when an API call fails. The contract's errors carry no message, so the
 // wording lives here, one section per module. A new error in the contract needs a line here.
 import { Schema } from 'effect';
-import { ApplicationNotFound, MAX_TAGS, RoundNotFound, TooManyTags } from '../applications.js';
+import {
+  ApplicationNotFound,
+  MAX_PREP_TASKS,
+  MAX_TAGS,
+  PrepTaskNotFound,
+  RoundNotFound,
+  TooManyPrepTasks,
+  TooManyTags,
+} from '../applications.js';
 import { MAX_SKILLS, SkillNameTaken, SkillNotFound, TooManySkills } from '../personas.js';
 import { ReportNotFound, ReportRateLimited } from '../support.js';
 
@@ -19,6 +27,10 @@ const isNotFound = Schema.is(ApplicationNotFound);
 const isRoundNotFound = Schema.is(RoundNotFound);
 
 const isTooManyTags = Schema.is(TooManyTags);
+
+const isPrepTaskNotFound = Schema.is(PrepTaskNotFound);
+
+const isTooManyPrepTasks = Schema.is(TooManyPrepTasks);
 
 // Personas
 const isSkillNotFound = Schema.is(SkillNotFound);
@@ -40,6 +52,12 @@ export function toApiError(cause: unknown): ApiError {
 
   if (isTooManyTags(cause)) {
     return new ApiError(`A round can have at most ${MAX_TAGS} tags.`, { cause });
+  }
+
+  if (isPrepTaskNotFound(cause)) return new ApiError('That prep task no longer exists.', { cause });
+
+  if (isTooManyPrepTasks(cause)) {
+    return new ApiError(`A round can have at most ${MAX_PREP_TASKS} prep tasks.`, { cause });
   }
 
   if (isSkillNotFound(cause)) return new ApiError('That skill no longer exists.', { cause });
