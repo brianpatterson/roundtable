@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { AgendaLive, ApplicationsLive } from './modules/applications/index.js';
 import { EmailLive, type EmailTransport } from './modules/email/index.js';
 import { IdentityLive } from './modules/identity/index.js';
+import { PersonasLive } from './modules/personas/index.js';
 import { GitHubIssues, SupportLive } from './modules/support/index.js';
 import type { Env } from './platform/config/env.js';
 import { Database } from './platform/database/effect.js';
@@ -71,6 +72,7 @@ function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
       SystemLive,
       ApplicationsLive,
       AgendaLive,
+      PersonasLive,
       SupportLive(env, log, { githubIssues }),
     ]),
     // Identity's endpoints, the Authorization and OptionalSession middleware the groups above

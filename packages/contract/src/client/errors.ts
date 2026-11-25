@@ -2,6 +2,7 @@
 // wording lives here, one section per module. A new error in the contract needs a line here.
 import { Schema } from 'effect';
 import { ApplicationNotFound, MAX_TAGS, RoundNotFound, TooManyTags } from '../applications.js';
+import { MAX_SKILLS, SkillNameTaken, SkillNotFound, TooManySkills } from '../personas.js';
 import { ReportNotFound, ReportRateLimited } from '../support.js';
 
 /** A failed API call, with a message fit to show the user. `cause` is the original error. */
@@ -19,6 +20,13 @@ const isRoundNotFound = Schema.is(RoundNotFound);
 
 const isTooManyTags = Schema.is(TooManyTags);
 
+// Personas
+const isSkillNotFound = Schema.is(SkillNotFound);
+
+const isSkillNameTaken = Schema.is(SkillNameTaken);
+
+const isTooManySkills = Schema.is(TooManySkills);
+
 // Support
 const isReportRateLimited = Schema.is(ReportRateLimited);
 
@@ -32,6 +40,23 @@ export function toApiError(cause: unknown): ApiError {
 
   if (isTooManyTags(cause)) {
     return new ApiError(`A round can have at most ${MAX_TAGS} tags.`, { cause });
+  }
+
+  if (isSkillNotFound(cause)) return new ApiError('That skill no longer exists.', { cause });
+
+  if (isSkillNameTaken(cause)) {
+    return new ApiError(
+      cause.archived
+        ? 'You have an archived skill with that name. Restore it instead.'
+        : 'You already have a skill with that name.',
+      { cause },
+    );
+  }
+
+  if (isTooManySkills(cause)) {
+    return new ApiError(`You can have at most ${MAX_SKILLS} skills, archived ones included.`, {
+      cause,
+    });
   }
 
   if (isReportRateLimited(cause)) {
