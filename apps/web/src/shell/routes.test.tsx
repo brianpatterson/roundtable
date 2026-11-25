@@ -49,6 +49,25 @@ const acmeIn = (status: string) => ({
 /** The user's one application, as the server holds it. */
 let acme: ReturnType<typeof acmeIn>;
 
+/** Acme's one Round, on the Agenda as the API sends it. */
+const acmeRound = {
+  id: '00000000-0000-4000-8000-000000000101',
+  applicationId: ACME_ID,
+  interviewType: 'coding',
+  tags: [],
+  startsAt: null,
+  durationMinutes: null,
+  dueOn: null,
+  selfRating: null,
+  ratingNote: null,
+  outcome: 'pending',
+  outcomeSetByUser: false,
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-01T00:00:00.000Z',
+  company: 'Acme',
+  jobTitle: 'Engineer',
+};
+
 async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init);
   const { pathname } = new URL(request.url);
@@ -63,12 +82,18 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 
   if (pathname === '/api/auth-config') return Response.json({ providers: [] });
 
-  if (!pathname.startsWith('/api/applications')) return new Response(null, { status: 404 });
+  const isAgenda = pathname === '/api/agenda';
+
+  if (!isAgenda && !pathname.startsWith('/api/applications'))
+    return new Response(null, { status: 404 });
 
   // The session runs out: this call is refused, and Better Auth's next check finds no session.
   if (expires) session = null;
 
   if (!session) return Response.json({ _tag: 'Unauthorized' }, { status: 401 });
+
+  // Acme's one Round, unscheduled so the page reads the same whenever the test runs.
+  if (isAgenda) return Response.json([acmeRound]);
 
   if (pathname === '/api/applications') return Response.json([acme]);
 
@@ -131,12 +156,63 @@ const findApplicationPage = async (company = 'Acme') => {
 
 const findTable = async () => {
   expect(await screen.findByRole('table')).toBeDefined();
+  expect(window.location.pathname).toBe('/applications');
+};
+
+const findAgenda = async () => {
+  expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeDefined();
   expect(window.location.pathname).toBe('/');
 };
 
+/** Which of the header's links is marked as the current page, by name. */
+const currentPages = () =>
+  within(screen.getByRole('navigation', { name: 'Pages' }))
+    .getAllByRole('link')
+    .filter((link) => link.getAttribute('aria-current') === 'page')
+    .map((link) => link.textContent);
+
+describe('App: the Agenda and the Applications table', () => {
+  it('shows the Agenda at /, marked as the current page', async () => {
+    await openApp('/');
+
+    await findAgenda();
+    expect(await screen.findByRole('link', { name: 'Acme – Engineer' })).toBeDefined();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(currentPages()).toEqual(['Agenda']);
+  });
+
+  it('shows the Applications table at /applications, marked as the current page', async () => {
+    await openApp('/applications');
+
+    await findTable();
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull();
+    expect(currentPages()).toEqual(['Applications']);
+  });
+
+  it('goes between them through the header, and marks neither on an application’s page', async () => {
+    await openApp('/');
+    await findAgenda();
+
+    await userEvent.click(screen.getByRole('link', { name: 'Applications' }));
+    await findTable();
+    expect(currentPages()).toEqual(['Applications']);
+
+    await userEvent.click(screen.getByRole('link', { name: 'Agenda' }));
+    await findAgenda();
+    expect(currentPages()).toEqual(['Agenda']);
+
+    await userEvent.click(await screen.findByRole('link', { name: 'Acme – Engineer' }));
+    await findApplicationPage();
+    expect(currentPages()).toEqual([]);
+
+    await userEvent.click(screen.getByRole('link', { name: 'Agenda' }));
+    await findAgenda();
+  });
+});
+
 describe('App: an application’s page', () => {
   it('opens from the company name in the table, and the back button returns to the table', async () => {
-    await openApp();
+    await openApp('/applications');
 
     await userEvent.click(await screen.findByRole('link', { name: 'Acme' }));
 
@@ -191,7 +267,7 @@ describe('App: an application’s page', () => {
   });
 
   it('shows a change made in the table', async () => {
-    await openApp();
+    await openApp('/applications');
 
     // Seen once before the change, so a stale copy would be in the cache.
     await userEvent.click(await screen.findByRole('link', { name: 'Acme' }));
@@ -222,14 +298,15 @@ describe('App: an application’s page', () => {
 });
 
 describe('App: an unknown path', () => {
-  it('shows a not-found page with a link to the applications', async () => {
+  it('shows a not-found page, with the header, and a link back to the Agenda', async () => {
     await openApp('/no-such-page');
 
     const main = await screen.findByRole('main');
 
     expect(await within(main).findByRole('heading', { name: 'Page not found' })).toBeDefined();
-    await userEvent.click(screen.getByRole('link', { name: 'Back to my applications' }));
+    expect(currentPages()).toEqual([]);
+    await userEvent.click(screen.getByRole('link', { name: 'Back to the agenda' }));
 
-    await findTable();
+    await findAgenda();
   });
 });

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestRouter, TestRouterProvider } from '../../shared/testing/router';
+import { AgendaPage } from './AgendaPage';
 import { ApplicationPage } from './ApplicationPage';
 
 // The page calls the real typed client; only the server behind `fetch` is a stand-in, keeping one
@@ -260,6 +261,10 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
 
     return new Response(null, { status: 204 });
   }
+
+  // The Agenda: these tests' dates are all upcoming, so every Round is on it.
+  if (request.method === 'GET' && pathname === '/api/agenda')
+    return Response.json(stored.map((r) => ({ ...r, company: 'Acme', jobTitle: 'Engineer' })));
 
   return notFound('ApplicationNotFound');
 }
@@ -1632,5 +1637,75 @@ describe('a Round’s Outcome', () => {
 
     expect((await within(outcomeGroup('Coding 1')).findByRole('alert')).textContent).toBe(message);
     expect(outcomeShown('Coding 1')).toBe('Passed');
+  });
+});
+
+describe('the Agenda, when a Round changes', () => {
+  /** The application's page with the Agenda beside it, sharing one cache as in the app. */
+  const renderWithAgenda = async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const router = createTestRouter(
+      <>
+        <ApplicationPage applicationId={ACME_ID} />
+        <AgendaPage />
+      </>,
+      '/elsewhere',
+    );
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TestRouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByRole('heading', { name: 'Rounds' });
+  };
+
+  const agenda = () => screen.getByRole('region', { name: 'Agenda' });
+
+  /** The Agenda's day headings. */
+  const agendaDays = () =>
+    within(agenda())
+      .queryAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+
+  it('shows a Round once it’s added', async () => {
+    await renderWithAgenda();
+    await within(agenda()).findByText(/Nothing coming up/);
+
+    await addRound('Coding');
+
+    await waitFor(() => expect(agendaDays()).toEqual(['Not scheduled yet']));
+  });
+
+  it('moves a Round once it’s rescheduled', async () => {
+    stored = [round(1, 'coding')];
+    await renderWithAgenda();
+    await waitFor(() => expect(agendaDays()).toEqual(['Not scheduled yet']));
+
+    const dialog = await openScheduleDialog('Coding 1');
+
+    await pickWhen(dialog, 'Due by a date');
+    fill(dialog, 'Due date', '2099-01-02');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(agendaDays()).toEqual([
+        new Date(2099, 0, 2).toLocaleDateString(undefined, { dateStyle: 'full' }),
+      ]),
+    );
+  });
+
+  it('drops a Round once it’s deleted', async () => {
+    stored = [round(1, 'coding')];
+    await renderWithAgenda();
+    await waitFor(() => expect(agendaDays()).toEqual(['Not scheduled yet']));
+
+    const dialog = await openDeleteDialog('Coding 1');
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(await within(agenda()).findByText(/Nothing coming up/)).toBeDefined();
   });
 });

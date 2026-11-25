@@ -19,6 +19,14 @@
   padding: var(--ds-space-4);
 }
 
+/* Its own line under the title and actions, at every width. */
+.nav {
+  display: flex;
+  flex-basis: 100%;
+  gap: var(--ds-space-6);
+  font: var(--ds-type-title-medium);
+}
+
 .actions {
   display: flex;
   align-items: center;

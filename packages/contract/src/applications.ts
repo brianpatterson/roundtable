@@ -437,7 +437,7 @@ function startOfDay(date: string, timeZone: string) {
 }
 
 /** The calendar day an instant falls on in `timeZone`, `YYYY-MM-DD`. */
-function dayOf(instant: Date, timeZone: string) {
+export function dayOf(instant: Date, timeZone: string) {
   const { year, month, day } = zonedParts(instant.getTime(), timeZone);
 
   return [year, month, day].map((n, i) => String(n).padStart(i === 0 ? 4 : 2, '0')).join('-');

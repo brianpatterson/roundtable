@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SnackbarProvider, createSnackbars } from '../../design-system';
 import { createTestRouter, TestRouterProvider, type TestRouter } from '../../shared/testing/router';
+import { AgendaPage } from './AgendaPage';
 import { ApplicationsTable } from './ApplicationsTable';
 
 // The table calls the real typed client; only the server behind `fetch` is a stand-in, holding a
@@ -30,6 +31,29 @@ const row = (
 });
 
 let rows: ReturnType<typeof row>[];
+
+/** The statuses whose Rounds the API leaves off the Agenda. */
+const CLOSED = new Set(['rejected', 'withdrawn']);
+
+/** An application's one Round, as the Agenda lists it. */
+const agendaRound = (application: ReturnType<typeof row>) => ({
+  id: application.id.replace('-8000-', '-9000-'),
+  applicationId: application.id,
+  interviewType: 'coding',
+  tags: [],
+  startsAt: null,
+  durationMinutes: null,
+  dueOn: null,
+  selfRating: null,
+  ratingNote: null,
+  outcome: 'pending',
+  outcomeSetByUser: false,
+  createdAt: application.createdAt,
+  updatedAt: application.updatedAt,
+  company: application.company,
+  jobTitle: application.jobTitle,
+});
+
 let deletes: string[];
 
 /** How the server answers a DELETE; a test can make it fail, or hold it in flight. */
@@ -53,6 +77,10 @@ async function fakeServer(input: RequestInfo | URL, init?: RequestInit): Promise
   const { pathname } = new URL(request.url);
 
   if (request.method === 'GET' && pathname === '/api/applications') return Response.json(rows);
+
+  // The Agenda: one unscheduled Round per application, left out once the application is closed.
+  if (request.method === 'GET' && pathname === '/api/agenda')
+    return Response.json(rows.filter((r) => !CLOSED.has(r.status)).map(agendaRound));
 
   const id = pathname.replace('/api/applications/', '');
   const existing = rows.find((r) => r.id === id);
@@ -104,7 +132,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const renderTable = async () => {
+const renderTable = async (page = <ApplicationsTable />) => {
   // The shell mounts the snackbars once, around every module, and shows the errors of mutations
   // that opt in with `meta: { errorSnackbar: true }`. Modules can't import the shell, so this
   // stands in for that part of it (which errors it leaves out is the shell's, in its own tests).
@@ -120,7 +148,7 @@ const renderTable = async () => {
   });
 
   // The table links each company to its page, so it renders inside a router.
-  router = createTestRouter(<ApplicationsTable />);
+  router = createTestRouter(page);
 
   const { container } = render(
     <SnackbarProvider snackbars={appSnackbars}>
@@ -195,6 +223,25 @@ describe('ApplicationsTable: changing status', () => {
     );
     expect(snackbars()).toHaveLength(1);
     expect(within(container).queryByRole('alert')).toBeNull();
+  });
+
+  // The table and the Agenda share one cache in the app, so the change has to reach the Agenda.
+  it('drops the application’s Rounds from the Agenda once it’s rejected', async () => {
+    await renderTable(
+      <>
+        <ApplicationsTable />
+        <AgendaPage />
+      </>,
+    );
+
+    const agenda = screen.getByRole('region', { name: 'Agenda' });
+
+    expect(await within(agenda).findByRole('link', { name: /Acme/ })).toBeDefined();
+
+    await changeStatus('Acme', 'Rejected');
+
+    await waitFor(() => expect(within(agenda).queryByRole('link', { name: /Acme/ })).toBeNull());
+    expect(within(agenda).getByRole('link', { name: /Globex/ })).toBeDefined();
   });
 
   it("keeps showing the server's status in the row after a failed change", async () => {
