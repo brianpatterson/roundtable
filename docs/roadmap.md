@@ -291,9 +291,27 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
    ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
 3. ✅ **Agenda**: the home page. Upcoming rounds across open applications in date order, then those
    not scheduled yet, with time left ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)).
-4. **Skills and prep**: starts the `personas` module with a skill library per user (ADR-0044
-   puts Skills there, so they never have to move); notes and prep tasks on a round, each task
-   optionally naming a skill, and each Round's prep progress on the Agenda.
+4. **Skills and prep** (designed 2026-11-25; terms in `GLOSSARY.md`, no new ADR: it follows
+   [ADR-0044](adr/0044-links-between-modules.md) and [ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)):
+   - **Skills** start the `personas` module (ADR-0044 puts them there, so they never have to
+     move): `GET`/`POST`/`PATCH /api/skills`, a `skills` table with `user_id` cascading from
+     `users` and a unique index on `(user_id, lower(name))`. A taken name, an archived Skill's
+     included, is a 409 `SkillNameTaken`. Archived and restored, never deleted. `personas/index.ts`
+     exports the check applications uses to resolve a Skill id for the `CurrentUser` (another
+     user's is a 404). The web module `modules/personas` owns the `/skills` page in the shell's
+     navigation and exports `useSkills()` (archived Skills included).
+   - **Prep** lives in `applications`, on the Round it belongs to: a `prep_notes` column and a
+     `prep_tasks` table (cascading from `rounds`, `skill_id` a plain id). The `Round` response
+     carries `prepNotes` and `prepTasks`, and the prep endpoints under
+     `/api/applications/:id/rounds/:roundId/` return the Round, as the Tag endpoints do. The API
+     checks only that a named Skill is the user's; hiding archived ones is the picker's job. The
+     web app shows a task's Skill by its id from personas' `useSkills()`, so a rename touches only
+     the skills query and the API never reads across modules to display something.
+   - **Prep progress** on the Agenda comes from the contract's `prepProgress(round)` over the
+     `prepTasks` that `AgendaRound` already carries, so `GET /api/agenda` keeps its one query
+     for Rounds plus one for their tasks.
+   - A design-system `Checkbox` (on Base UI's) ticks prep tasks. Creating a Skill from the task
+     form's picker waits for a combobox.
 5. **Personas and documents**: the rest of the `personas` module, a Markdown editor, versions, forks, and
    PDF export. The editor and PDF rendering each get their own design session and ADR.
 6. **Analytics v1**: pass rate and average self-rating per interview type, with the count of
