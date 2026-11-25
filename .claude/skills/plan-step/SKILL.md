@@ -23,7 +23,8 @@ uses or adds.
 
 ## 2. Grill
 
-Invoke the `grilling` and `domain-modeling` skills and run them on the step: rounds of numbered
+Invoke the `grilling` and `domain-modeling` skills (from the `mattpocock-skills` plugin, not this
+repo; if they aren't installed, stop and say so) and run them on the step: rounds of numbered
 questions, each with your recommendation, until the frontier is empty. `GLOSSARY.md` stands in for
 `CONTEXT.md` (`docs/agents/domain.md`); update it the moment a term settles, keeping _(planned)_ on
 it. Watch for a step that promises something a later step builds (the Agenda's prep progress

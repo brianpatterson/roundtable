@@ -11,7 +11,7 @@
 #   NN-<slug>.md    one ticket per file (01-api.md, 02-web.md), filed in that order, labeled
 #                   `enhancement`
 #
-# In any body, {{spec}} and {{NN}} stand for the issue numbers filed, so drafts can name each
+# In any body, {{spec}} and {{NN}} (two digits) stand for the issue numbers filed, so drafts can name each
 # other before they exist. A ticket's `## Blocked by` section is where its blockers come from:
 # every {{NN}} there (an earlier ticket) and every #123 (an issue already filed) becomes a blocking
 # edge, so the section people read and the order the dispatcher follows can't disagree.
@@ -47,9 +47,9 @@ body_of() { # everything after the title line, leading blank lines dropped
   tail -n +2 "$1" | sed '/./,$!d'
 }
 
-blockers_of() { # the {{NN}} and #123 references in the file's "## Blocked by" section, one a line
+blockers_of() { # the {{NN}} and #123 references in the file's "## Blocked by" section, one a line, each once
   awk '/^## /{inside = ($0 ~ /^## Blocked by[[:space:]]*$/); next} inside' "$1" |
-    grep -oE '\{\{[0-9]{2}\}\}|#[0-9]+' || true
+    { grep -oE '\{\{[0-9]{2}\}\}|#[0-9]+' || true; } | awk '!seen[$0]++'
 }
 
 # Check every draft before filing anything.
@@ -73,7 +73,7 @@ done
 for file in "$dir/spec.md" "${tickets[@]}"; do
   while IFS= read -r ref; do
     case "$known" in *" ${ref:2:${#ref}-4} "*) ;; *) die "$(basename "$file") names $ref, which isn't spec or a ticket here" ;; esac
-  done < <(grep -oE '\{\{[^}]*\}\}' "$file" | sort -u)
+  done < <(grep -oE '\{\{(spec|[0-9]+)\}\}' "$file" | sort -u) # not ${{ … }}: workflow expressions stay as written
 done
 
 if $dry_run; then

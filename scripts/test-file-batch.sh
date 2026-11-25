@@ -29,7 +29,7 @@ drafts() { # a spec, an API ticket and a web ticket blocked by it and by #42
   mkdir -p "$work/batch"
   printf '# Spec: the thing\n\n## Tickets\n\n1. {{01}} the API\n2. {{02}} the page\n' >"$work/batch/spec.md"
   printf '# The API\n\n## Problem\n\nPart of {{spec}}.\n' >"$work/batch/01-api.md"
-  printf '# The page\n\n## Problem\n\nCalls {{01}}.\n\n## Blocked by\n\n- {{01}} (the endpoint)\n- #42\n\n## Out of scope\n\n- Not #99\n' >"$work/batch/02-web.md"
+  printf '# The page\n\n## Problem\n\nCalls {{01}}.\n\n## Blocked by\n\n- {{01}} (the endpoint)\n- {{01}} (its schema)\n- #42\n\n## Out of scope\n\n- Not #99\n' >"$work/batch/02-web.md"
   echo '[{"number":301},{"number":302}]' >"$work/subs.json"
   echo '[{"number":301},{"number":42}]' >"$work/blocked-302.json"
 }
@@ -54,6 +54,7 @@ expect_in "both tickets become sub-issues of the spec" "$(grep sub_issue_id "$wo
 expect_in "Blocked by's earlier ticket becomes an edge" "$(cat "$work/calls")" "issues/302/dependencies/blocked_by -F issue_id=9301"
 expect_in "and so does an issue already filed" "$(cat "$work/calls")" "issues/302/dependencies/blocked_by -F issue_id=9042"
 expect "an issue named outside Blocked by isn't an edge" "" "$(grep 'issue_id=9099' "$work/calls" || true)"
+expect "a blocker named twice is one edge" 1 "$(grep -c 'issues/302/dependencies/blocked_by -F issue_id=9301' "$work/calls")"
 expect "nothing is labeled ready" "" "$(grep -- 'ready' "$work/calls" || true)"
 expect_in "it reports what it filed" "$out" "#302 blocked by #42"
 
@@ -81,6 +82,12 @@ printf 'The API\n' >"$work/batch/01-api.md"
 run "$work/batch"
 expect "a draft without a title line is refused" 1 "$status"
 expect "before anything is filed" false "$([ -f "$work/calls" ] && echo true || echo false)"
+
+drafts
+printf '# The API\n\n## Problem\n\nThe step reads `${{ secrets.FOO }}` and `${{ github.event.issue.number }}`.\n' >"$work/batch/01-api.md"
+run "$work/batch"
+expect "a workflow expression in a draft isn't taken for a placeholder" 0 "$status"
+expect_in "and is filed as written" "$(cat "$work/body-301")" '`${{ secrets.FOO }}` and `${{ github.event.issue.number }}`'
 
 drafts
 printf '# Spec\n\nSee {{03}}.\n' >"$work/batch/spec.md"
