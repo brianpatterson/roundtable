@@ -1,5 +1,5 @@
 import type { ErrorEvent } from '@sentry/node';
-import { Effect, Redacted } from 'effect';
+import { Effect, type Layer, Redacted } from 'effect';
 import { HttpRouter } from 'effect/http';
 import { HttpApi } from 'effect/http-api';
 import { RoundtableApi } from '@roundtable/contract';
@@ -60,6 +60,8 @@ export interface TestAppOptions {
    * token, so issues are skipped, as in development.
    */
   openIssue?: (issue: NewIssue) => Promise<OpenedIssue>;
+  /** Opens report issues with this layer instead, for failures `openIssue` can't make. */
+  githubIssues?: Layer.Layer<GitHubIssues>;
   /** Where the app's log lines go; logging is off otherwise. */
   logStream?: { write(line: string): void };
   /** Add GET /api/test-crash, which throws 'route exploded': for error-reporting tests. */
@@ -101,7 +103,8 @@ export function setupTestApp(options: TestAppOptions = {}) {
           sentEmails.push(email);
         }),
     ),
-    githubIssues: options.openIssue && GitHubIssues.fromPromise(options.openIssue),
+    githubIssues:
+      options.githubIssues ?? (options.openIssue && GitHubIssues.fromPromise(options.openIssue)),
     errorTracking: errorEvents && {
       // Capture instead of sending anywhere.
       beforeSend: (event, hint) => {
