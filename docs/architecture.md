@@ -180,7 +180,7 @@ every field, read what each endpoint received, and override an endpoint (a 500, 
 until the next test; an answer that breaks the contract fails the test.
 
 **Design system** ([ADR-0024](adr/0024-design-system.md)): `apps/web/src/design-system/` holds
-the web app's components (Button, Link, TextField, TextArea, Select, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
+the web app's components (Button, Link, TextField, TextArea, Select, Checkbox, Chip, Alert, Dialog, Snackbar so far) and its theme. Base UI gives
 each component its behavior (keyboard, focus, ARIA, menu positioning) and CSS Modules its
 Material 3 look. Every style reads `--ds-*` tokens (color roles, type scale, shape, spacing),
 each color defined once with `light-dark()`, so the `ThemeProvider` switches themes by setting

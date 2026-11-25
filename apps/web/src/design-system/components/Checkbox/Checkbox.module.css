@@ -1,0 +1,99 @@
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  max-width: 100%;
+  color: var(--ds-color-on-surface);
+  font: var(--ds-type-body-large);
+  cursor: pointer;
+
+  &[data-disabled] {
+    cursor: default;
+  }
+}
+
+/* Material's 18px box with a 2px outline, inside a 40px circular state layer that keeps the
+   touch target large without shifting the label. */
+.box {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin: var(--ds-space-3);
+  border: 2px solid var(--ds-color-on-surface-variant);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ds-color-on-primary);
+  transition:
+    background-color var(--ds-motion-short),
+    border-color var(--ds-motion-short);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -11px;
+    border-radius: var(--ds-shape-full);
+    background: var(--ds-color-on-surface);
+    opacity: 0;
+    transition: opacity var(--ds-motion-short);
+  }
+
+  &[data-checked] {
+    border-color: var(--ds-color-primary);
+    background: var(--ds-color-primary);
+
+    &::before {
+      background: var(--ds-color-primary);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ds-color-primary);
+    outline-offset: 2px;
+  }
+
+  &:focus-visible::before {
+    opacity: var(--ds-state-focus);
+  }
+
+  &[data-disabled] {
+    border-color: var(--ds-color-on-surface);
+    opacity: var(--ds-state-disabled-content);
+  }
+
+  &[data-disabled][data-checked] {
+    background: var(--ds-color-on-surface);
+    color: var(--ds-color-surface);
+  }
+}
+
+@media (hover: hover) {
+  .field:hover:not([data-disabled]) .box::before {
+    opacity: var(--ds-state-hover);
+  }
+}
+
+.field:active:not([data-disabled]) .box::before {
+  opacity: var(--ds-state-pressed);
+}
+
+.indicator {
+  display: flex;
+
+  &[data-unchecked] {
+    display: none;
+  }
+}
+
+.label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.field[data-disabled] .label {
+  opacity: var(--ds-state-disabled-content);
+}
