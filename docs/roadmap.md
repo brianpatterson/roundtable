@@ -294,7 +294,7 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
 4. **Skills and prep** (designed 2026-11-25; terms in `GLOSSARY.md`, no new ADR: it follows
    [ADR-0044](adr/0044-links-between-modules.md) and [ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)):
    - **Skills** start the `personas` module (ADR-0044 puts them there, so they never have to
-     move): `GET`/`POST`/`PATCH /api/skills`, a `skills` table with `user_id` cascading from
+     move): `GET` and `POST /api/skills` and `PATCH /api/skills/:id` (rename, archive, restore), a `skills` table with `user_id` cascading from
      `users` and a unique index on `(user_id, lower(name))`. A taken name, an archived Skill's
      included, is a 409 `SkillNameTaken`. Archived and restored, never deleted. `personas/index.ts`
      exports the check applications uses to resolve a Skill id for the `CurrentUser` (another
@@ -308,8 +308,9 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
      web app shows a task's Skill by its id from personas' `useSkills()`, so a rename touches only
      the skills query and the API never reads across modules to display something.
    - **Prep progress** on the Agenda comes from the contract's `prepProgress(round)` over the
-     `prepTasks` that `AgendaRound` already carries, so `GET /api/agenda` keeps its one query
-     for Rounds plus one for their tasks.
+     `prepTasks` that `AgendaRound` already carries, so `GET /api/agenda` makes one query for
+     Rounds plus one for their tasks. `AgendaRound` omits `prepNotes`: the Agenda shows only
+     progress, and notes of up to 10,000 characters per Round have no reason to travel there.
    - A design-system `Checkbox` (on Base UI's) ticks prep tasks. Creating a Skill from the task
      form's picker waits for a combobox.
 5. **Personas and documents**: the rest of the `personas` module, a Markdown editor, versions, forks, and
