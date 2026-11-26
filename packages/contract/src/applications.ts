@@ -3,7 +3,7 @@
 import { Effect, ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effect';
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api';
 import { Authorization } from './identity.js';
-import { SkillNotFound } from './personas.js';
+import { PersonaArchived, PersonaNotFound, SkillNotFound } from './personas.js';
 
 /**
  * The stages an application can be in, in display order (ADR-0045). `saved` is a posting not yet
@@ -97,11 +97,19 @@ export const TimeZone = Schema.String.check(
 /** Whether `value` is a time zone the API accepts. */
 export const isTimeZone = Schema.is(TimeZone);
 
+/**
+ * The Persona (GLOSSARY.md) an Application is made as: one of the user's, a UUID, or null for none.
+ * A malformed one is a 400. Picking an archived one is `PersonaArchived`; keeping one that was
+ * archived since isn't.
+ */
+const ApplicationPersonaId = Schema.NullOr(Schema.String.check(Schema.isUUID()));
+
 export const CreateApplication = Schema.Struct({
   company: Text,
   jobTitle: Text,
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
   status: Schema.optional(ApplicationStatus),
+  personaId: Schema.optional(ApplicationPersonaId),
 });
 
 export type CreateApplication = typeof CreateApplication.Type;
@@ -111,6 +119,8 @@ export const UpdateApplication = Schema.Struct({
   jobTitle: Schema.optional(Text),
   jobUrl: Schema.optional(Schema.NullOr(JobUrl)),
   status: Schema.optional(ApplicationStatus),
+  /** Changes its Persona, whatever its status; `null` clears it. */
+  personaId: Schema.optional(ApplicationPersonaId),
   /** The user's time zone: a change to rejected fails the latest Rounds of their day. */
   timeZone: Schema.optional(TimeZone),
 }).check(
@@ -137,6 +147,11 @@ export const Application = Schema.Struct({
   appliedAt: Schema.NullOr(Schema.DateFromString).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),
   ),
+  /**
+   * The Persona it's made as, archived or not (the web app marks an archived one), or null for
+   * none: a plain id (ADR-0044). A server from before the column leaves it out, which reads as null.
+   */
+  personaId: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
   createdAt: Schema.DateFromString,
   updatedAt: Schema.DateFromString,
 });
@@ -670,16 +685,20 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       success: Application,
       error: ApplicationNotFound,
     }),
+    // A Persona that isn't the user's is a 404; an archived one can't be picked (409).
     HttpApiEndpoint.post('create', '/', {
       payload: CreateApplication,
       success: Application.pipe(HttpApiSchema.status(201)),
+      error: [PersonaNotFound, PersonaArchived],
     }),
-    // A change to rejected fails the latest pending Rounds whose Outcome the user hasn't set.
+    // A change to rejected fails the latest pending Rounds whose Outcome the user hasn't set. A
+    // Persona other than the one it has must be the user's and active; the one it has stays even
+    // if it was archived since.
     HttpApiEndpoint.patch('update', '/:id', {
       params: IdParams,
       payload: UpdateApplication,
       success: Application,
-      error: ApplicationNotFound,
+      error: [ApplicationNotFound, PersonaNotFound, PersonaArchived],
     }),
     HttpApiEndpoint.delete('delete', '/:id', {
       params: IdParams,

@@ -76,7 +76,7 @@ flowchart TB
   subgraph api[apps/api/src]
     server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & personas & identity & email & support
     applications[modules/applications<br/>CRUD, Prep, Agenda,<br/>applications, rounds, prep_tasks] --> identity
-    applications -- "Skills.findOwned" --> personas
+    applications -- "Skills.findOwned,<br/>Personas.findOwned" --> personas
     personas[modules/personas<br/>skill library and Personas,<br/>exports Skills.findOwned and<br/>Personas.findOwned,<br/>skills, personas, persona_skills tables] --> identity
     personas --> platform
     support[modules/support<br/>problem reports, GitHub issues,<br/>user_reports] --> email
@@ -335,6 +335,7 @@ erDiagram
     text job_url "nullable"
     application_status status "NOT NULL DEFAULT 'applied'"
     timestamptz applied_at "when it was sent; null while saved; DEFAULT now()"
+    uuid persona_id "nullable, a Persona's id, no FK"
     timestamptz created_at
     timestamptz updated_at "bumped on every update"
   }
@@ -417,6 +418,9 @@ erDiagram
   insert by its default (null for a `saved` one), and on a status change if it was still null.
   Moving back to `saved` clears it. Rows from before it was
   added were backfilled from `created_at` (ADR-0045).
+- `persona_id` names the Persona an Application is made as, one of personas' `personas`, by a plain
+  id with no foreign key ([ADR-0044](adr/0044-links-between-modules.md)), checked through
+  `Personas.findOwned` before it's stored. Nullable: none, and every Application from before it.
 - Index `applications_user_id_updated_at_idx (user_id, updated_at DESC)` serves the only list
   query: one user's applications, newest first.
 - `rounds` are an application's interviews (`GLOSSARY.md`), in the applications module: an
@@ -470,7 +474,7 @@ erDiagram
   names of 1–80 characters, one per name ignoring case through the unique index
   `personas_user_id_name_key` on `(user_id, lower(name))` (the same `nameKey` expression as
   `skills`'), at most 20 per user, archived ones included. Never deleted while the account exists,
-  since Applications will name them by a plain id; `archived_at` hides one from pickers.
+  since Applications name them by a plain id; `archived_at` hides one from pickers.
 - `persona_skills` links a Persona to the Skills it needs, at most 50 per Persona. Both sides are
   personas' own tables, so both are real foreign keys, cascading; the primary key
   `(persona_id, skill_id)` serves reading a Persona's Skills, and `persona_skills_skill_id_idx`
@@ -510,8 +514,8 @@ are rejected at the API rather than left to React and the CSP.
 | GET/POST | `/api/auth/*`                                              | public                    | varies            | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                                      |
 | GET      | `/api/applications`                                        | session                   | 200               | 401                                                                                                                        |
 | GET      | `/api/applications/:id`                                    | session                   | 200               | 400 (malformed id), 401, 404 (unknown or not yours)                                                                        |
-| POST     | `/api/applications`                                        | session                   | 201               | 400, 401                                                                                                                   |
-| PATCH    | `/api/applications/:id`                                    | session                   | 200               | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                                    |
+| POST     | `/api/applications`                                        | session                   | 201               | 400, 401, 404 (`PersonaNotFound`), 409 (`PersonaArchived`)                                                                 |
+| PATCH    | `/api/applications/:id`                                    | session                   | 200               | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404 (also `PersonaNotFound`), 409 (`PersonaArchived`)                  |
 | DELETE   | `/api/applications/:id`                                    | session                   | 204               | 400 (malformed id), 401, 404                                                                                               |
 | GET      | `/api/applications/:id/rounds`                             | session                   | 200               | 400 (malformed id), 401, 404 (application unknown or not yours)                                                            |
 | POST     | `/api/applications/:id/rounds`                             | session                   | 201               | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                                  |
@@ -563,8 +567,17 @@ Skill name order ignoring case, decided in the one query that reads Personas' Sk
 listed Personas' at once). The Skill endpoints answer the whole Persona. Adding a Skill the
 Persona has is a no-op, even an archived one; adding an archived one it doesn't have is a 409
 `SkillArchived`; removing one it doesn't have is a no-op. An archived Persona can still be renamed
-and have its Skills changed. There's no `DELETE /api/personas/:id`: Applications will refer to
+and have its Skills changed. There's no `DELETE /api/personas/:id`: Applications refer to
 Personas ([ADR-0044](adr/0044-links-between-modules.md) rule 3).
+
+An Application the API answers carries its `personaId`: the Persona it's made as, archived or not,
+or null for none (and for a response from a server before the column, which the contract decodes
+as null). `POST /api/applications` and `PATCH /api/applications/:id` take a `personaId` (null
+clears it, whatever the Application's status), checked through personas' `Personas.findOwned` for
+the signed-in user before the write's transaction: another user's, or a missing one, is
+`PersonaNotFound`. Whether it's archived is applications' check, made only when the id differs
+from the one stored: newly picking an archived Persona is a 409 `PersonaArchived`, while an
+Application keeps one archived since, updated without `personaId` or with the same one.
 
 ## 6. Request flows
 

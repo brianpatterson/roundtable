@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { AgendaLive, ApplicationsLive } from './modules/applications/index.js';
 import { EmailLive, type EmailTransport } from './modules/email/index.js';
 import { IdentityLive } from './modules/identity/index.js';
-import { PersonasLive, Skills } from './modules/personas/index.js';
+import { Personas, PersonasLive, Skills } from './modules/personas/index.js';
 import { GitHubIssues, SupportLive } from './modules/support/index.js';
 import type { Env } from './platform/config/env.js';
 import { MAX_REQUEST_BODY_BYTES } from './platform/http/body-limit.js';
@@ -90,8 +90,9 @@ function routesLayer({ env, log, emailTransport, githubIssues, onBackgroundSend 
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
     Layer.provide([
       SystemLive,
-      // Applications checks the Skill ids of prep tasks through personas (ADR-0044).
-      ApplicationsLive.pipe(Layer.provide(Skills.layer)),
+      // Applications checks the Skill ids of prep tasks and the Persona ids of Applications
+      // through personas (ADR-0044).
+      ApplicationsLive.pipe(Layer.provide([Skills.layer, Personas.layer])),
       AgendaLive,
       PersonasLive,
       SupportLive(env, log, { githubIssues }),

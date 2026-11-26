@@ -69,6 +69,15 @@ describe('what the contract accepts', () => {
     ],
     // The server sets it.
     'applied date is dropped': [{ ...minimal, appliedAt: '2020-01-01T00:00:00.000Z' }, minimal],
+    'a Persona': [
+      { ...minimal, personaId: '00000000-0000-4000-8000-000000000000' },
+      { ...minimal, personaId: '00000000-0000-4000-8000-000000000000' },
+    ],
+    'no Persona': [
+      { ...minimal, personaId: null },
+      { ...minimal, personaId: null },
+    ],
+    'malformed Persona id': [{ ...minimal, personaId: 'abc' }, false],
   } satisfies Record<string, Case>;
 
   const updateCases = {
@@ -81,6 +90,12 @@ describe('what the contract accepts', () => {
     'data url': [{ jobUrl: 'data:text/html,x' }, false],
     'screening status': [{ status: 'screening' }, false],
     'saved status': [{ status: 'saved' }, { status: 'saved' }],
+    'a Persona': [
+      { personaId: '00000000-0000-4000-8000-000000000000' },
+      { personaId: '00000000-0000-4000-8000-000000000000' },
+    ],
+    'clears the Persona': [{ personaId: null }, { personaId: null }],
+    'malformed Persona id': [{ personaId: 'abc' }, false],
   } satisfies Record<string, Case>;
 
   const idCases = {
@@ -522,6 +537,10 @@ describe('responses from the release before the status rework still decode', () 
       status: 'interviewing',
       appliedAt: null,
     });
+  });
+
+  it('reads a missing Persona as none', () => {
+    expect(Schema.decodeUnknownSync(contract.Application)(before).personaId).toBeNull();
   });
 
   // Release 3 of ADR-0045: no deployed release returns `screening` any more, so there's one list

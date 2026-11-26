@@ -76,6 +76,7 @@ export const application = (fields: Partial<Application> = {}): Application => (
   jobUrl: null,
   status: 'applied',
   appliedAt: CREATED,
+  personaId: null,
   createdAt: CREATED,
   updatedAt: CREATED,
   ...fields,
@@ -378,6 +379,7 @@ export function createFakeApi() {
                 status,
                 // A saved application isn't sent yet; any other was sent now.
                 appliedAt: status === 'saved' ? null : now,
+                personaId: payload.personaId ?? null,
                 createdAt: now,
                 updatedAt: now,
               });

@@ -6,16 +6,18 @@ import {
   CurrentUser,
   MAX_PREP_TASKS,
   MAX_TAGS,
+  PersonaArchived,
   PrepTaskNotFound,
   RoundtableApi,
   TooManyPrepTasks,
   TooManyTags,
   sameTag,
+  type Persona,
   type RoundRating,
   type RoundSchedule,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { Skills } from '../personas/index.js';
+import { Personas, Skills } from '../personas/index.js';
 import { roundAdded, statusChanged, type Transaction } from './round-lifecycle.js';
 import { changeRound, deleteRound, withPrepTasks, type RoundPath } from './rounds.js';
 import { applications, prepTasks, rounds } from './schema.js';
@@ -52,6 +54,7 @@ export const ApplicationsLive = HttpApiBuilder.group(
   Effect.fn(function* (handlers) {
     const db = yield* Database;
     const skills = yield* Skills;
+    const personas = yield* Personas;
 
     const ownedBy = (userId: string, id: string) =>
       and(eq(applications.id, id), eq(applications.userId, userId));
@@ -70,6 +73,31 @@ export const ApplicationsLive = HttpApiBuilder.group(
 
         yield* skills.findOwned(user.id, skillId);
       });
+
+    /**
+     * The Persona a request picks for an Application: the signed-in user's (archived or not), or
+     * `PersonaNotFound`; none when it picks none. Run it before the write's transaction, not
+     * inside it: it's personas' read, and no transaction spans two modules (ADR-0044). Personas
+     * are never deleted, so one can't go missing in between.
+     */
+    const findPersona = (personaId: string | null | undefined) =>
+      Effect.gen(function* () {
+        if (personaId === undefined || personaId === null) return undefined;
+
+        const user = yield* CurrentUser;
+
+        return yield* personas.findOwned(user.id, personaId);
+      });
+
+    /**
+     * Fails with `PersonaArchived` if the picked `persona` is archived, unless it's the one the
+     * Application has already (`current`): that one stays, even if it was archived since. Only a
+     * newly picked Persona must be active.
+     */
+    const checkPicked = (persona: Persona | undefined, current: string | null) =>
+      persona === undefined || persona.archivedAt === null || persona.id === current
+        ? Effect.void
+        : Effect.fail(new PersonaArchived());
 
     /** Fails with `PrepTaskNotFound` unless the Round `roundId` has the task `taskId`. */
     const findTask = (tx: Transaction, roundId: string, taskId: string) =>
@@ -141,6 +169,9 @@ export const ApplicationsLive = HttpApiBuilder.group(
         Effect.gen(function* () {
           const user = yield* CurrentUser;
 
+          // A new Application has no Persona yet, so an archived one is never the one it keeps.
+          yield* checkPicked(yield* findPersona(payload.personaId), null);
+
           const [row] = yield* db
             .insert(applications)
             .values({
@@ -162,19 +193,24 @@ export const ApplicationsLive = HttpApiBuilder.group(
       update: ({ params, payload: { timeZone, ...changes } }) =>
         Effect.gen(function* () {
           const user = yield* CurrentUser;
+          const persona = yield* findPersona(changes.personaId);
 
           // One transaction holding the application's row, so the status it changes from is the
-          // one it had, and the Rounds a rejection fails fail with it.
+          // one it had, the Persona it keeps is the one it has, and the Rounds a rejection fails
+          // fail with it.
           const row = yield* db
             .transaction((tx) =>
               Effect.gen(function* () {
                 const [before] = yield* tx
-                  .select({ status: applications.status })
+                  .select({ status: applications.status, personaId: applications.personaId })
                   .from(applications)
                   .where(ownedBy(user.id, params.id))
-                  .for('update');
+                  .for('update')
+                  .pipe(Effect.orDie);
 
                 if (!before) return undefined;
+
+                yield* checkPicked(persona, before.personaId);
 
                 const [updated] = yield* tx
                   .update(applications)
@@ -191,14 +227,15 @@ export const ApplicationsLive = HttpApiBuilder.group(
                     }),
                   })
                   .where(ownedBy(user.id, params.id))
-                  .returning();
+                  .returning()
+                  .pipe(Effect.orDie);
 
-                if (updated) yield* statusChanged(tx, before, updated, timeZone);
+                if (updated) yield* statusChanged(tx, before, updated, timeZone).pipe(Effect.orDie);
 
                 return updated;
               }),
             )
-            .pipe(Effect.orDie);
+            .pipe(Effect.catchTag('SqlError', Effect.die));
 
           if (!row) return yield* new ApplicationNotFound();
 

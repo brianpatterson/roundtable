@@ -44,6 +44,11 @@ export const applications = pgTable(
     // When it was sent; null while saved (ADR-0045). Postgres's clock, like the timestamps. The
     // default covers the release before this column, whose inserts are always sent applications.
     appliedAt: timestamp('applied_at', { withTimezone: true }).defaultNow(),
+    // The Persona (GLOSSARY.md) it's made as, or null for none: one of the personas module's, a
+    // plain id with no foreign key (ADR-0044 rule 1), checked through personas' `Personas.findOwned`
+    // before it's stored. Personas are archived, never deleted. Nullable, so the release before it
+    // still inserts.
+    personaId: uuid('persona_id'),
     ...timestamps,
   },
   // Every query filters by user and sorts by most recently updated.
