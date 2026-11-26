@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import type { InterviewType, Round } from '@roundtable/contract';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { SnackbarProvider } from '../../design-system';
 import { serverError, setUpFakeApi } from '../../shared/testing/fake-api';
 import { createTestRouter, TestRouterProvider } from '../../shared/testing/router';
 import { AgendaPage } from './AgendaPage';
@@ -59,10 +60,13 @@ const renderPage = async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const router = createTestRouter(<ApplicationPage applicationId={ACME_ID} />, '/elsewhere');
 
+  // The shell mounts the snackbars around every page; the page's Persona picker confirms in one.
   render(
-    <QueryClientProvider client={queryClient}>
-      <TestRouterProvider router={router} />
-    </QueryClientProvider>,
+    <SnackbarProvider>
+      <QueryClientProvider client={queryClient}>
+        <TestRouterProvider router={router} />
+      </QueryClientProvider>
+    </SnackbarProvider>,
   );
 
   await screen.findByRole('heading', { name: 'Rounds' });
@@ -1415,9 +1419,11 @@ describe('the Agenda, when a Round changes', () => {
     );
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <TestRouterProvider router={router} />
-      </QueryClientProvider>,
+      <SnackbarProvider>
+        <QueryClientProvider client={queryClient}>
+          <TestRouterProvider router={router} />
+        </QueryClientProvider>
+      </SnackbarProvider>,
     );
 
     await screen.findByRole('heading', { name: 'Rounds' });

@@ -20,3 +20,9 @@
     overflow-wrap: anywhere;
   }
 }
+
+/* The Persona picker is as wide as its value, like the other values, not the whole row. */
+.persona {
+  justify-self: start;
+  max-width: 100%;
+}

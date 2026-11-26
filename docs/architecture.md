@@ -89,7 +89,7 @@ flowchart TB
   end
   subgraph web[apps/web/src]
     shell[shell/<br/>providers, layout and nav, routes,<br/>Unauthorized → sessionEnded] --> wapps[modules/applications<br/>Agenda, table, application page] & wper[modules/personas<br/>Skills and Personas pages,<br/>useSkills, usePersonas] & wid[modules/identity] & wsup[modules/support]
-    wapps -->|useSkills| wper
+    wapps -->|useSkills, usePersonas| wper
     wapps --> wshared[shared/<br/>API client]
     wper --> wshared
     wid --> wshared
@@ -98,29 +98,29 @@ flowchart TB
   end
 ```
 
-| Module       | API                                                                                                                                                                                                                | Web                                                                                                                                                                                     | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| applications | CRUD handlers for applications and their Rounds with their Prep, the Agenda, `applications`, `rounds` and `prep_tasks` tables                                                                                      | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds` and each Round's `RoundPrep`, which names Skills from personas' `useSkills()`), query keys        | `applications.ts` |
-| personas     | One `PersonasLive` layer: `/api/skills` (the skill library) and `/api/personas`, the `Skills` and `Personas` services other modules check ids with (`findOwned`), `skills`, `personas` and `persona_skills` tables | `SkillsPage` (add, rename, archive, restore), `PersonasPage` (list + add), `PersonaPage` (rename, archive, restore, tick Skills), `useSkills()` and `usePersonas()` (for other modules) | `personas.ts`     |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                                                                                       | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                                                                                                          | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                                                                                              | none                                                                                                                                                                                    | none              |
-| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports`                                                                        | `ReportProblem` (link-style button + dialog)                                                                                                                                            | `support.ts`      |
-| (system)     | `/api/health`, in `server.ts`                                                                                                                                                                                      | none                                                                                                                                                                                    | `system.ts`       |
+| Module       | API                                                                                                                                                                                                                | Web                                                                                                                                                                                                                                                                   | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers for applications and their Rounds with their Prep, the Agenda, `applications`, `rounds` and `prep_tasks` tables                                                                                      | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds` and each Round's `RoundPrep`, which names Skills from personas' `useSkills()`), a Persona picker in the form and on the page (names from personas' `usePersonas()`), query keys | `applications.ts` |
+| personas     | One `PersonasLive` layer: `/api/skills` (the skill library) and `/api/personas`, the `Skills` and `Personas` services other modules check ids with (`findOwned`), `skills`, `personas` and `persona_skills` tables | `SkillsPage` (add, rename, archive, restore), `PersonasPage` (list + add), `PersonaPage` (rename, archive, restore, tick Skills), `useSkills()` and `usePersonas()` (for other modules)                                                                               | `personas.ts`     |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                                                                                       | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                                                                                                                                                                                        | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                                                                                              | none                                                                                                                                                                                                                                                                  | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports`                                                                        | `ReportProblem` (link-style button + dialog)                                                                                                                                                                                                                          | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                                                                                                      | none                                                                                                                                                                                                                                                                  | `system.ts`       |
 
 **Routes** ([ADR-0049](adr/0049-tanstack-router.md)): the shell owns the web app's pages, in
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
 component, passing the URL's params as props:
 
-| Path                           | Page                                                                                                                                                                           |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`                            | applications' `AgendaPage`: upcoming Rounds grouped by day, with time left and Prep progress, each linking to its application                                                  |
-| `/applications`                | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                                                                     |
-| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Rounds with their Outcomes, Self-ratings, Tags and Prep (notes and a prep task checklist) |
-| `/personas`                    | personas' `PersonasPage`: the active Personas with their Skill counts, each linking to its page, archived ones in a collapsed section, and the add form                        |
-| `/personas/$personaId`         | personas' `PersonaPage`: the Persona's name, Rename, Archive or Restore, and a checkbox for each active Skill (and each archived one it has); "Persona not found" otherwise    |
-| `/skills`                      | personas' `SkillsPage`: the skill library, to add, rename, archive and restore Skills, archived ones in a collapsed section                                                    |
-| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                                                                          |
-| anything else                  | the shell's "Page not found", with a link back to the Agenda                                                                                                                   |
+| Path                           | Page                                                                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                            | applications' `AgendaPage`: upcoming Rounds grouped by day, with time left and Prep progress, each linking to its application                                                           |
+| `/applications`                | applications' `ApplicationsPage`: the form and the table, each company linking to its page                                                                                              |
+| `/applications/$applicationId` | applications' `ApplicationPage`: company, job title, job link, status, applied date, Persona, Rounds with their Outcomes, Self-ratings, Tags and Prep (notes and a prep task checklist) |
+| `/personas`                    | personas' `PersonasPage`: the active Personas with their Skill counts, each linking to its page, archived ones in a collapsed section, and the add form                                 |
+| `/personas/$personaId`         | personas' `PersonaPage`: the Persona's name, Rename, Archive or Restore, and a checkbox for each active Skill (and each archived one it has); "Persona not found" otherwise             |
+| `/skills`                      | personas' `SkillsPage`: the skill library, to add, rename, archive and restore Skills, archived ones in a collapsed section                                                             |
+| `/reset-password`              | identity's password-reset page, shown by `AuthGate` before the router                                                                                                                   |
+| anything else                  | the shell's "Page not found", with a link back to the Agenda                                                                                                                            |
 
 Every signed-in page sits below the shell's header, which the router renders (so its links know
 the current page): the title, the user's name, the theme and sign-out, and a "Pages" navigation
@@ -137,6 +137,14 @@ archiving or restoring a Skill (each of which invalidates that key) shows everyw
 A Round's Prep on its application's page is the first such reader: its prep tasks show their
 Skill's name from `useSkills()`, and its Skill picker offers the active Skills. Every change to
 Prep invalidates the Round's list and the Agenda, which carries each Round's prep tasks.
+Applications reads Personas the same way, through `usePersonas()`: the new-application form has a
+"Persona" picker (None and the active Personas) when the user has an active one, and the
+application page has a "Persona" row whose picker also keeps the Application's own Persona if
+it's archived, marked so; with no Personas at all and none set, the row links to `/personas`.
+Both build their options with one function (`applications/persona.ts`), and the page names the
+Persona by its `personaId` in that list, so a rename shows at once. A change on the page confirms
+in a snackbar; a failure (a `PersonaArchived`, say) shows in one and the picker goes back to the
+stored Persona.
 The Agenda ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)) reads `GET /api/agenda` with
 the browser's time zone under `['applications', 'agenda']`, so whatever invalidates the
 applications (a status change, a new Round) refreshes it, and rescheduling or deleting a Round
