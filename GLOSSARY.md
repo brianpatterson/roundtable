@@ -14,7 +14,7 @@ mark, the code is what's true.
 - **Application**: one job the user is pursuing at one company, from the moment they save the
   posting until it ends (an offer accepted, a rejection, or a withdrawal). An application can
   exist before it is sent; its **applied date** is when it was sent, not when it was saved.
-  Uses at most one Persona. Its **status** is a coarse stage set by the user: saved, applied,
+  Uses at most one Persona, or none. Its **status** is a coarse stage set by the user: saved, applied,
   interviewing, offer, accepted, rejected or withdrawn; Rounds carry the detail within
   interviewing. Adding the first Round moves an applied Application to interviewing.
 - **Document** _(planned)_: a resume or a cover letter. A Persona's documents have a **draft** the user edits
@@ -36,7 +36,13 @@ mark, the code is what's true.
   Rounds behind it is always shown with it.
 - **Persona** _(planned)_: one way the user presents themselves for a kind of job (for example "Backend
   engineer" or "Engineering manager"). It holds the resume, cover letter and skills to practice
-  for applications made as that persona. Not to be confused with the user's account.
+  for applications made as that persona. Not to be confused with the user's account. A name is
+  up to 80 characters, and two that differ only in case or surrounding spaces are the same
+  Persona. Renamed, archived and restored, never deleted; an archived Persona can't be picked for
+  an Application but still shows on the ones that use it. Its **Skills** are picked from the skill
+  library (an archived Skill can't be added, but stays where it was) and listed by name. An
+  Application's Persona can be set, changed or cleared at any time, and its Skills come first
+  when picking a prep task's Skill for that Application's Rounds.
 - **Prep**: what the user does to get ready for one Round: its **Prep notes** and
   its **prep tasks**. Belongs to the Round and goes with it.
 - **Prep notes**: one plain-text note per Round, written before it ("they use Go, review

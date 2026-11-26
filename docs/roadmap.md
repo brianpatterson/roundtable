@@ -291,7 +291,7 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
    ([ADR-0061](adr/0061-inferred-round-outcomes.md)).
 3. ✅ **Agenda**: the home page. Upcoming rounds across open applications in date order, then those
    not scheduled yet, with time left ([ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)).
-4. **Skills and prep** (designed 2026-11-25; terms in `GLOSSARY.md`, no new ADR: it follows
+4. ✅ **Skills and prep** (built 2026-11-26, [#226](https://github.com/brianpatterson/roundtable/issues/226); designed 2026-11-25; terms in `GLOSSARY.md`, no new ADR: it follows
    [ADR-0044](adr/0044-links-between-modules.md) and [ADR-0070](adr/0070-agenda-home-page-one-endpoint.md)):
    - **Skills** start the `personas` module (ADR-0044 puts them there, so they never have to
      move): `GET` and `POST /api/skills` and `PATCH /api/skills/:id` (rename, archive, restore), a `skills` table with `user_id` cascading from
@@ -313,8 +313,32 @@ by plain ids ([ADR-0044](adr/0044-links-between-modules.md)). Each step ships so
      progress, and notes of up to 10,000 characters per Round have no reason to travel there.
    - A design-system `Checkbox` (on Base UI's) ticks prep tasks. Creating a Skill from the task
      form's picker waits for a combobox.
-5. **Personas and documents**: the rest of the `personas` module, a Markdown editor, versions, forks, and
-   PDF export. The editor and PDF rendering each get their own design session and ADR.
+5. **Personas and documents**, in two batches:
+   - **5a. Personas** (designed 2026-11-26; terms in `GLOSSARY.md`, no new ADR: it follows
+     [ADR-0044](adr/0044-links-between-modules.md)):
+     - **API, in personas:** a `personas` table shaped like `skills` (name up to 80 characters,
+       unique per user ignoring case through `(user_id, lower(name))`, a taken one a 409
+       `PersonaNameTaken { archived }`, at most 20 per user, archived ones included) and a
+       `persona_skills` link table with real foreign keys, since both sides are personas'.
+       `GET` and `POST /api/personas`, `PATCH /api/personas/:id` (rename, archive, restore),
+       and `POST /api/personas/:id/skills` and `DELETE /api/personas/:id/skills/:skillId`, which
+       return the Persona: `{ id, name, archivedAt, skillIds, createdAt }`, `skillIds` in Skill
+       name order. Adding an archived Skill is refused, adding one it has is a no-op, and a
+       Persona has at most 50. Never deleted. `personas/index.ts` exports `Personas.findOwned`.
+     - **An Application's Persona:** a nullable `persona_id` on `applications`, a plain id
+       resolved through `Personas.findOwned` (another user's is a 404). Set on create, changed or
+       cleared on update at any time; newly picking an archived Persona is a 409
+       `PersonaArchived`, while an Application already using one keeps it.
+     - **Web:** a `/personas` page like `/skills`, and `/personas/$id` with the Persona's Skills
+       as Checkboxes over the active library (an archived Skill it has stays, ticked and
+       marked). Nav: Agenda, Applications, Personas, Skills. The new-application form has a
+       Persona `Select` only when the user has an active Persona; the application page has a
+       Persona row to change or clear it. A design-system `Select` gains option groups, and a
+       Round's prep task picker lists the Application's Persona's Skills first, under its name.
+     - **Open for 5b:** once Versions freeze what was sent, should a sent Application's Persona
+       still change freely?
+   - **5b. Documents**: a Persona's resume and cover letter, a Markdown editor, Versions, Forks,
+     and PDF export. The editor and PDF rendering each get their own design session and ADR.
 6. **Analytics v1**: pass rate and average self-rating per interview type, with the count of
    rounds behind each.
 7. **Calendar**: an ICS feed to subscribe to from Google or Apple Calendar (its secret URL and
