@@ -192,7 +192,7 @@ jobs:
             --max-turns 250
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:adrs),Bash(pnpm check:format),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:browser:*),Bash(pnpm --filter @roundtable/web test:mutation:*),Bash(pnpm --filter @roundtable/api test:mutation:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
+            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:adrs),Bash(pnpm check:format),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:browser:*),Bash(pnpm --filter @roundtable/web test:mutation:*),Bash(pnpm --filter @roundtable/api test:mutation:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git --config-env:*),Bash(git --config-env=*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
 
       # The guards after every agent run live in .github/factory/ and were copied from main above:
@@ -305,7 +305,7 @@ jobs:
             .github/factory/fetch-report.sh .github/factory/guard-report-text.sh \
             .github/factory/takedown-report-quotes.sh .github/factory/explain-failure.sh \
             .github/factory/flag-suspicious.sh .github/factory/takedown-credentials.sh \
-            .github/factory/protected-changes.sh "$RUNNER_TEMP/"
+            .github/factory/protected-changes.sh .github/factory/merge-main.sh "$RUNNER_TEMP/"
           mkdir -p "$RUNNER_TEMP/user-report"
       # The ticket as the label path's agent sees it: the title, the description, and comments from
       # the owner and from github-actions[bot] (the reviewer, the dispatcher); nobody else's.
@@ -393,7 +393,7 @@ jobs:
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
             --add-dir ${{ runner.temp }}/user-report
-            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:adrs),Bash(pnpm check:format),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:browser:*),Bash(pnpm --filter @roundtable/web test:mutation:*),Bash(pnpm --filter @roundtable/api test:mutation:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git push -u origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
+            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:adrs),Bash(pnpm check:format),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:browser:*),Bash(pnpm --filter @roundtable/web test:mutation:*),Bash(pnpm --filter @roundtable/api test:mutation:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git push -u origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr checks:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git --config-env:*),Bash(git --config-env=*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["built","needs-info"]},"branch":{"type":"string"},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 
@@ -527,6 +527,30 @@ jobs:
           [ "$REPORT" != true ] || summary="Opened the pull request: #$pr"
           gh issue comment "$ISSUE" --body "$(printf '%s\n\n<sub>Pull request #%s, from [this run](%s). ADR-0047.</sub>\n' \
             "$summary" "$pr" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+
+      # The agent's sandbox can't write .github/, .claude/ or CLAUDE.md, so its `git merge
+      # origin/main` is refused once main has changed them (the owner's edits after a retro), and
+      # the owner merged by hand (retro #241). Merged here instead, by main's script, in a fresh
+      # checkout of the branch the check above accepted: only when main changed nothing else, and
+      # never through a conflict, which the conflict resolver takes (ADR-0058). Pushed with a fresh
+      # Claude App token, so CI and the reviewer run on the merge (ADR-0072).
+      - uses: actions/checkout@v7
+        if: always() && steps.result.outputs.branch != ''
+        with:
+          ref: ${{ steps.result.outputs.branch }}
+          path: .factory-merge
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge main if only the factory's own files changed there
+        if: always() && steps.result.outputs.branch != ''
+        working-directory: .factory-merge
+        # A push that fails leaves a pull request behind main, which may merge (ADR-0035): the
+        # error is annotated, and the steps below still run.
+        continue-on-error: true
+        env:
+          BRANCH: ${{ steps.result.outputs.branch }}
+        run: '"$RUNNER_TEMP/merge-main.sh" "$BRANCH"'
 
       # Every pull request found above, and any from the branches found (ADR-0029). The agent can't
       # comment, but it writes pull request descriptions.
@@ -714,7 +738,7 @@ jobs:
             --max-turns 100
             --permission-mode acceptEdits
             --append-system-prompt-file ${{ runner.temp }}/implementer.md
-            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:adrs),Bash(pnpm check:format),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:browser:*),Bash(pnpm --filter @roundtable/web test:mutation:*),Bash(pnpm --filter @roundtable/api test:mutation:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
+            --allowedTools "Edit,Write,MultiEdit,Bash(cd:*),Bash(pnpm check),Bash(pnpm check:effect),Bash(pnpm check:deps),Bash(pnpm check:adrs),Bash(pnpm check:format),Bash(pnpm check:boundaries),Bash(pnpm prettier:*),Bash(pnpm audit:*),Bash(pnpm format:*),Bash(pnpm lint),Bash(pnpm lint:fix),Bash(pnpm typecheck),Bash(pnpm test:*),Bash(pnpm --filter @roundtable/web test:*),Bash(pnpm --filter @roundtable/api test:*),Bash(pnpm vitest:*),Bash(pnpm db:generate:*),Bash(pnpm --filter @roundtable/web test:browser:*),Bash(pnpm --filter @roundtable/web test:mutation:*),Bash(pnpm --filter @roundtable/api test:mutation:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git grep:*),Bash(git add:*),Bash(git rm:*),Bash(git mv:*),Bash(git restore:*),Bash(git commit:*),Bash(git push),Bash(git push origin:*),Bash(git fetch:*),Bash(git merge:*),Bash(git switch:*),Bash(git checkout:*),Bash(git branch:*),Bash(ls:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run rerun:*),Bash(gh api repos/${{ github.repository }}/check-runs:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(pnpm exec:*),Bash(pnpm dlx:*),Bash(pnpx:*),Bash(npx:*),Bash(git config:*),Bash(git remote:*),Bash(git -c:*),Bash(git --config-env:*),Bash(git --config-env=*),Bash(git credential:*),Read(./.git/**),Grep(./.git/**),Glob(./.git/**),Edit(./.git/**),Write(./.git/**),Edit(./.github/**),Write(./.github/**),Edit(./.claude/**),Write(./.claude/**),Edit(./CLAUDE.md),Write(./CLAUDE.md)"
             --json-schema '{"type":"object","properties":{"outcome":{"type":"string","enum":["fixed","reran","needs-human"]},"summary":{"type":"string"}},"required":["outcome","summary"],"additionalProperties":false}'
 

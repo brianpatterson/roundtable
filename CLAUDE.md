@@ -59,6 +59,8 @@ each module is what a future service or microfrontend would become.
   `.github/workflows/resolve-conflicts.yml` merges main into a factory PR that conflicts with it, after
   every merge and when the sweeper finds one, and has the implementer resolve it; `pnpm check:adrs`
   catches two ADRs taking one number, the usual cause ([ADR-0058](docs/adr/0058-factory-resolves-conflicts.md)).
+  After a build, `.github/factory/merge-main.sh` merges in a main that changed only `.github/`, `.claude/`
+  or `CLAUDE.md`, which the agent's sandbox can't write, and pushes with a fresh App token ([ADR-0072](docs/adr/0072-factory-merges-main-after-the-build.md)).
   Agent jobs run `.github/actions/isolate-agent` and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, and
   publish only through `.github/factory/guard-secrets.sh` ([ADR-0029](docs/adr/0029-software-factory-credential-hardening.md)).
   Before the agent starts, main's `.github/factory/install-browsers.sh` installs Chromium for the browser tests, running
