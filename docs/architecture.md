@@ -245,6 +245,13 @@ counted per kind, per address. User reports all go to the owner's one address, s
 per-address limit is `REPORT_LIMIT_PER_DAY` instead. The App provides the `Database` it shares,
 and tests swap the transport through `AppOptions.emailTransport`.
 
+Identity's emails (reset and verification links) are sent after Better Auth answers, not before:
+only some answers send one (a reset for an existing account, a sign-up for a new address), so
+waiting for the send would make those slower and say whether the account exists. `BetterAuth.layer`
+starts the send and returns; the send logs and reports its own failures, and the App waits for
+sends in flight before it closes the database. Tests wait for them through
+`AppOptions.onBackgroundSend`: `setupTestApp`'s `settled()`, which `takeEmail` and `reset()` call.
+
 **Support** gives the App `SupportLive(env, log)`: "Report a problem"
 ([ADR-0038](adr/0038-user-problem-reports.md)). `POST /api/reports` is public, behind identity's
 `OptionalSession` middleware, which provides a `Viewer` (the user, or none) and never fails, so a
