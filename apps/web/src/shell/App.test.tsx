@@ -76,12 +76,14 @@ describe('App: session expiry', () => {
 
     await expectSignInPageWithNotice();
     expectSignedInCacheCleared(queryClient);
-    // Not retried: asking again won't bring the session back.
-    expect(answered(401)).toHaveLength(1);
+    // Not retried: asking again won't bring the session back. The page asks once each for the
+    // applications and, for the new-application form, the Personas.
+    expect(answered(401)).toHaveLength(2);
   });
 
+  // The page's two reads (the applications, and the Personas for the form) are signed in.
   it('returns to the sign-in page, with a notice, when an applications mutation answers 401', async () => {
-    fake.expireSessionAfter(1);
+    fake.expireSessionAfter(2);
     const queryClient = await renderShell();
 
     expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();
@@ -94,7 +96,7 @@ describe('App: session expiry', () => {
   });
 
   it('returns to the sign-in page, with a notice and no snackbar, when a status change answers 401', async () => {
-    fake.expireSessionAfter(1);
+    fake.expireSessionAfter(2);
     const queryClient = await renderShell();
 
     expect(await screen.findByRole('row', { name: /Acme/ })).toBeDefined();

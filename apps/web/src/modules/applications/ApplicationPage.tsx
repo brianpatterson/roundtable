@@ -1,11 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
-import { ApplicationNotFound, isApplicationId } from '@roundtable/contract';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApplicationNotFound, isApplicationId, type Application } from '@roundtable/contract';
 import { ApiError } from '@roundtable/contract/client';
-import { Alert, Link } from '../../design-system';
+import { Alert, Link, Select, useSnackbar, type SelectOption } from '../../design-system';
 import { api } from '../../shared/api';
+import { usePersonas } from '../personas';
 import styles from './ApplicationPage.module.css';
 import { appliedLabel, statusLabel } from './format';
-import { applicationQueryKey } from './queries';
+import { personaChoice, personaIdOf, personaOptions } from './persona';
+import { applicationQueryKey, applicationsQueryKey } from './queries';
 import { Rounds } from './Rounds';
 
 /**
@@ -82,8 +84,75 @@ export function ApplicationPage({ applicationId }: { applicationId: string }) {
         <dd>{statusLabel(status)}</dd>
         <dt>Applied</dt>
         <dd>{appliedLabel(appliedAt)}</dd>
+        <dt>Persona</dt>
+        <dd>
+          <PersonaField application={application.data} />
+        </dd>
       </dl>
       <Rounds applicationId={applicationId} />
     </section>
+  );
+}
+
+/**
+ * The Persona an Application is made as, and the picker that changes it. Names come from
+ * `usePersonas()` by id, so a Persona renamed elsewhere shows its new name here. While a change is
+ * saved the picker shows it; if it fails, the picker goes back to the stored Persona.
+ */
+function PersonaField({ application }: { readonly application: Application }) {
+  const queryClient = useQueryClient();
+  const showSnackbar = useSnackbar();
+  const personas = usePersonas();
+
+  const update = useMutation({
+    mutationFn: (picked: SelectOption<string>) =>
+      api.updateApplication(application.id, { personaId: personaIdOf(picked.value) }),
+    onSuccess: (updated, picked) => {
+      queryClient.setQueryData(applicationQueryKey(application.id), updated);
+      showSnackbar(
+        updated.personaId === null ? 'Persona cleared.' : `Persona set to ${picked.label}.`,
+        'status',
+      );
+    },
+    meta: { errorSnackbar: true },
+    // The list shows when each application was last updated. Only the list and this application,
+    // not its Rounds, which a Persona doesn't change.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: applicationsQueryKey, exact: true }),
+        queryClient.invalidateQueries({
+          queryKey: applicationQueryKey(application.id),
+          exact: true,
+        }),
+      ]),
+  });
+
+  if (personas.isPending) return 'Loading…';
+
+  if (personas.isError) return personas.error.message;
+
+  // Nothing to pick: point the way to adding a Persona instead.
+  if (personas.data.length === 0 && application.personaId === null) {
+    return (
+      <>
+        None. <Link to="/personas">Add a persona</Link>
+      </>
+    );
+  }
+
+  const options = personaOptions(personas.data, application.personaId);
+
+  return (
+    <Select
+      label="Persona"
+      hideLabel
+      options={options}
+      value={update.isPending ? update.variables.value : personaChoice(application.personaId)}
+      onValueChange={(choice) => {
+        const picked = options.find((option) => option.value === choice);
+
+        if (picked) update.mutate(picked);
+      }}
+    />
   );
 }
