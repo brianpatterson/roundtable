@@ -13,7 +13,12 @@ export { Dialog, type DialogProps } from './components/Dialog/Dialog';
 
 export { Link } from './components/Link/Link';
 
-export { Select, type SelectOption, type SelectProps } from './components/Select/Select';
+export {
+  Select,
+  type SelectGroup,
+  type SelectOption,
+  type SelectProps,
+} from './components/Select/Select';
 
 export {
   SnackbarProvider,
