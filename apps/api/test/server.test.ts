@@ -9,6 +9,7 @@ import { createServer } from 'node:net';
 import { serveApp } from '../src/server.js';
 import { scrubEvent, Sentry } from '../src/platform/observability/error-tracking.js';
 import { createLogger } from '../src/platform/observability/logging.js';
+import { MAX_REQUEST_BODY_BYTES } from '../src/platform/http/body-limit.js';
 import { env, setupTestApp, signUp } from './helpers.js';
 
 const freePort = () =>
@@ -146,6 +147,20 @@ describe('the production server (serveApp)', () => {
     expect(reported.length).toBeGreaterThan(0);
     expect(JSON.stringify(reported)).not.toContain(resetToken);
     expect(reported.some((e) => e.request?.url?.endsWith('/reset-password/<redacted>'))).toBe(true);
+  });
+
+  // The Node server reads bodies its own way (and hands Better Auth a stream): the limit holds.
+  it.each([
+    ['a contract endpoint', '/api/reports'],
+    ["one of Better Auth's", '/api/auth/sign-in/email'],
+  ])('answers 413 to a body past the size limit on %s', async (_, path) => {
+    const res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: env.BETTER_AUTH_URL },
+      body: JSON.stringify({ description: 'x'.repeat(MAX_REQUEST_BODY_BYTES), pagePath: '/' }),
+    });
+
+    expect(res.status).toBe(413);
   });
 
   // Last: it stops the server.

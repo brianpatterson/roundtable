@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { NodeHttpServer } from '@effect/platform-node';
-import { Effect, Layer } from 'effect';
-import { HttpRouter, HttpServer } from 'effect/http';
+import { ByteSize, Effect, Layer } from 'effect';
+import { HttpIncomingMessage, HttpRouter, HttpServer } from 'effect/http';
 import { HttpApiBuilder, HttpApiMiddleware } from 'effect/http-api';
 import { RoundtableApi } from '@roundtable/contract';
 import { createServer } from 'node:http';
@@ -11,6 +11,7 @@ import { IdentityLive } from './modules/identity/index.js';
 import { PersonasLive, Skills } from './modules/personas/index.js';
 import { GitHubIssues, SupportLive } from './modules/support/index.js';
 import type { Env } from './platform/config/env.js';
+import { MAX_REQUEST_BODY_BYTES } from './platform/http/body-limit.js';
 import { Database } from './platform/database/effect.js';
 import { PromiseDatabase } from './platform/database/promise.js';
 import { errorTrackingLayer, type Sentry } from './platform/observability/error-tracking.js';
@@ -65,6 +66,20 @@ const ReportErrors = HttpRouter.middleware((httpEffect) => Effect.withErrorRepor
   global: true,
 });
 
+/**
+ * Bodies Effect reads (every HttpApi endpoint's payload) stop at the limit, with a 413. Better
+ * Auth's route gets the body as a Web Request, which this doesn't reach: identity limits it.
+ */
+const LimitBodySize = HttpRouter.middleware(
+  (httpEffect) =>
+    Effect.provideService(
+      httpEffect,
+      HttpIncomingMessage.MaxBodySize,
+      ByteSize.bytes(MAX_REQUEST_BODY_BYTES),
+    ),
+  { global: true },
+);
+
 /** Every route, with the modules and the resources they need. */
 function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
@@ -83,7 +98,7 @@ function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
     Layer.provide(HttpApiMiddleware.layerProblemDetails({ includeDetails: true })),
   );
 
-  return Layer.mergeAll(api, ReportErrors).pipe(
+  return Layer.mergeAll(api, ReportErrors, LimitBodySize).pipe(
     // The Mailer identity and support send through, with email's limits and transport chosen inside.
     Layer.provide(EmailLive(env, log, { transport: emailTransport })),
     Layer.provide(Database.layer(env.DATABASE_URL)),

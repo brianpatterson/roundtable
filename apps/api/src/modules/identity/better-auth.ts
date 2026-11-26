@@ -6,6 +6,7 @@ import { PromiseDatabase, type Db } from '../../platform/database/promise.js';
 import { accounts, sessions, users, verifications } from './schema.js';
 import { Mailer, type SendEmail } from '../email/index.js';
 import type { Env } from '../../platform/config/env.js';
+import { limitingBodySize } from '../../platform/http/body-limit.js';
 import { betterAuthLogger, type Log } from '../../platform/observability/logging.js';
 
 interface ConfiguredProvider {
@@ -186,7 +187,11 @@ export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/
 
         const auth = createAuth(db, env, (email) => run(send(email)), log);
 
-        return { ...auth, handler: reportingFailures(auth.handler, reportUnexpected) };
+        // Its route gets the body as a Web Request, past Effect's MaxBodySize: limited here.
+        return {
+          ...auth,
+          handler: limitingBodySize(reportingFailures(auth.handler, reportUnexpected)),
+        };
       }),
     );
 }
