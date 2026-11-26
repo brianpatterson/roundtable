@@ -67,6 +67,58 @@ describe('server logs during a database outage', () => {
     // Better Auth's own log line now goes through our logger, not the console.
     expect(logs).toContain('[Better Auth]');
   });
+
+  // Better Auth's routes run behind better-call's router, which prints a failure it doesn't
+  // recognize to the console itself, unless the failure is rethrown to us.
+  it("keeps Better Auth's routes' failed queries off the console", async () => {
+    const user = await signUp(t);
+
+    await t.inject({
+      method: 'POST',
+      url: '/api/auth/request-password-reset',
+      headers: { origin: env.BETTER_AUTH_URL },
+      payload: { email: user.email, redirectTo: '/reset-password' },
+    });
+
+    const resetPath = linkPath(takeEmail(t, user.email, 'Reset'));
+    const resetSegment = new URL(resetPath, env.BETTER_AUTH_URL).pathname.split('/').pop() ?? '';
+
+    expect(resetSegment).not.toBe('');
+
+    for (const spy of consoleOutput) spy.mockClear();
+
+    const responses = [
+      await broken.inject({ method: 'GET', url: resetPath }),
+      await broken.inject({
+        method: 'POST',
+        url: '/api/auth/sign-in/email',
+        headers: { origin: env.BETTER_AUTH_URL },
+        payload: { email: user.email, password: user.password },
+      }),
+      await broken.inject({
+        method: 'POST',
+        url: '/api/auth/sign-up/email',
+        headers: { origin: env.BETTER_AUTH_URL },
+        payload: { name: 'Someone', email: user.email, password: user.password },
+      }),
+    ];
+
+    expect(responses.map((res) => res.statusCode)).toEqual([500, 500, 500]);
+
+    const consoleLogs = consoleOutput
+      .flatMap((spy) => spy.mock.calls)
+      .flat()
+      .map((arg) => (arg instanceof Error ? `${arg.message}\n${arg.stack}` : String(arg)))
+      .join('\n');
+
+    expect(consoleLogs).not.toContain(resetSegment);
+    expect(consoleLogs).not.toContain(user.email);
+
+    const logs = lines.join('');
+
+    expect(logs).not.toContain(resetSegment);
+    expect(logs).not.toContain(user.email);
+  });
 });
 
 // Effect's request log line names the path. Better Auth's reset link carries its token in the

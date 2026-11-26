@@ -1,7 +1,6 @@
 import { Cause, Context, Effect, ErrorReporter, Layer, Redacted, Schema } from 'effect';
 import { PASSWORD_MIN_LENGTH, type AuthProvider } from '@roundtable/contract';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
-import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { PromiseDatabase, type Db } from '../../platform/database/promise.js';
 import { accounts, sessions, users, verifications } from './schema.js';
@@ -41,8 +40,8 @@ function socialProviders(env: Env): NonNullable<BetterAuthOptions['socialProvide
 }
 
 /**
- * An unexpected failure inside Better Auth (a 5xx: the database down, a bug), which it catches
- * and answers itself, so the server's own error reporting never sees it. `cause` is the
+ * An unexpected failure inside Better Auth (a 5xx: the database down, a bug). Its handler sits
+ * outside our routes' error handling, so reportingFailures reports it. `cause` is the
  * original error, so its stack and Postgres fields reach Sentry (redacted like any other).
  */
 export class BetterAuthFailed extends Schema.TaggedError<
@@ -57,13 +56,7 @@ export class BetterAuthFailed extends Schema.TaggedError<
   }
 }
 
-export function createAuth(
-  db: Db,
-  env: Env,
-  sendEmail: SendEmail,
-  log: Log,
-  onUnexpectedError: (error: Error) => void = () => {},
-) {
+export function createAuth(db: Db, env: Env, sendEmail: SendEmail, log: Log) {
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
     secret: Redacted.value(env.BETTER_AUTH_SECRET),
@@ -124,18 +117,11 @@ export function createAuth(
         '/sign-up/email': { window: 3600, max: 10 },
       },
     },
-    // Better Auth catches errors from its endpoints (and from our email callbacks) and answers
-    // with an error response, so they never reach the server's error reporting. Report the
-    // unexpected ones; 4xx (wrong password, expired token) are normal traffic. Replaces Better
-    // Auth's own error logging, so the callback logs too.
-    onAPIError: {
-      onError: (error) => {
-        if (error instanceof APIError && error.statusCode < 500) return;
-        onUnexpectedError(
-          error instanceof Error ? error : new Error('Non-Error thrown in auth', { cause: error }),
-        );
-      },
-    },
+    // Rethrow what its endpoints throw. Its router still answers an APIError (a 4xx like a wrong
+    // password, or its own 5xx) itself; anything else (a failed query) comes out of
+    // auth.handler instead of being printed to the console with the query's values, and
+    // reportingFailures logs and reports it like any other failure.
+    onAPIError: { throw: true },
     // Through our logger (and its redaction), not straight to the console.
     logger: betterAuthLogger(log),
     telemetry: { enabled: false },
@@ -143,6 +129,36 @@ export function createAuth(
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+type WebHandler = (request: Request) => Promise<Response>;
+
+/**
+ * Better Auth's handler, with its unexpected failures passed to `onUnexpectedError`: what it
+ * rethrows (answered here with a bare 500) and the 5xx it answers itself. Its 4xx answers
+ * (wrong password, expired token) are normal traffic.
+ */
+export function reportingFailures(
+  handler: WebHandler,
+  onUnexpectedError: (error: Error) => void,
+): WebHandler {
+  return async (request) => {
+    let response: Response;
+
+    try {
+      response = await handler(request);
+    } catch (error) {
+      onUnexpectedError(
+        error instanceof Error ? error : new Error('Non-Error thrown in auth', { cause: error }),
+      );
+
+      return new Response(null, { status: 500 });
+    }
+
+    if (response.status >= 500) onUnexpectedError(new Error(`Answered ${response.status}`));
+
+    return response;
+  };
+}
 
 /** Better Auth as a service: its own Promise API, called at the edge (ADR-0022). */
 export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/BetterAuth') {
@@ -168,7 +184,9 @@ export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/
           );
         };
 
-        return createAuth(db, env, (email) => run(send(email)), log, reportUnexpected);
+        const auth = createAuth(db, env, (email) => run(send(email)), log);
+
+        return { ...auth, handler: reportingFailures(auth.handler, reportUnexpected) };
       }),
     );
 }

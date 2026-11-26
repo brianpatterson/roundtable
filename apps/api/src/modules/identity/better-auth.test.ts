@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ErrorEvent } from '@sentry/node';
 import { Redacted, Schema } from 'effect';
-import { APIError } from 'better-auth/api';
 import { AuthConfig } from '@roundtable/contract';
-import { configuredProviders, createAuth } from './better-auth.js';
+import { configuredProviders, createAuth, reportingFailures } from './better-auth.js';
 import { createDb } from '../../platform/database/promise.js';
 import { Sentry } from '../../platform/observability/error-tracking.js';
 import { createLogger } from '../../platform/observability/logging.js';
@@ -69,8 +68,8 @@ describe('configured sign-in providers', () => {
   });
 });
 
-// Better Auth catches its own failures and answers 500 itself, so the server's reporting never
-// sees them: identity reports them through ErrorReporter instead, exactly once.
+// Better Auth's handler is a plain Request → Response outside our routes' error handling:
+// identity reports its failures through ErrorReporter instead, exactly once.
 describe('an unexpected Better Auth failure', () => {
   const events: ErrorEvent[] = [];
   const lines: string[] = [];
@@ -121,50 +120,54 @@ describe('an unexpected Better Auth failure', () => {
 });
 
 /** Better Auth on its own, on the test database: for what the App's requests can't reach. */
-function standaloneAuth(onUnexpectedError: (error: Error) => void = () => {}) {
+function standaloneAuth() {
   const { db, pool } = createDb(env.DATABASE_URL, 'roundtable-test-admin');
-
-  const auth = createAuth(
-    db,
-    env,
-    async () => {},
-    createLogger({ enabled: false }),
-    onUnexpectedError,
-  );
+  const auth = createAuth(db, env, async () => {}, createLogger({ enabled: false }));
 
   return { auth, close: () => pool.end() };
 }
 
-describe("Better Auth's error filter", () => {
+describe("Better Auth's handler, reporting failures", () => {
   const reported: Error[] = [];
-  const { auth, close } = standaloneAuth((error) => void reported.push(error));
+  const request = new Request(`${env.BETTER_AUTH_URL}/api/auth/ok`);
 
-  // What Better Auth calls with whatever its endpoints throw: errors, or anything else.
-  const onError = (error: Error | string) => auth.options.onAPIError?.onError?.(error);
+  const handle = (outcome: () => Promise<Response>) =>
+    reportingFailures(outcome, (error) => void reported.push(error))(request);
 
   beforeEach(() => {
     reported.length = 0;
   });
-  afterAll(() => close());
 
-  it('ignores its 4xx answers, which are normal traffic', () => {
-    onError(new APIError('FORBIDDEN'));
-    onError(new APIError('UNAUTHORIZED'));
+  it('passes its answers through and ignores 4xx, which are normal traffic', async () => {
+    for (const status of [200, 302, 401, 403, 499]) {
+      expect((await handle(async () => new Response(null, { status }))).status).toBe(status);
+    }
 
     expect(reported).toEqual([]);
   });
 
-  it('reports its 5xx answers and anything else thrown', () => {
+  it('reports the 5xx it answers itself, and passes them through', async () => {
+    const res = await handle(async () => new Response('{}', { status: 500 }));
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe('{}');
+    expect(reported.map((error) => error.message)).toEqual(['Answered 500']);
+  });
+
+  it('reports what it throws and answers a bare 500', async () => {
     const crash = new Error('crash');
+    const crashed = await handle(() => Promise.reject(crash));
+    const thrownString = await handle(() => Promise.reject('a string'));
 
-    onError(new APIError('INTERNAL_SERVER_ERROR'));
-    onError(crash);
-    onError('a string');
+    for (const res of [crashed, thrownString]) {
+      expect(res.status).toBe(500);
+      expect(await res.text()).toBe('');
+    }
 
-    expect(reported).toHaveLength(3);
-    expect(reported[1]).toBe(crash);
-    expect(reported[2]?.message).toBe('Non-Error thrown in auth');
-    expect(reported[2]?.cause).toBe('a string');
+    expect(reported).toHaveLength(2);
+    expect(reported[0]).toBe(crash);
+    expect(reported[1]?.message).toBe('Non-Error thrown in auth');
+    expect(reported[1]?.cause).toBe('a string');
   });
 });
 
