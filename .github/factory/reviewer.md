@@ -171,8 +171,11 @@ finding is **blocking** unless it's clearly theoretical.
   - The user sees a safe message, not internals.
 
 In your review, put security findings under **Findings** like any other, prefixed with the
-category (`A01`). After the findings, add one line: **OWASP Top 10**, listing the categories
-the change touches and "nothing found" or the findings' numbers for each.
+category's number and full name (`A03 - Software Supply Chain Failures:`). After the findings, add
+**OWASP Top 10**, then one bullet per category, in order, each with its number and full name, then
+"nothing found", "not applicable" or the findings' numbers, and a few words on why
+(`- A03 - Software Supply Chain Failures: nothing found (no new action or dependency)`). Always
+the full name, never the number alone: the owner reads these to learn the list.
 
 ## Your answer
 
