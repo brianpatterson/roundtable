@@ -4,6 +4,8 @@ import { Schema } from 'effect';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   ApplicationNotFound,
+  MAX_PERSONAS,
+  MAX_PERSONA_SKILLS,
   MAX_SKILLS,
   MAX_TAGS,
   Unauthorized,
@@ -228,6 +230,75 @@ describe('the web client', () => {
 
     await expect(api.createSkill({ name: 'One more' })).rejects.toThrow(
       `You can have at most ${MAX_SKILLS} skills, archived ones included.`,
+    );
+  });
+
+  it('adds, lists, renames, archives Personas and adds and removes their Skills', async () => {
+    const skill = await api.createSkill({ name: 'SQL' });
+    const persona = await api.createPersona({ name: ' Backend engineer ' });
+
+    expect(persona).toMatchObject({ name: 'Backend engineer', archivedAt: null, skillIds: [] });
+    expect(persona.createdAt).toBeInstanceOf(Date);
+    expect(await api.addPersonaSkill(persona.id, skill.id)).toEqual({
+      ...persona,
+      skillIds: [skill.id],
+    });
+
+    const archived = await api.updatePersona(persona.id, { name: 'Backend', archived: true });
+
+    expect(archived.archivedAt).toBeInstanceOf(Date);
+    expect(await api.listPersonas()).toEqual([archived]);
+    expect(await api.removePersonaSkill(persona.id, skill.id)).toEqual({
+      ...archived,
+      skillIds: [],
+    });
+  });
+
+  it('says when a Persona’s name is taken, and to restore an archived one instead', async () => {
+    const persona = await api.createPersona({ name: 'Backend engineer' });
+
+    await expect(api.createPersona({ name: 'backend engineer' })).rejects.toThrow(
+      'You already have a persona with that name.',
+    );
+
+    await api.updatePersona(persona.id, { archived: true });
+
+    await expect(api.createPersona({ name: 'BACKEND ENGINEER' })).rejects.toThrow(
+      'You have an archived persona with that name. Restore it instead.',
+    );
+    await expect(api.updatePersona(crypto.randomUUID(), { archived: true })).rejects.toThrow(
+      'That persona no longer exists.',
+    );
+  });
+
+  it('says when the user has too many Personas', async () => {
+    for (let i = 0; i < MAX_PERSONAS; i++) await api.createPersona({ name: `Persona ${i}` });
+
+    await expect(api.createPersona({ name: 'One more' })).rejects.toThrow(
+      `You can have at most ${MAX_PERSONAS} personas, archived ones included.`,
+    );
+  });
+
+  it('says when a Skill is archived, or a Persona has too many', async () => {
+    const persona = await api.createPersona({ name: 'Backend engineer' });
+    const archived = await api.createSkill({ name: 'Archived' });
+
+    await api.updateSkill(archived.id, { archived: true });
+
+    await expect(api.addPersonaSkill(persona.id, archived.id)).rejects.toThrow(
+      'That skill is archived. Restore it to add it.',
+    );
+
+    for (let i = 0; i < MAX_PERSONA_SKILLS; i++) {
+      const skill = await api.createSkill({ name: `Skill ${i}` });
+
+      await api.addPersonaSkill(persona.id, skill.id);
+    }
+
+    const extra = await api.createSkill({ name: 'One more' });
+
+    await expect(api.addPersonaSkill(persona.id, extra.id)).rejects.toThrow(
+      `A persona can have at most ${MAX_PERSONA_SKILLS} skills.`,
     );
   });
 

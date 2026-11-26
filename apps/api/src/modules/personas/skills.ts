@@ -11,10 +11,8 @@ import {
   type UpdateSkill,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { skillNameKey, skills } from './schema.js';
-
-/** A transaction on the Database, as `Database.transaction` hands it to its callback. */
-type Transaction = Parameters<Parameters<Database['Service']['transaction']>[0]>[0];
+import { changing, type Transaction } from './changing.js';
+import { nameKey, skills } from './schema.js';
 
 /** The columns a Skill has in the contract: the rest stay inside the module. */
 const skillColumns = {
@@ -61,22 +59,11 @@ export class Skills extends Context.Service<
       const ownedBy = (userId: string, id: string) =>
         and(eq(skills.id, id), eq(skills.userId, userId));
 
-      /**
-       * A transaction that changes the user's Skills, holding their lock: two requests at once
-       * can't both pass the limit, or both take one name (which would be a unique violation, a 500).
-       */
-      const changing = <A, E>(userId: string, change: (tx: Transaction) => Effect.Effect<A, E>) =>
-        db
-          .transaction((tx) =>
-            Effect.gen(function* () {
-              yield* tx
-                .execute(sql`select pg_advisory_xact_lock(hashtext('skills'), hashtext(${userId}))`)
-                .pipe(Effect.orDie);
-
-              return yield* change(tx);
-            }),
-          )
-          .pipe(Effect.catchTag('SqlError', Effect.die));
+      /** A transaction that changes the user's Skills, holding their lock. */
+      const changingSkills = <A, E>(
+        userId: string,
+        change: (tx: Transaction) => Effect.Effect<A, E>,
+      ) => changing(db, 'skills', userId, change);
 
       /**
        * Fails with `SkillNameTaken` if the user has another Skill (not `exceptId`) by `name`,
@@ -90,7 +77,7 @@ export class Skills extends Context.Service<
             .where(
               and(
                 eq(skills.userId, userId),
-                sql`${skillNameKey(skills.name)} = ${skillNameKey(sql`${name}`)}`,
+                sql`${nameKey(skills.name)} = ${nameKey(sql`${name}`)}`,
                 exceptId === undefined ? undefined : ne(skills.id, exceptId),
               ),
             )
@@ -105,12 +92,12 @@ export class Skills extends Context.Service<
             .select(skillColumns)
             .from(skills)
             .where(eq(skills.userId, userId))
-            .orderBy(asc(skillNameKey(skills.name)), asc(skills.id))
+            .orderBy(asc(nameKey(skills.name)), asc(skills.id))
             .pipe(Effect.orDie);
         }),
 
         create: Effect.fn('Skills.create')(function* (userId: string, skill: CreateSkill) {
-          return yield* changing(userId, (tx) =>
+          return yield* changingSkills(userId, (tx) =>
             Effect.gen(function* () {
               yield* checkNameFree(tx, userId, skill.name);
 
@@ -141,7 +128,7 @@ export class Skills extends Context.Service<
           id: string,
           changes: UpdateSkill,
         ) {
-          return yield* changing(userId, (tx) =>
+          return yield* changingSkills(userId, (tx) =>
             Effect.gen(function* () {
               const [owned] = yield* tx
                 .select({ id: skills.id })

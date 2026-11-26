@@ -77,7 +77,7 @@ flowchart TB
     server[server.ts: the App<br/>assembles modules, owns pools,<br/>Sentry, observability] --> applications & personas & identity & email & support
     applications[modules/applications<br/>CRUD, Prep, Agenda,<br/>applications, rounds, prep_tasks] --> identity
     applications -- "Skills.findOwned" --> personas
-    personas[modules/personas<br/>skill library, Skills service,<br/>skills table] --> identity
+    personas[modules/personas<br/>skill library and Personas,<br/>exports Skills.findOwned and<br/>Personas.findOwned,<br/>skills, personas, persona_skills tables] --> identity
     personas --> platform
     support[modules/support<br/>problem reports, GitHub issues,<br/>user_reports] --> email
     support --> platform
@@ -98,14 +98,14 @@ flowchart TB
   end
 ```
 
-| Module       | API                                                                                                                                         | Web                                                                                                                                                                              | Contract          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| applications | CRUD handlers for applications and their Rounds with their Prep, the Agenda, `applications`, `rounds` and `prep_tasks` tables               | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds` and each Round's `RoundPrep`, which names Skills from personas' `useSkills()`), query keys | `applications.ts` |
-| personas     | One `PersonasLive` layer: `/api/skills` (the skill library), the `Skills` service other modules check Skill ids with, `skills` table        | `SkillsPage` (add, rename, archive, restore), `useSkills()` (every Skill, for other modules)                                                                                     | `personas.ts`     |
-| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                                                                                                   | `identity.ts`     |
-| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                       | none                                                                                                                                                                             | none              |
-| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports` | `ReportProblem` (link-style button + dialog)                                                                                                                                     | `support.ts`      |
-| (system)     | `/api/health`, in `server.ts`                                                                                                               | none                                                                                                                                                                             | `system.ts`       |
+| Module       | API                                                                                                                                                                                                                | Web                                                                                                                                                                              | Contract          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| applications | CRUD handlers for applications and their Rounds with their Prep, the Agenda, `applications`, `rounds` and `prep_tasks` tables                                                                                      | `AgendaPage`, `ApplicationsPage` (form + table), `ApplicationPage` (with its `Rounds` and each Round's `RoundPrep`, which names Skills from personas' `useSkills()`), query keys | `applications.ts` |
+| personas     | One `PersonasLive` layer: `/api/skills` (the skill library) and `/api/personas`, the `Skills` and `Personas` services other modules check ids with (`findOwned`), `skills`, `personas` and `persona_skills` tables | `SkillsPage` (add, rename, archive, restore), `useSkills()` (every Skill, for other modules)                                                                                     | `personas.ts`     |
+| identity     | One `IdentityLive` layer: Better Auth, the `Authorization` and `OptionalSession` middleware, `/api/auth-config`, auth tables                                                                                       | `AuthGate`, `sessionEnded()`, sign-in and password-reset pages                                                                                                                   | `identity.ts`     |
+| email        | One `EmailLive` layer: `Mailer` (sending limits), `EmailTransport` (Resend or the log), `email_sends`                                                                                                              | none                                                                                                                                                                             | none              |
+| support      | One `SupportLive` layer: `POST /api/reports`, `GET /api/factory/reports/:id`, `GitHubIssues` (GitHub's REST API or skipped), `user_reports`                                                                        | `ReportProblem` (link-style button + dialog)                                                                                                                                     | `support.ts`      |
+| (system)     | `/api/health`, in `server.ts`                                                                                                                                                                                      | none                                                                                                                                                                             | `system.ts`       |
 
 **Routes** ([ADR-0049](adr/0049-tanstack-router.md)): the shell owns the web app's pages, in
 `shell/router.tsx` (TanStack Router, code-based routes), and maps each to a module's root
@@ -210,13 +210,15 @@ Dismiss. `useSnackbar()`'s `status` tone confirms something worked instead ("Arc
 design."), announced politely rather than as an alert. Errors tied to a form or dialog stay inline,
 as an `Alert` or the field's own error.
 
-**Personas** gives the App one layer, `PersonasLive`: so far the skill library, the Skills a user
-practices (`GLOSSARY.md`). Its handlers go through the `Skills` service, which `index.ts` also
-exports for other modules: `Skills.findOwned(userId, id)` is how one checks a Skill id before
+**Personas** gives the App one layer, `PersonasLive`: the skill library, the Skills a user
+practices, and Personas, the kinds of candidate they apply as, each with the Skills it needs
+(`GLOSSARY.md`). Its handlers go through the `Skills` and `Personas` services, which `index.ts`
+also exports for other modules: `Skills.findOwned(userId, id)` is how one checks a Skill id before
 storing it, failing with the contract's `SkillNotFound` for any id that isn't the user's, archived
-Skills included ([ADR-0044](adr/0044-links-between-modules.md) rule 1). Skills are archived and
-restored, never deleted (rule 3). Personas, their documents and Versions come later
-(`docs/roadmap.md`).
+Skills included ([ADR-0044](adr/0044-links-between-modules.md) rule 1), and
+`Personas.findOwned(userId, id)` does the same for a Persona id, failing with `PersonaNotFound`.
+Skills and Personas are archived and restored, never deleted (rule 3). Personas' documents and
+Versions come later (`docs/roadmap.md`).
 
 **Identity** gives the App one layer, `IdentityLive`: its endpoint (`/api/auth-config`), the
 `Authorization` middleware every protected group relies on, and Better Auth's `/api/auth/*`
@@ -285,7 +287,7 @@ flushes Sentry. `test/app-lifecycle.test.ts` checks that no connection outlives 
 Each module's `index.ts` is its public interface, and its tests sit next to it. A future split
 moves a module folder and its tables out, and gives the remaining modules a second adapter at
 the seam: for identity, the `Authorization` middleware would ask the identity service instead
-of Better Auth in-process. Foreign keys to identity's `users` (from `applications` and `skills`)
+of Better Auth in-process. Foreign keys to identity's `users` (from `applications`, `skills` and `personas`)
 are the one place a module reaches into another's tables, and would go with that split
 ([ADR-0044](adr/0044-links-between-modules.md)).
 
@@ -297,6 +299,9 @@ erDiagram
   applications ||--o{ rounds : has
   rounds ||--o{ prep_tasks : "prepares with"
   users ||--o{ skills : practices
+  users ||--o{ personas : "applies as"
+  personas ||--o{ persona_skills : needs
+  skills ||--o{ persona_skills : "needed by"
   users ||--o{ sessions : has
   users ||--o{ accounts : "signs in with"
   users {
@@ -366,6 +371,19 @@ erDiagram
     timestamptz archived_at "nullable: when it was archived"
     timestamptz created_at
     timestamptz updated_at
+  }
+  personas {
+    uuid id PK "gen_random_uuid()"
+    text user_id FK "NOT NULL, ON DELETE CASCADE"
+    text name "NOT NULL, 1-80 characters; UNIQUE (user_id, lower(name))"
+    timestamptz archived_at "nullable: when it was archived"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  persona_skills {
+    uuid persona_id PK, FK "ON DELETE CASCADE"
+    uuid skill_id PK, FK "ON DELETE CASCADE"
+    timestamptz created_at
   }
   user_reports {
     uuid id PK "gen_random_uuid()"
@@ -448,13 +466,23 @@ erDiagram
   pass the limit or take one name. Skills are never deleted while the account exists, since prep
   tasks name them by a plain id ([ADR-0044](adr/0044-links-between-modules.md)); `archived_at`
   hides one from pickers, and the foreign key to `users` deletes them with the account.
+- `personas` are a user's Personas (`GLOSSARY.md`), in the personas module, shaped like `skills`:
+  names of 1–80 characters, one per name ignoring case through the unique index
+  `personas_user_id_name_key` on `(user_id, lower(name))` (the same `nameKey` expression as
+  `skills`'), at most 20 per user, archived ones included. Never deleted while the account exists,
+  since Applications will name them by a plain id; `archived_at` hides one from pickers.
+- `persona_skills` links a Persona to the Skills it needs, at most 50 per Persona. Both sides are
+  personas' own tables, so both are real foreign keys, cascading; the primary key
+  `(persona_id, skill_id)` serves reading a Persona's Skills, and `persona_skills_skill_id_idx`
+  the foreign key from `skills`. Changing Personas or their Skills takes a per-user advisory lock
+  keyed for personas, like Skills', so two requests at once can't pass a limit or take one name.
 - `user_reports` holds problem reports ([ADR-0038](adr/0038-user-problem-reports.md)). Its
   `user_id` has no foreign key (a module queries only its own tables, and a report outlives the
   account). The description and reply email never leave the database except in the owner's
   email. Indexes on `(client_key, created_at)` and `issue_requested_at` serve the hourly and daily
   limits.
 - Source of truth: each module's `schema.ts` (`apps/api/src/modules/*/schema.ts`): identity owns
-  the auth tables, applications `applications`, `rounds` and `prep_tasks`, personas `skills`, email `email_sends`, support `user_reports`. One database and one migrations
+  the auth tables, applications `applications`, `rounds` and `prep_tasks`, personas `skills`, `personas` and `persona_skills`, email `email_sends`, support `user_reports`. One database and one migrations
   folder. Migrations are generated into `apps/api/drizzle/`,
   one folder each (`<timestamp>_<name>/migration.sql` + `snapshot.json`, Drizzle 1.0's layout)
   ([ADR-0004](adr/0004-drizzle-orm-and-migrations.md), [ADR-0022](adr/0022-effect-for-the-api.md)).
@@ -475,34 +503,39 @@ for `Unauthorized`, a return to the sign-in page (see Identity above). `client.t
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
-| Method   | Path                                                       | Auth                      | Success         | Errors                                                                                                                     |
-| -------- | ---------------------------------------------------------- | ------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| GET      | `/api/health`                                              | public                    | 200             | (reports `db: "down"` instead of failing)                                                                                  |
-| GET      | `/api/auth-config`                                         | public                    | 200             | (lists enabled social providers)                                                                                           |
-| GET/POST | `/api/auth/*`                                              | public                    | varies          | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                                      |
-| GET      | `/api/applications`                                        | session                   | 200             | 401                                                                                                                        |
-| GET      | `/api/applications/:id`                                    | session                   | 200             | 400 (malformed id), 401, 404 (unknown or not yours)                                                                        |
-| POST     | `/api/applications`                                        | session                   | 201             | 400, 401                                                                                                                   |
-| PATCH    | `/api/applications/:id`                                    | session                   | 200             | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                                    |
-| DELETE   | `/api/applications/:id`                                    | session                   | 204             | 400 (malformed id), 401, 404                                                                                               |
-| GET      | `/api/applications/:id/rounds`                             | session                   | 200             | 400 (malformed id), 401, 404 (application unknown or not yours)                                                            |
-| POST     | `/api/applications/:id/rounds`                             | session                   | 201             | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                                  |
-| PUT      | `/api/applications/:id/rounds/:roundId/schedule`           | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`)         |
-| PUT      | `/api/applications/:id/rounds/:roundId/rating`             | session                   | 200 (the Round) | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)              |
-| PUT      | `/api/applications/:id/rounds/:roundId/outcome`            | session                   | 200 (the Round) | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                         |
-| DELETE   | `/api/applications/:id/rounds/:roundId`                    | session                   | 204             | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                             |
-| POST     | `/api/applications/:id/rounds/:roundId/tags`               | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)                   |
-| DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=`          | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                                      |
-| PUT      | `/api/applications/:id/rounds/:roundId/prep-notes`         | session                   | 200 (the Round) | 400 (body: notes over 10,000 characters; or id), 401, 404 (`RoundNotFound`)                                                |
-| POST     | `/api/applications/:id/rounds/:roundId/prep-tasks`         | session                   | 201 (the Round) | 400 (title blank or over 200, malformed id, or `TooManyPrepTasks`: it has 50), 401, 404 (`RoundNotFound`, `SkillNotFound`) |
-| PATCH    | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round) | 400 (body or id), 401, 404 (`RoundNotFound`, `PrepTaskNotFound`, `SkillNotFound`)                                          |
-| DELETE   | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round) | 400 (malformed id), 401, 404 (`RoundNotFound`, `PrepTaskNotFound`)                                                         |
-| GET      | `/api/agenda?timeZone=`                                    | session                   | 200             | 400 (an unknown `timeZone`), 401                                                                                           |
-| GET      | `/api/skills`                                              | session                   | 200             | 401 (lists archived Skills too, by name ignoring case)                                                                     |
-| POST     | `/api/skills`                                              | session                   | 201             | 400 (blank or over 80 characters, or `TooManySkills`: 200), 401, 409 (`SkillNameTaken`, with `archived`)                   |
-| PATCH    | `/api/skills/:id`                                          | session                   | 200 (the Skill) | 400 (body or malformed id), 401, 404 (`SkillNotFound`: unknown or not yours), 409 (`SkillNameTaken`)                       |
-| POST     | `/api/reports`                                             | public (session optional) | 201             | 400, 429 (5 per client address per hour)                                                                                   |
-| GET      | `/api/factory/reports/:id`                                 | factory token             | 200             | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                                 |
+| Method   | Path                                                       | Auth                      | Success           | Errors                                                                                                                     |
+| -------- | ---------------------------------------------------------- | ------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| GET      | `/api/health`                                              | public                    | 200               | (reports `db: "down"` instead of failing)                                                                                  |
+| GET      | `/api/auth-config`                                         | public                    | 200               | (lists enabled social providers)                                                                                           |
+| GET/POST | `/api/auth/*`                                              | public                    | varies            | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                                      |
+| GET      | `/api/applications`                                        | session                   | 200               | 401                                                                                                                        |
+| GET      | `/api/applications/:id`                                    | session                   | 200               | 400 (malformed id), 401, 404 (unknown or not yours)                                                                        |
+| POST     | `/api/applications`                                        | session                   | 201               | 400, 401                                                                                                                   |
+| PATCH    | `/api/applications/:id`                                    | session                   | 200               | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                                    |
+| DELETE   | `/api/applications/:id`                                    | session                   | 204               | 400 (malformed id), 401, 404                                                                                               |
+| GET      | `/api/applications/:id/rounds`                             | session                   | 200               | 400 (malformed id), 401, 404 (application unknown or not yours)                                                            |
+| POST     | `/api/applications/:id/rounds`                             | session                   | 201               | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                                  |
+| PUT      | `/api/applications/:id/rounds/:roundId/schedule`           | session                   | 200 (the Round)   | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`)         |
+| PUT      | `/api/applications/:id/rounds/:roundId/rating`             | session                   | 200 (the Round)   | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)              |
+| PUT      | `/api/applications/:id/rounds/:roundId/outcome`            | session                   | 200 (the Round)   | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                         |
+| DELETE   | `/api/applications/:id/rounds/:roundId`                    | session                   | 204               | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                             |
+| POST     | `/api/applications/:id/rounds/:roundId/tags`               | session                   | 200 (the Round)   | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)                   |
+| DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=`          | session                   | 200 (the Round)   | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                                      |
+| PUT      | `/api/applications/:id/rounds/:roundId/prep-notes`         | session                   | 200 (the Round)   | 400 (body: notes over 10,000 characters; or id), 401, 404 (`RoundNotFound`)                                                |
+| POST     | `/api/applications/:id/rounds/:roundId/prep-tasks`         | session                   | 201 (the Round)   | 400 (title blank or over 200, malformed id, or `TooManyPrepTasks`: it has 50), 401, 404 (`RoundNotFound`, `SkillNotFound`) |
+| PATCH    | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round)   | 400 (body or id), 401, 404 (`RoundNotFound`, `PrepTaskNotFound`, `SkillNotFound`)                                          |
+| DELETE   | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round)   | 400 (malformed id), 401, 404 (`RoundNotFound`, `PrepTaskNotFound`)                                                         |
+| GET      | `/api/agenda?timeZone=`                                    | session                   | 200               | 400 (an unknown `timeZone`), 401                                                                                           |
+| GET      | `/api/skills`                                              | session                   | 200               | 401 (lists archived Skills too, by name ignoring case)                                                                     |
+| POST     | `/api/skills`                                              | session                   | 201               | 400 (blank or over 80 characters, or `TooManySkills`: 200), 401, 409 (`SkillNameTaken`, with `archived`)                   |
+| PATCH    | `/api/skills/:id`                                          | session                   | 200 (the Skill)   | 400 (body or malformed id), 401, 404 (`SkillNotFound`: unknown or not yours), 409 (`SkillNameTaken`)                       |
+| GET      | `/api/personas`                                            | session                   | 200               | 401 (lists archived Personas too, by name ignoring case, each with its `skillIds`)                                         |
+| POST     | `/api/personas`                                            | session                   | 201               | 400 (blank or over 80 characters, or `TooManyPersonas`: 20), 401, 409 (`PersonaNameTaken`, with `archived`)                |
+| PATCH    | `/api/personas/:id`                                        | session                   | 200 (the Persona) | 400 (body or malformed id), 401, 404 (`PersonaNotFound`), 409 (`PersonaNameTaken`)                                         |
+| POST     | `/api/personas/:id/skills`                                 | session                   | 200 (the Persona) | 400 (malformed id, or `TooManyPersonaSkills`: 50), 401, 404 (`PersonaNotFound`, `SkillNotFound`), 409 (`SkillArchived`)    |
+| DELETE   | `/api/personas/:id/skills/:skillId`                        | session                   | 200 (the Persona) | 400 (malformed id), 401, 404 (`PersonaNotFound`, `SkillNotFound`)                                                          |
+| POST     | `/api/reports`                                             | public (session optional) | 201               | 400, 429 (5 per client address per hour)                                                                                   |
+| GET      | `/api/factory/reports/:id`                                 | factory token             | 200               | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                                 |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.
@@ -524,6 +557,14 @@ both pass the limit of 50. A `skillId` is checked through personas' `Skills.find
 signed-in user before it's stored (another user's, or a missing one, is `SkillNotFound`; an
 archived one of theirs is fine). The contract's `prepProgress(round)` is Prep progress,
 `{ done, total }` or null without tasks.
+
+A Persona the API answers is `{ id, name, archivedAt, skillIds, createdAt }`, with `skillIds` in
+Skill name order ignoring case, decided in the one query that reads Personas' Skills (all the
+listed Personas' at once). The Skill endpoints answer the whole Persona. Adding a Skill the
+Persona has is a no-op, even an archived one; adding an archived one it doesn't have is a 409
+`SkillArchived`; removing one it doesn't have is a no-op. An archived Persona can still be renamed
+and have its Skills changed. There's no `DELETE /api/personas/:id`: Applications will refer to
+Personas ([ADR-0044](adr/0044-links-between-modules.md) rule 3).
 
 ## 6. Request flows
 

@@ -1,0 +1,474 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "ef8f18bc-3697-4123-9919-88462653f1a6",
+  "prevIds": [
+    "4d41252b-d3c1-400c-96ae-7ff5cd9634df"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "persona_skills"
+      ],
+      "writes": [
+        "s|tbl|public.persona_skills",
+        "n|tbl|public.persona_skills",
+        "e|tbl|public.persona_skills",
+        "n|rel|public.persona_skills",
+        "n|type|public.persona_skills",
+        "n|rel|public.persona_skills_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "personas"
+      ],
+      "writes": [
+        "s|tbl|public.personas",
+        "n|tbl|public.personas",
+        "e|tbl|public.personas",
+        "n|rel|public.personas",
+        "n|type|public.personas",
+        "n|rel|public.personas_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "persona_skills",
+        "persona_skills_skill_id_idx"
+      ],
+      "writes": [
+        "s|idx|public.persona_skills_skill_id_idx",
+        "n|idx|public.persona_skills_skill_id_idx",
+        "e|idx|public.persona_skills_skill_id_idx",
+        "n|rel|public.persona_skills_skill_id_idx"
+      ],
+      "reads": [
+        "n|tbl|public.persona_skills",
+        "n|sch|public",
+        "n|col|public.persona_skills.skill_id"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "personas",
+        "personas_user_id_name_key"
+      ],
+      "writes": [
+        "s|idx|public.personas_user_id_name_key",
+        "n|idx|public.personas_user_id_name_key",
+        "e|idx|public.personas_user_id_name_key",
+        "n|rel|public.personas_user_id_name_key"
+      ],
+      "reads": [
+        "n|tbl|public.personas",
+        "n|sch|public",
+        "n|col|public.personas.user_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "persona_skills"
+      ],
+      "writes": [
+        "s|fk|public.persona_skills.persona_skills_persona_id_personas_id_fkey",
+        "n|fk|public.persona_skills.persona_skills_persona_id_personas_id_fkey",
+        "e|fk|public.persona_skills.persona_skills_persona_id_personas_id_fkey",
+        "n|con|public.persona_skills.persona_skills_persona_id_personas_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.persona_skills",
+        "n|sch|public",
+        "n|tbl|public.personas",
+        "n|sch|public",
+        "n|col|public.persona_skills.persona_id",
+        "n|col|public.personas.id",
+        "e|uniqueness|public.personas.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "persona_skills"
+      ],
+      "writes": [
+        "s|fk|public.persona_skills.persona_skills_skill_id_skills_id_fkey",
+        "n|fk|public.persona_skills.persona_skills_skill_id_skills_id_fkey",
+        "e|fk|public.persona_skills.persona_skills_skill_id_skills_id_fkey",
+        "n|con|public.persona_skills.persona_skills_skill_id_skills_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.persona_skills",
+        "n|sch|public",
+        "n|tbl|public.skills",
+        "n|sch|public",
+        "n|col|public.persona_skills.skill_id",
+        "n|col|public.skills.id",
+        "e|uniqueness|public.skills.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "personas"
+      ],
+      "writes": [
+        "s|fk|public.personas.personas_user_id_users_id_fkey",
+        "n|fk|public.personas.personas_user_id_users_id_fkey",
+        "e|fk|public.personas.personas_user_id_users_id_fkey",
+        "n|con|public.personas.personas_user_id_users_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.personas",
+        "n|sch|public",
+        "n|tbl|public.users",
+        "n|sch|public",
+        "n|col|public.personas.user_id",
+        "n|col|public.users.id",
+        "e|uniqueness|public.users.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "persona_skills",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "personas",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "persona_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "skill_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "gen_random_uuid()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "user_id",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "name",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "archived_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "persona_skills_skill_id_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "skill_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "personas_user_id_name_key",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "user_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "lower(\"name\")",
+            "isExpression": true,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "persona_skills_persona_id_personas_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "persona_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "personas",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "persona_skills_skill_id_skills_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "skill_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "skills",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "personas_user_id_users_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "user_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "users",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "persona_skills",
+        "name": "persona_skills_pkey",
+        "columns": [
+          "persona_id",
+          "skill_id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "personas_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "personas",
+        "name": "personas_name_check",
+        "value": "char_length(\"name\") between 1 and 80",
+        "entityType": "checks"
+      }
+    }
+  ]
+}
