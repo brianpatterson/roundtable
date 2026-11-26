@@ -9,7 +9,7 @@ import {
 } from '@roundtable/contract';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SnackbarProvider, createSnackbars } from '../../design-system';
-import { SkillsPage } from '../personas';
+import { PersonaPage, SkillsPage } from '../personas';
 import { serverError, setUpFakeApi } from '../../shared/testing/fake-api';
 import { createTestRouter, TestRouterProvider } from '../../shared/testing/router';
 import { AgendaPage } from './AgendaPage';
@@ -47,8 +47,14 @@ beforeEach(() => {
 const seedRound = (prepTasks: PrepTask[] = [], prepNotes: string | null = null) =>
   fake.seedRound(ACME_ID, { id: ROUND_ID, interviewType: 'coding', prepTasks, prepNotes });
 
-/** The application's page, with `others` beside it sharing one cache, as in the app. */
-const renderPage = async (others: 'agenda' | 'skills' | 'none' = 'none') => {
+/**
+ * The application's page, with `others` beside it sharing one cache, as in the app, and the page
+ * of the Persona `personaPage` if one is given.
+ */
+const renderPage = async (
+  others: 'agenda' | 'skills' | 'none' = 'none',
+  personaPage: string | null = null,
+) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   const router = createTestRouter(
@@ -56,6 +62,7 @@ const renderPage = async (others: 'agenda' | 'skills' | 'none' = 'none') => {
       <ApplicationPage applicationId={ACME_ID} />
       {others === 'agenda' && <AgendaPage />}
       {others === 'skills' && <SkillsPage />}
+      {personaPage !== null && <PersonaPage personaId={personaPage} />}
     </>,
     '/elsewhere',
   );
@@ -555,6 +562,232 @@ describe('a prep task', () => {
       await within(taskItem('Task 1')).findByText('Something went wrong. Please try again.'),
     ).toBeDefined();
     expect(tasksShown()).toEqual(['Task 1']);
+  });
+});
+
+describe('the Skill picker, with the application’s Persona', () => {
+  const SQL = '00000000-0000-4000-8000-0000000000a4';
+  const BEHAVIORAL = '00000000-0000-4000-8000-0000000000a5';
+
+  beforeEach(() => {
+    fake.seedSkill({ id: SQL, name: 'SQL' });
+    fake.seedSkill({ id: BEHAVIORAL, name: 'Behavioral' });
+  });
+
+  /** Makes Acme's Persona one with these Skills, in this order. */
+  const givePersona = (skillIds: string[], archivedAt: Date | null = null) => {
+    const persona = fake.seedPersona({ name: 'Backend engineer', skillIds, archivedAt });
+
+    fake.changeApplication(ACME_ID, { personaId: persona.id });
+
+    return persona;
+  };
+
+  /** Waits until the page has the Persona, which the picker reads from the same list. */
+  const personaShown = () =>
+    waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Persona' }).textContent).toContain(
+        'Backend engineer',
+      ),
+    );
+
+  /** Opens the Skill picker in `scope` once the skill library is in, and returns its list. */
+  const openPicker = async (scope: HTMLElement) => {
+    await userEvent.click(within(scope).getByRole('combobox', { name: 'Skill' }));
+
+    const listbox = await screen.findByRole('listbox');
+
+    await within(listbox).findByRole('option', { name: 'Algorithms' });
+
+    return listbox;
+  };
+
+  const closePicker = () => userEvent.keyboard('{Escape}');
+
+  /** The options listed in `element`, in order. */
+  const optionsIn = (element: HTMLElement) =>
+    within(element)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+
+  const editDialog = async (title: string) => {
+    await userEvent.click(
+      within(taskItem(title)).getByRole('button', { name: `Edit task ${title}` }),
+    );
+
+    return screen.findByRole('alertdialog', { name: 'Edit prep task' });
+  };
+
+  it('lists "No skill", then the Persona’s active Skills in its order, then the others by name', async () => {
+    givePersona([GRAPHS, SQL, SYSTEM_DESIGN]);
+    seedRound();
+    await renderPage();
+    await personaShown();
+
+    const listbox = await openPicker(addForm());
+    const persona = within(listbox).getByRole('group', { name: 'Backend engineer' });
+    const others = within(listbox).getByRole('group', { name: 'Other skills' });
+
+    expect(within(listbox).getAllByRole('group')).toEqual([persona, others]);
+    expect(optionsIn(persona)).toEqual(['SQL', 'System design']);
+    expect(optionsIn(others)).toEqual(['Algorithms', 'Behavioral']);
+    expect(optionsIn(listbox)).toEqual([
+      'No skill',
+      'SQL',
+      'System design',
+      'Algorithms',
+      'Behavioral',
+    ]);
+    await closePicker();
+
+    await addTask('Write joins', 'SQL');
+    await waitFor(() =>
+      expect(fake.received('applications.addPrepTask')).toEqual([
+        { title: 'Write joins', skillId: SQL },
+      ]),
+    );
+  });
+
+  it('groups the edit form’s picker too, keeping a task’s archived Skill in the Persona’s place', async () => {
+    givePersona([GRAPHS, SQL, SYSTEM_DESIGN]);
+    seedRound([task(1, { skillId: GRAPHS })]);
+    await renderPage();
+    await personaShown();
+
+    const dialog = await editDialog('Task 1');
+
+    expect(within(dialog).getByRole('combobox', { name: 'Skill' }).textContent).toBe(
+      'Graphs (archived)',
+    );
+
+    const listbox = await openPicker(dialog);
+
+    expect(optionsIn(within(listbox).getByRole('group', { name: 'Backend engineer' }))).toEqual([
+      'Graphs (archived)',
+      'SQL',
+      'System design',
+    ]);
+    expect(optionsIn(within(listbox).getByRole('group', { name: 'Other skills' }))).toEqual([
+      'Algorithms',
+      'Behavioral',
+    ]);
+  });
+
+  it('keeps a task’s archived Skill the Persona lacks among the other Skills, by name', async () => {
+    givePersona([SQL, SYSTEM_DESIGN]);
+    seedRound([task(1, { skillId: GRAPHS })]);
+    await renderPage();
+    await personaShown();
+
+    const listbox = await openPicker(await editDialog('Task 1'));
+
+    expect(optionsIn(within(listbox).getByRole('group', { name: 'Other skills' }))).toEqual([
+      'Algorithms',
+      'Behavioral',
+      'Graphs (archived)',
+    ]);
+    expect(optionsIn(listbox)).toEqual([
+      'No skill',
+      'SQL',
+      'System design',
+      'Algorithms',
+      'Behavioral',
+      'Graphs (archived)',
+    ]);
+  });
+
+  it('is one flat list when the application has no Persona', async () => {
+    seedRound();
+    await renderPage();
+
+    const listbox = await openPicker(addForm());
+
+    expect(within(listbox).queryAllByRole('group')).toEqual([]);
+    expect(optionsIn(listbox)).toEqual([
+      'No skill',
+      'Algorithms',
+      'Behavioral',
+      'SQL',
+      'System design',
+    ]);
+  });
+
+  it('is one flat list when the Persona has no active Skills', async () => {
+    givePersona([GRAPHS]);
+    seedRound();
+    await renderPage();
+    await personaShown();
+
+    const listbox = await openPicker(addForm());
+
+    expect(within(listbox).queryAllByRole('group')).toEqual([]);
+    expect(optionsIn(listbox)).toEqual([
+      'No skill',
+      'Algorithms',
+      'Behavioral',
+      'SQL',
+      'System design',
+    ]);
+  });
+
+  it('leaves out "Other skills" when every active Skill is the Persona’s', async () => {
+    givePersona([ALGORITHMS, BEHAVIORAL, GRAPHS, SQL, SYSTEM_DESIGN]);
+    seedRound();
+    await renderPage();
+    await personaShown();
+
+    const listbox = await openPicker(addForm());
+    const persona = within(listbox).getByRole('group', { name: 'Backend engineer' });
+
+    expect(within(listbox).getAllByRole('group')).toEqual([persona]);
+    expect(within(listbox).queryByText('Other skills')).toBeNull();
+    expect(optionsIn(persona)).toEqual(['Algorithms', 'Behavioral', 'SQL', 'System design']);
+  });
+
+  it('still groups the Skills of an archived Persona first', async () => {
+    givePersona([SQL], new Date('2026-11-01T00:00:00Z'));
+    seedRound();
+    await renderPage();
+    await personaShown();
+
+    const listbox = await openPicker(addForm());
+
+    expect(optionsIn(within(listbox).getByRole('group', { name: 'Backend engineer' }))).toEqual([
+      'SQL',
+    ]);
+    expect(optionsIn(within(listbox).getByRole('group', { name: 'Other skills' }))).toEqual([
+      'Algorithms',
+      'Behavioral',
+      'System design',
+    ]);
+  });
+
+  it('lists a Skill ticked on the Persona’s page on its next open, without reloading', async () => {
+    const backend = givePersona([SQL]);
+
+    seedRound();
+    await renderPage('none', backend.id);
+    await personaShown();
+
+    let listbox = await openPicker(addForm());
+
+    expect(optionsIn(within(listbox).getByRole('group', { name: 'Backend engineer' }))).toEqual([
+      'SQL',
+    ]);
+    await closePicker();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Behavioral' }));
+    await waitFor(() => expect(fake.received('personas.addSkill')).toHaveLength(1));
+
+    listbox = await openPicker(addForm());
+
+    await waitFor(() =>
+      expect(optionsIn(within(listbox).getByRole('group', { name: 'Backend engineer' }))).toEqual([
+        'Behavioral',
+        'SQL',
+      ]),
+    );
+    expect(fake.calls().filter((call) => call.endpoint === 'applications.get')).toHaveLength(1);
   });
 });
 

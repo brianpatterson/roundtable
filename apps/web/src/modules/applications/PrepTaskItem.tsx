@@ -1,16 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { PrepTask, Round, Skill } from '@roundtable/contract';
+import type { Persona, PrepTask, Round, Skill } from '@roundtable/contract';
 import { Alert, Button, Checkbox, Dialog, Select, TextField } from '../../design-system';
 import { api } from '../../shared/api';
-import {
-  NO_SKILL,
-  skillIdOf,
-  skillLabel,
-  skillOptions,
-  titleProblem,
-  useRefreshPrep,
-} from './prep';
+import { NO_SKILL, skillGroups, skillIdOf, skillLabel, titleProblem, useRefreshPrep } from './prep';
 import styles from './Rounds.module.css';
 
 interface PrepTaskItemProps {
@@ -18,13 +11,15 @@ interface PrepTaskItemProps {
   task: PrepTask;
   /** The skill library from `useSkills()`; undefined until it loads. */
   skills: readonly Skill[] | undefined;
+  /** The application's Persona, whose Skills the picker lists first. */
+  persona: Persona | undefined;
 }
 
 /**
  * One prep task: a Checkbox to mark it done, the Skill it practices, and buttons to edit it in a
  * dialog or delete it.
  */
-export function PrepTaskItem({ round, task, skills }: PrepTaskItemProps) {
+export function PrepTaskItem({ round, task, skills, persona }: PrepTaskItemProps) {
   const refresh = useRefreshPrep(round.applicationId);
   const skill = skills?.find((s) => s.id === task.skillId);
 
@@ -141,7 +136,7 @@ export function PrepTaskItem({ round, task, skills }: PrepTaskItemProps) {
         />
         <Select
           label="Skill"
-          options={skillOptions(skills ?? [], task.skillId)}
+          groups={skillGroups(skills ?? [], persona, task.skillId)}
           value={choice}
           onValueChange={setChoice}
         />

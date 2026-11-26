@@ -5,21 +5,33 @@ import {
   MAX_PREP_TASKS,
   prepProgress,
   type CreatePrepTask,
+  type Persona,
   type Round,
+  type Skill,
 } from '@roundtable/contract';
 import { Alert, Button, Dialog, Link, Select, TextArea, TextField } from '../../design-system';
-import { useSkills } from '../personas';
+import { usePersonas, useSkills } from '../personas';
 import { api } from '../../shared/api';
-import { NO_SKILL, skillIdOf, skillOptions, titleProblem, useRefreshPrep } from './prep';
+import { NO_SKILL, skillGroups, skillIdOf, titleProblem, useRefreshPrep } from './prep';
 import { PrepTaskItem } from './PrepTaskItem';
 import styles from './Rounds.module.css';
 
+interface RoundPrepProps {
+  round: Round;
+  name: string;
+  /** The application's Persona, whose Skills the Skill pickers list first. */
+  personaId: string | null;
+}
+
 /**
  * A Round's Prep (GLOSSARY.md): its notes, and its checklist of prep tasks with how many are done,
- * each optionally naming a Skill from the skill library, which the personas module owns.
+ * each optionally naming a Skill from the skill library, which the personas module owns. The
+ * Persona is found in `usePersonas()` by id, so a Skill ticked on its page shows here at once.
  */
-export function RoundPrep({ round, name }: { round: Round; name: string }) {
+export function RoundPrep({ round, name, personaId }: RoundPrepProps) {
   const skills = useSkills();
+  const personas = usePersonas();
+  const persona = personas.data?.find((p) => p.id === personaId);
   const refresh = useRefreshPrep(round.applicationId);
   const progress = prepProgress(round);
   const progressLabel = progress && `${progress.done} of ${progress.total} done`;
@@ -43,12 +55,24 @@ export function RoundPrep({ round, name }: { round: Round; name: string }) {
       {round.prepTasks.length > 0 && (
         <ul className={styles.tasks} aria-label="Prep tasks">
           {round.prepTasks.map((task) => (
-            <PrepTaskItem key={task.id} round={round} task={task} skills={skills.data} />
+            <PrepTaskItem
+              key={task.id}
+              round={round}
+              task={task}
+              skills={skills.data}
+              persona={persona}
+            />
           ))}
         </ul>
       )}
       {skills.isError && <Alert tone="error">{skills.error.message}</Alert>}
-      <AddPrepTask round={round} name={name} refresh={refresh} />
+      <AddPrepTask
+        round={round}
+        name={name}
+        refresh={refresh}
+        skills={skills.data}
+        persona={persona}
+      />
     </section>
   );
 }
@@ -57,6 +81,12 @@ interface PartProps {
   round: Round;
   name: string;
   refresh: ReturnType<typeof useRefreshPrep>;
+}
+
+interface AddPrepTaskProps extends PartProps {
+  /** The skill library from `useSkills()`; undefined until it loads. */
+  skills: readonly Skill[] | undefined;
+  persona: Persona | undefined;
 }
 
 /** The Round's Prep notes, with their line breaks, and a dialog to write or clear them. */
@@ -140,8 +170,7 @@ function PrepNotes({ round, name, refresh }: PartProps) {
  * The form that adds a prep task, last and not done. A blank or too-long title is refused here;
  * at `MAX_PREP_TASKS` the form is disabled and says why.
  */
-function AddPrepTask({ round, name, refresh }: PartProps) {
-  const skills = useSkills();
+function AddPrepTask({ round, name, refresh, skills, persona }: AddPrepTaskProps) {
   const [title, setTitle] = useState('');
   const [choice, setChoice] = useState(NO_SKILL);
   const [problem, setProblem] = useState<string>();
@@ -186,7 +215,7 @@ function AddPrepTask({ round, name, refresh }: PartProps) {
         />
         <Select
           label="Skill"
-          options={skillOptions(skills.data ?? [])}
+          groups={skillGroups(skills ?? [], persona)}
           value={choice}
           disabled={full}
           onValueChange={setChoice}

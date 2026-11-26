@@ -58,9 +58,16 @@ async function deleteRound({ applicationId, id }: Round) {
 
 /**
  * An application's Rounds, dated ones first in date order and the rest as they were added (the
- * server's order), with a form to add one and a dialog to change one's schedule.
+ * server's order), with a form to add one and a dialog to change one's schedule. `personaId` is the
+ * application's Persona, whose Skills each Round's Prep offers first.
  */
-export function Rounds({ applicationId }: { applicationId: string }) {
+export function Rounds({
+  applicationId,
+  personaId,
+}: {
+  applicationId: string;
+  personaId: string | null;
+}) {
   const queryClient = useQueryClient();
   const headingId = useId();
 
@@ -193,7 +200,7 @@ export function Rounds({ applicationId }: { applicationId: string }) {
                 <RoundOutcome round={round} name={name} />
                 <RoundRating round={round} name={name} />
                 <RoundTags round={round} name={name} />
-                <RoundPrep round={round} name={name} />
+                <RoundPrep round={round} name={name} personaId={personaId} />
               </li>
             );
           })}
