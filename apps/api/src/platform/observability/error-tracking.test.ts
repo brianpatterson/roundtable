@@ -66,6 +66,30 @@ describe('scrubEvent', () => {
       { category: 'http' },
     ]);
   });
+
+  it('drops the path segment after /reset-password/ from the url, transaction and breadcrumbs', () => {
+    const event = scrubEvent({
+      type: undefined,
+      transaction: 'GET /api/auth/reset-password/abc123',
+      request: { url: 'https://example.test/api/auth/reset-password/abc123?callbackURL=x' },
+      breadcrumbs: [
+        { message: 'GET /api/auth/reset-password/abc123' },
+        { category: 'http', data: { url: 'https://example.test/api/auth/reset-password/abc123' } },
+        { category: 'http', data: { status_code: 500 } },
+      ],
+    });
+
+    expect(event.transaction).toBe('GET /api/auth/reset-password/<redacted>');
+    expect(event.request?.url).toBe('https://example.test/api/auth/reset-password/<redacted>');
+    expect(event.breadcrumbs).toEqual([
+      { message: 'GET /api/auth/reset-password/<redacted>' },
+      {
+        category: 'http',
+        data: { url: 'https://example.test/api/auth/reset-password/<redacted>' },
+      },
+      { category: 'http', data: { status_code: 500 } },
+    ]);
+  });
 });
 
 describe('Sentry options', () => {

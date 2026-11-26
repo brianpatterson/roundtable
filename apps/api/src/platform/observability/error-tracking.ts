@@ -1,7 +1,13 @@
 import * as Sentry from '@sentry/node';
-import { Cause, Effect, ErrorReporter, Layer, Redacted } from 'effect';
+import { Cause, Effect, ErrorReporter, Layer, Redacted, Schema } from 'effect';
 import type { Env } from '../config/env.js';
-import { causeChain, describeError, postgresFields, redactQueryParams } from './redact.js';
+import {
+  causeChain,
+  describeError,
+  postgresFields,
+  redactQueryParams,
+  redactResetPasswordToken,
+} from './redact.js';
 
 /**
  * Error tracking with Sentry (ADR-0019): unexpected errors (5xx, crashes in auth, failed email
@@ -41,16 +47,23 @@ export function initErrorTracking(env: Env, overrides: Partial<Sentry.NodeOption
   return true;
 }
 
+// Breadcrumb data is the integration's own record (`Record<string, any>`).
+const isString = Schema.is(Schema.String);
+
 /**
  * Second line of defence, in case an integration attaches more than `dataCollection` allows.
  * Removes secrets that can ride along in a request: query strings carry one-time tokens
- * (`/verify-email?token=…`, which signs the holder in), and headers can carry cookies.
+ * (`/verify-email?token=…`, which signs the holder in), the reset link carries one in its path
+ * (`/reset-password/<token>`, in the url and in the transaction name), and headers can carry
+ * cookies.
  */
 export function scrubEvent<T extends Sentry.ErrorEvent>(event: T, hint?: Sentry.EventHint): T {
   const request = event.request;
 
+  if (event.transaction) event.transaction = redactResetPasswordToken(event.transaction);
+
   if (request) {
-    if (request.url) request.url = request.url.split('?')[0];
+    if (request.url) request.url = redactResetPasswordToken(request.url.replace(/\?.*/s, ''));
     delete request.query_string;
     delete request.cookies;
     delete request.data;
@@ -82,7 +95,13 @@ export function scrubEvent<T extends Sentry.ErrorEvent>(event: T, hint?: Sentry.
   if (postgres) event.contexts = { ...event.contexts, postgres };
 
   for (const breadcrumb of event.breadcrumbs ?? []) {
-    if (breadcrumb.message) breadcrumb.message = redactQueryParams(breadcrumb.message);
+    if (breadcrumb.message) {
+      breadcrumb.message = redactResetPasswordToken(redactQueryParams(breadcrumb.message));
+    }
+
+    const url = breadcrumb.data?.url;
+
+    if (breadcrumb.data && isString(url)) breadcrumb.data.url = redactResetPasswordToken(url);
   }
 
   return event;

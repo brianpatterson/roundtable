@@ -124,6 +124,30 @@ describe('the production server (serveApp)', () => {
     expect(JSON.stringify(sent.request ?? {})).not.toContain('session_token');
   });
 
+  // The reset link carries its token in the path, and the Node server's Http integration attaches
+  // the incoming request (url and transaction name) to every event from it.
+  it('reports a failed reset link without the path segment after /reset-password/', async () => {
+    const resetToken = 'ResetLinkPathSegment0123456789';
+    const callbackURL = encodeURIComponent(`${env.BETTER_AUTH_URL}/reset-password`);
+    const before = events.length;
+
+    const res = await fetch(
+      `${base}/api/auth/reset-password/${resetToken}?callbackURL=${callbackURL}`,
+      { redirect: 'manual' },
+    );
+
+    expect(res.status).toBe(500);
+    await Sentry.flush(2000);
+
+    const reported = events
+      .slice(before)
+      .map(({ sdkProcessingMetadata: _internal, ...sent }) => sent);
+
+    expect(reported.length).toBeGreaterThan(0);
+    expect(JSON.stringify(reported)).not.toContain(resetToken);
+    expect(reported.some((e) => e.request?.url?.endsWith('/reset-password/<redacted>'))).toBe(true);
+  });
+
   // Last: it stops the server.
   it('logs that it is shutting down when stopped', async () => {
     if (server) await Effect.runPromise(Fiber.interrupt(server));
