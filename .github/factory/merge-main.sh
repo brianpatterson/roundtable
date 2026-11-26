@@ -24,8 +24,12 @@ EXCHANGE_URL=${EXCHANGE_URL:-https://api.anthropic.com/api/github/github-app-tok
 protected='^(\.github/|\.claude/|CLAUDE\.md$)'
 REPO_URL=${REPO_URL:-https://github.com/${GITHUB_REPOSITORY:?}.git}
 
-repo=${MERGE_DIR:-$(mktemp -d)} # MERGE_DIR: tests
-mkdir -p "$repo"
+# No git config but this repository's, which this script writes: the agent's code ran on this
+# runner and could have left a ~/.gitconfig (a proxy, a credential helper, an fsmonitor) for the
+# step that holds the OIDC request token. Likewise a new directory, never one that may exist.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+repo=${MERGE_DIR:-$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/merge-main.XXXXXX")} # MERGE_DIR: tests
+mkdir "$repo" 2>/dev/null || [ -z "$(ls -A "$repo")" ]
 cd "$repo"
 git init -q
 git remote add origin "$REPO_URL"
@@ -39,7 +43,9 @@ fi
 
 # Both names of a renamed file count, as in protected-changes.sh.
 base=$(git merge-base HEAD origin/main)
-if others=$(git diff --no-renames --name-only "$base" origin/main | grep -Ev "$protected"); then
+# On its own, so a failed comparison stops the script rather than reading as "nothing else changed".
+changed=$(git diff --no-renames --name-only "$base" origin/main)
+if others=$(grep -Ev "$protected" <<<"$changed"); then
   echo "Main also changed $(wc -l <<<"$others" | tr -d ' ') file(s) outside .github/, .claude/ and CLAUDE.md; leaving $branch as it is."
   exit 0
 fi

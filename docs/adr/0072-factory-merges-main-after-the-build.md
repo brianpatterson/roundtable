@@ -39,8 +39,12 @@ Forces:
 
 Option 4. After the build job's agent step and its checks of what the agent published,
 `.github/factory/merge-main.sh` (copied from main) fetches the accepted
-`claude/issue-<n>-` branch and main into a new repository outside the workspace, with no checkout action, so CodeQL's untrusted-checkout rules hold. It merges main only when main changed nothing since the merge base but
-`.github/`, `.claude/` and `CLAUDE.md` (both names of a renamed file count), with git hooks off. A
+`claude/issue-<n>-` branch and main into a directory it creates itself (`mktemp -d`), never a path
+that may already exist, with global and system git config ignored and no checkout action. The agent
+ran code on this runner and could have planted a repository or a `~/.gitconfig` (a proxy, a
+credential helper, an fsmonitor) for git to obey while the step holds the OIDC request token. It
+merges main only when main changed nothing since the merge base but `.github/`, `.claude/` and
+`CLAUDE.md` (both names of a renamed file count; a failed comparison stops it), with git hooks off. A
 conflict is aborted and left to the conflict resolver; a main that changed other files too is left
 alone, since a pull request needn't be up to date to merge ([ADR-0035](0035-merge-without-updating-branches.md)).
 The push is never forced. The implementer is told to abort a merge the sandbox refuses and push
