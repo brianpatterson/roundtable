@@ -28,9 +28,14 @@
   margin: 0;
   padding: 0;
   list-style: none;
+
+  /* `display: flex` overrides the browser's own `[hidden]` rule, so a collapsed list would show. */
+  &[hidden] {
+    display: none;
+  }
 }
 
-/* A Persona: its name, linking to its page, with its Skill count beside it, under it on a phone. */
+/* A Persona:its name, linking to its page, with its Skill count beside it, under it on a phone. */
 .persona {
   display: flex;
   flex-wrap: wrap;

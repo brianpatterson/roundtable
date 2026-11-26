@@ -81,7 +81,16 @@ test('adds a Persona, ticks a Skill on its page and archives it', async ({ page 
   // Back on the list, it's in the Archived section, with its Skill counted.
   await page.getByRole('link', { name: 'Back to my personas' }).click();
   await expect(personas.getByRole('link', { name: personaName })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Archived \(\d+\)$/ }).click();
+
+  // The Archived section starts collapsed, and its toggle opens it.
+  const archivedLink = page.getByRole('link', { name: personaName });
+  const toggle = page.getByRole('button', { name: /^Archived \(\d+\)$/ });
+
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(archivedLink).toBeHidden();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(archivedLink).toBeVisible();
 
   const archived = page.getByRole('list', { name: 'Archived' });
 
