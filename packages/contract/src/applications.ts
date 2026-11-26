@@ -743,33 +743,34 @@ export class ApplicationsApi extends HttpApiGroup.make('applications')
       success: Round,
       error: RoundNotFound,
     }),
-    // Prep (GLOSSARY.md). Each answers the Round, with its notes and its prep tasks. Another
-    // user's Application, Round or task, or a task of another Round, is a 404.
+    // Prep (GLOSSARY.md). Each answers the Round, with its notes and its prep tasks. A missing
+    // Round, or one of a missing or another user's Application, is RoundNotFound, as on every
+    // Round endpoint; another user's task, or a task of another Round, is PrepTaskNotFound.
     // Sets or clears a Round's Prep notes: blank clears them.
     HttpApiEndpoint.put('setPrepNotes', '/:id/rounds/:roundId/prep-notes', {
       params: RoundParams,
       payload: RoundPrepNotes,
       success: Round,
-      error: [ApplicationNotFound, RoundNotFound],
+      error: RoundNotFound,
     }),
     // Adds a prep task, last and not done. A Skill that isn't the user's is a 404.
     HttpApiEndpoint.post('addPrepTask', '/:id/rounds/:roundId/prep-tasks', {
       params: RoundParams,
       payload: CreatePrepTask,
       success: Round.pipe(HttpApiSchema.status(201)),
-      error: [ApplicationNotFound, RoundNotFound, TooManyPrepTasks, SkillNotFound],
+      error: [RoundNotFound, TooManyPrepTasks, SkillNotFound],
     }),
     // Renames a prep task, changes or clears its Skill, or marks it done or not done.
     HttpApiEndpoint.patch('updatePrepTask', '/:id/rounds/:roundId/prep-tasks/:taskId', {
       params: PrepTaskParams,
       payload: UpdatePrepTask,
       success: Round,
-      error: [ApplicationNotFound, RoundNotFound, PrepTaskNotFound, SkillNotFound],
+      error: [RoundNotFound, PrepTaskNotFound, SkillNotFound],
     }),
     HttpApiEndpoint.delete('deletePrepTask', '/:id/rounds/:roundId/prep-tasks/:taskId', {
       params: PrepTaskParams,
       success: Round,
-      error: [ApplicationNotFound, RoundNotFound, PrepTaskNotFound],
+      error: [RoundNotFound, PrepTaskNotFound],
     }),
   )
   .middleware(Authorization)

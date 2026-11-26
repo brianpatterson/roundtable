@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-25_
+_Last updated: 2026-11-26_
 
 ## 1. What the system does
 
@@ -172,6 +172,17 @@ order inference expects; `roundAdded` passes the Rounds before the new one and m
 application to interviewing with its first Round. Both default the time zone to UTC, from one
 definition, and run the pure rules in `inference.ts`. Which Rounds inference may change (pending, not set by the user) is defined once
 there, and the SQL guard against a concurrent edit by the user is written from it.
+
+Every endpoint under a Round's path reaches the Round through the applications module's Round
+access (`rounds.ts`, plain functions, not exported from its `index.ts`). `changeRound` resolves the
+Round under the signed-in user's Application in one query, holds its row in a transaction while
+the handler's change runs (the columns to set, the Tag rule, a prep task and its limit), and
+answers the Round as it is afterwards, with its prep tasks; `deleteRound` holds it the same way
+and deletes it. A missing Round, one of another Application, and one of a missing or another
+user's Application are the same `RoundNotFound`. Every Round the API answers, a new one and the
+Agenda's included, gets its prep tasks from `withPrepTasks`, in one query for any number of
+Rounds. A prep task's Skill is checked before the transaction, since it's personas' read
+(ADR-0044).
 
 **The web app's tests** ([ADR-0071](adr/0071-in-memory-api-adapter-for-web-tests.md)): the
 applications, personas and shell component tests call the API through the real typed client, answered by
@@ -457,34 +468,34 @@ for `Unauthorized`, a return to the sign-in page (see Identity above). `client.t
 40 KB gzipped of the web bundle (115 → 155 KB). Job URLs must be `http(s)`: the web app renders them as links, so `javascript:` or `data:` URLs
 are rejected at the API rather than left to React and the CSP.
 
-| Method   | Path                                                       | Auth                      | Success         | Errors                                                                                                                                            |
-| -------- | ---------------------------------------------------------- | ------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET      | `/api/health`                                              | public                    | 200             | (reports `db: "down"` instead of failing)                                                                                                         |
-| GET      | `/api/auth-config`                                         | public                    | 200             | (lists enabled social providers)                                                                                                                  |
-| GET/POST | `/api/auth/*`                                              | public                    | varies          | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                                                             |
-| GET      | `/api/applications`                                        | session                   | 200             | 401                                                                                                                                               |
-| GET      | `/api/applications/:id`                                    | session                   | 200             | 400 (malformed id), 401, 404 (unknown or not yours)                                                                                               |
-| POST     | `/api/applications`                                        | session                   | 201             | 400, 401                                                                                                                                          |
-| PATCH    | `/api/applications/:id`                                    | session                   | 200             | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                                                           |
-| DELETE   | `/api/applications/:id`                                    | session                   | 204             | 400 (malformed id), 401, 404                                                                                                                      |
-| GET      | `/api/applications/:id/rounds`                             | session                   | 200             | 400 (malformed id), 401, 404 (application unknown or not yours)                                                                                   |
-| POST     | `/api/applications/:id/rounds`                             | session                   | 201             | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                                                         |
-| PUT      | `/api/applications/:id/rounds/:roundId/schedule`           | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`)                                |
-| PUT      | `/api/applications/:id/rounds/:roundId/rating`             | session                   | 200 (the Round) | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)                                     |
-| PUT      | `/api/applications/:id/rounds/:roundId/outcome`            | session                   | 200 (the Round) | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                                                |
-| DELETE   | `/api/applications/:id/rounds/:roundId`                    | session                   | 204             | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                                                    |
-| POST     | `/api/applications/:id/rounds/:roundId/tags`               | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)                                          |
-| DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=`          | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                                                             |
-| PUT      | `/api/applications/:id/rounds/:roundId/prep-notes`         | session                   | 200 (the Round) | 400 (body: notes over 10,000 characters; or id), 401, 404 (`ApplicationNotFound`, `RoundNotFound`)                                                |
-| POST     | `/api/applications/:id/rounds/:roundId/prep-tasks`         | session                   | 201 (the Round) | 400 (title blank or over 200, malformed id, or `TooManyPrepTasks`: it has 50), 401, 404 (`ApplicationNotFound`, `RoundNotFound`, `SkillNotFound`) |
-| PATCH    | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round) | 400 (body or id), 401, 404 (`ApplicationNotFound`, `RoundNotFound`, `PrepTaskNotFound`, `SkillNotFound`)                                          |
-| DELETE   | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round) | 400 (malformed id), 401, 404 (`ApplicationNotFound`, `RoundNotFound`, `PrepTaskNotFound`)                                                         |
-| GET      | `/api/agenda?timeZone=`                                    | session                   | 200             | 400 (an unknown `timeZone`), 401                                                                                                                  |
-| GET      | `/api/skills`                                              | session                   | 200             | 401 (lists archived Skills too, by name ignoring case)                                                                                            |
-| POST     | `/api/skills`                                              | session                   | 201             | 400 (blank or over 80 characters, or `TooManySkills`: 200), 401, 409 (`SkillNameTaken`, with `archived`)                                          |
-| PATCH    | `/api/skills/:id`                                          | session                   | 200 (the Skill) | 400 (body or malformed id), 401, 404 (`SkillNotFound`: unknown or not yours), 409 (`SkillNameTaken`)                                              |
-| POST     | `/api/reports`                                             | public (session optional) | 201             | 400, 429 (5 per client address per hour)                                                                                                          |
-| GET      | `/api/factory/reports/:id`                                 | factory token             | 200             | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                                                        |
+| Method   | Path                                                       | Auth                      | Success         | Errors                                                                                                                     |
+| -------- | ---------------------------------------------------------- | ------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| GET      | `/api/health`                                              | public                    | 200             | (reports `db: "down"` instead of failing)                                                                                  |
+| GET      | `/api/auth-config`                                         | public                    | 200             | (lists enabled social providers)                                                                                           |
+| GET/POST | `/api/auth/*`                                              | public                    | varies          | Better Auth: sign-up/in/out, OAuth callbacks, password reset, session                                                      |
+| GET      | `/api/applications`                                        | session                   | 200             | 401                                                                                                                        |
+| GET      | `/api/applications/:id`                                    | session                   | 200             | 400 (malformed id), 401, 404 (unknown or not yours)                                                                        |
+| POST     | `/api/applications`                                        | session                   | 201             | 400, 401                                                                                                                   |
+| PATCH    | `/api/applications/:id`                                    | session                   | 200             | 400 (body, e.g. an unknown `timeZone`, or id), 401, 404                                                                    |
+| DELETE   | `/api/applications/:id`                                    | session                   | 204             | 400 (malformed id), 401, 404                                                                                               |
+| GET      | `/api/applications/:id/rounds`                             | session                   | 200             | 400 (malformed id), 401, 404 (application unknown or not yours)                                                            |
+| POST     | `/api/applications/:id/rounds`                             | session                   | 201             | 400 (body, e.g. an unknown interview type or `timeZone`, or id), 401, 404                                                  |
+| PUT      | `/api/applications/:id/rounds/:roundId/schedule`           | session                   | 200 (the Round) | 400 (body: a start and a due date, a duration without a start or outside 5–480; or id), 401, 404 (`RoundNotFound`)         |
+| PUT      | `/api/applications/:id/rounds/:roundId/rating`             | session                   | 200 (the Round) | 400 (body: a rating outside 1–5 or not whole, a note over 2000 characters; or id), 401, 404 (`RoundNotFound`)              |
+| PUT      | `/api/applications/:id/rounds/:roundId/outcome`            | session                   | 200 (the Round) | 400 (body: an Outcome outside pending, passed, failed, unknown; or id), 401, 404 (`RoundNotFound`)                         |
+| DELETE   | `/api/applications/:id/rounds/:roundId`                    | session                   | 204             | 400 (malformed id), 401, 404 (`RoundNotFound`: unknown, not in that application, or not yours)                             |
+| POST     | `/api/applications/:id/rounds/:roundId/tags`               | session                   | 200 (the Round) | 400 (blank or over 40 characters, malformed id, or `TooManyTags`: it has 10), 401, 404 (`RoundNotFound`)                   |
+| DELETE   | `/api/applications/:id/rounds/:roundId/tags?tag=`          | session                   | 200 (the Round) | 400 (malformed tag or id), 401, 404 (`RoundNotFound`)                                                                      |
+| PUT      | `/api/applications/:id/rounds/:roundId/prep-notes`         | session                   | 200 (the Round) | 400 (body: notes over 10,000 characters; or id), 401, 404 (`RoundNotFound`)                                                |
+| POST     | `/api/applications/:id/rounds/:roundId/prep-tasks`         | session                   | 201 (the Round) | 400 (title blank or over 200, malformed id, or `TooManyPrepTasks`: it has 50), 401, 404 (`RoundNotFound`, `SkillNotFound`) |
+| PATCH    | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round) | 400 (body or id), 401, 404 (`RoundNotFound`, `PrepTaskNotFound`, `SkillNotFound`)                                          |
+| DELETE   | `/api/applications/:id/rounds/:roundId/prep-tasks/:taskId` | session                   | 200 (the Round) | 400 (malformed id), 401, 404 (`RoundNotFound`, `PrepTaskNotFound`)                                                         |
+| GET      | `/api/agenda?timeZone=`                                    | session                   | 200             | 400 (an unknown `timeZone`), 401                                                                                           |
+| GET      | `/api/skills`                                              | session                   | 200             | 401 (lists archived Skills too, by name ignoring case)                                                                     |
+| POST     | `/api/skills`                                              | session                   | 201             | 400 (blank or over 80 characters, or `TooManySkills`: 200), 401, 409 (`SkillNameTaken`, with `archived`)                   |
+| PATCH    | `/api/skills/:id`                                          | session                   | 200 (the Skill) | 400 (body or malformed id), 401, 404 (`SkillNotFound`: unknown or not yours), 409 (`SkillNameTaken`)                       |
+| POST     | `/api/reports`                                             | public (session optional) | 201             | 400, 429 (5 per client address per hour)                                                                                   |
+| GET      | `/api/factory/reports/:id`                                 | factory token             | 200             | 400 (malformed id), 401, 404 (unknown or over 30 days old)                                                                 |
 
 The list isn't paginated. That's fine for hundreds of rows per user, and cursor pagination on
 `(updated_at, id)` is the planned next step.

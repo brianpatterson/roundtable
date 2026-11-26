@@ -605,6 +605,44 @@ describe('the contract matches the routes the server answers', () => {
   });
 });
 
+describe('a Round’s endpoints', () => {
+  // Every endpoint under a Round's path answers a missing or another user's Round, or one of a
+  // missing or another user's Application, as RoundNotFound, and never as ApplicationNotFound.
+  it('declare RoundNotFound and not ApplicationNotFound', () => {
+    const declared: Record<string, { round: boolean; application: boolean }> = {};
+
+    HttpApi.reflect(contract.RoundtableApi, {
+      onGroup: () => {},
+      onEndpoint: ({ endpoint }) => {
+        if (!endpoint.path.includes('/:roundId')) return;
+
+        const answers = (error: contract.RoundNotFound | contract.ApplicationNotFound) =>
+          [...endpoint.error].some((schema) => Schema.is(schema)(error));
+
+        declared[endpoint.identifier] = {
+          round: answers(new contract.RoundNotFound()),
+          application: answers(new contract.ApplicationNotFound()),
+        };
+      },
+    });
+
+    const expected = { round: true, application: false };
+
+    expect(declared).toEqual({
+      scheduleRound: expected,
+      rateRound: expected,
+      setRoundOutcome: expected,
+      deleteRound: expected,
+      addTag: expected,
+      removeTag: expected,
+      setPrepNotes: expected,
+      addPrepTask: expected,
+      updatePrepTask: expected,
+      deletePrepTask: expected,
+    });
+  });
+});
+
 describe('expected errors stay out of Sentry', () => {
   // A new error class fails the first test until it's listed here and checked below. A 5xx error
   // is unexpected by definition and may be reported; a 4xx one must set ErrorReporter.ignore.

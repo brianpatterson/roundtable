@@ -269,16 +269,14 @@ export function createFakeApi() {
     });
 
   /**
-   * Changes the Prep of Round `params` with `change`, or fails: its Application not found, then
-   * the Round. Answers the Round as it is afterwards.
+   * Changes the Prep of Round `params` with `change`, or fails: the Round not found, whether it or
+   * its Application is missing. Answers the Round as it is afterwards.
    */
   const changePrep = <E>(
     params: RoundParams,
     change: (round: Round) => Effect.Effect<Round, E>,
-  ): Effect.Effect<Round, E | ApplicationNotFound | RoundNotFound> =>
+  ): Effect.Effect<Round, E | RoundNotFound> =>
     Effect.gen(function* () {
-      if (!findApplication(params.id)) return yield* notFound();
-
       const existing = findRound(params);
 
       if (!existing) return yield* roundNotFound();

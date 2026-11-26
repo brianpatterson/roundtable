@@ -4,13 +4,11 @@ import { inArray } from 'drizzle-orm';
 import { Schema } from 'effect';
 import {
   AgendaRound,
-  ApplicationNotFound,
   MAX_PREP_NOTES,
   MAX_PREP_TASK_TITLE,
   MAX_PREP_TASKS,
   PrepTaskNotFound,
   Round,
-  RoundNotFound,
   SkillNotFound,
   TooManyPrepTasks,
 } from '@roundtable/contract';
@@ -128,28 +126,6 @@ describe('a Round’s Prep', () => {
       prepTasks: [],
     });
   });
-
-  it('comes with its prep tasks from every endpoint that answers a Round', async () => {
-    const round = await createRound();
-    await request('PUT', `${round.url}/prep-notes`, { notes: 'Notes' });
-    await addTask(round, { title: 'Kept' });
-
-    const responses = [
-      await request('PUT', `${round.url}/schedule`, { dueOn: '2026-12-01' }),
-      await request('PUT', `${round.url}/rating`, { selfRating: 4 }),
-      await request('PUT', `${round.url}/outcome`, { outcome: 'passed' }),
-      await request('POST', `${round.url}/tags`, { tag: 'Caching' }),
-      await request('DELETE', `${round.url}/tags?tag=Caching`),
-    ];
-
-    for (const res of responses) {
-      expect(res.statusCode).toBe(200);
-      expect(res.json<RoundJson>()).toMatchObject({
-        prepNotes: 'Notes',
-        prepTasks: [{ title: 'Kept' }],
-      });
-    }
-  });
 });
 
 describe('Prep notes', () => {
@@ -258,6 +234,25 @@ describe('prep tasks', () => {
     expect((await listed(round)).prepTasks).toHaveLength(MAX_PREP_TASKS);
   });
 
+  it(`keeps to the limit when two tasks are added at once to a Round with ${MAX_PREP_TASKS - 1}`, async () => {
+    const round = await createRound();
+
+    for (let n = 1; n < MAX_PREP_TASKS; n++) await addTask(round, { title: `Task ${n}` });
+
+    const answers = await Promise.all(
+      ['First', 'Second'].map((title) => request('POST', `${round.url}/prep-tasks`, { title })),
+    );
+
+    expect(answers.map((res) => res.statusCode).sort()).toEqual([201, 400]);
+
+    const refused = answers.find((res) => res.statusCode === 400);
+
+    expect(Schema.decodeUnknownSync(TooManyPrepTasks)(refused?.json())).toBeInstanceOf(
+      TooManyPrepTasks,
+    );
+    expect((await listed(round)).prepTasks).toHaveLength(MAX_PREP_TASKS);
+  });
+
   it('renames a task, trimmed', async () => {
     const round = await createRound();
     const task = await addTask(round, { title: 'Old' });
@@ -315,17 +310,8 @@ describe('prep tasks', () => {
     );
   });
 
-  it('answers a missing Round with RoundNotFound and a malformed task id with 400', async () => {
+  it('answers a malformed task id with 400', async () => {
     const round = await createRound();
-
-    const missing = await request(
-      'POST',
-      `/api/applications/${round.applicationId}/rounds/${MISSING_ID}/prep-tasks`,
-      { title: 'Nowhere' },
-    );
-
-    expect(missing.statusCode).toBe(404);
-    expect(Schema.decodeUnknownSync(RoundNotFound)(missing.json())).toBeInstanceOf(RoundNotFound);
 
     const malformed = await request('PATCH', `${round.url}/prep-tasks/not-a-uuid`, { done: true });
 
@@ -434,7 +420,8 @@ describe('a prep task’s Skill', () => {
   });
 });
 
-// CLAUDE.md rule 8: another user's rows are a 404, never a 403.
+// CLAUDE.md rule 8: another user's rows are a 404, never a 403. Their Round, or a Round of their
+// Application, is RoundNotFound on every Round endpoint: rounds.test.ts pins it for all of them.
 describe('another user’s Prep', () => {
   let theirs: RoundRef;
   let theirTask: TaskJson;
@@ -442,42 +429,8 @@ describe('another user’s Prep', () => {
 
   beforeEach(async () => {
     theirs = await createRound();
-    await request('PUT', `${theirs.url}/prep-notes`, { notes: 'Their notes' });
     theirTask = await addTask(theirs, { title: 'Their task' });
     ({ cookie: mine } = await signUp(t));
-  });
-
-  it('answers their application as ApplicationNotFound, changing nothing', async () => {
-    const taskUrl = `${theirs.url}/prep-tasks/${theirTask.id}`;
-
-    const responses = [
-      await request('PUT', `${theirs.url}/prep-notes`, { notes: 'Mine' }, mine),
-      await request('POST', `${theirs.url}/prep-tasks`, { title: 'Mine' }, mine),
-      await request('PATCH', taskUrl, { done: true }, mine),
-      await request('DELETE', taskUrl, undefined, mine),
-    ];
-
-    for (const res of responses) {
-      expect(res.statusCode).toBe(404);
-      expect(Schema.decodeUnknownSync(ApplicationNotFound)(res.json())).toBeInstanceOf(
-        ApplicationNotFound,
-      );
-    }
-
-    expect(await listed(theirs)).toMatchObject({
-      prepNotes: 'Their notes',
-      prepTasks: [{ title: 'Their task', completedAt: null }],
-    });
-  });
-
-  it('answers their Round under my application as RoundNotFound', async () => {
-    const own = await createRound(mine);
-    const url = `/api/applications/${own.applicationId}/rounds/${theirs.roundId}`;
-
-    const res = await request('PUT', `${url}/prep-notes`, { notes: 'Mine' }, mine);
-
-    expect(res.statusCode).toBe(404);
-    expect(Schema.decodeUnknownSync(RoundNotFound)(res.json())).toBeInstanceOf(RoundNotFound);
   });
 
   it('answers their task under my Round as PrepTaskNotFound', async () => {
