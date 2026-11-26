@@ -11,6 +11,7 @@ import { HttpApiClient } from 'effect/http-api';
 import {
   RoundtableApi,
   type CreateApplication,
+  type CreatePersona,
   type CreatePrepTask,
   type CreateReport,
   type CreateRound,
@@ -19,6 +20,7 @@ import {
   type RoundRating,
   type RoundSchedule,
   type UpdateApplication,
+  type UpdatePersona,
   type UpdatePrepTask,
   type UpdateSkill,
 } from '../index.js';
@@ -120,6 +122,16 @@ export function makeApiClient(options: ApiClientOptions) {
     /** Renames, archives (`archived: true`) or restores (`archived: false`) a Skill. */
     updateSkill: (id: string, payload: UpdateSkill) =>
       run((client) => client.skills.update({ params: { id }, payload })),
+    /** Every Persona of the user's, archived ones included, by name ignoring case. */
+    listPersonas: () => run((client) => client.personas.list()),
+    createPersona: (payload: CreatePersona) => run((client) => client.personas.create({ payload })),
+    /** Renames, archives (`archived: true`) or restores (`archived: false`) a Persona. */
+    updatePersona: (id: string, payload: UpdatePersona) =>
+      run((client) => client.personas.update({ params: { id }, payload })),
+    addPersonaSkill: (id: string, skillId: string) =>
+      run((client) => client.personas.addSkill({ params: { id }, payload: { skillId } })),
+    removePersonaSkill: (id: string, skillId: string) =>
+      run((client) => client.personas.removeSkill({ params: { id, skillId } })),
     createReport: (payload: CreateReport) =>
       run((client) => client.support.createReport({ payload })),
   };

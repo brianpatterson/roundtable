@@ -26,6 +26,7 @@ import {
   MAX_TAGS,
   OPEN_APPLICATION_STATUSES,
   OptionalSession,
+  PersonaNotFound,
   PrepTaskNotFound,
   ReportNotFound,
   RoundNotFound,
@@ -39,15 +40,18 @@ import {
   inRoundOrder,
   isUpcoming,
   sameTag,
+  type AddPersonaSkill,
   type AgendaQuery,
   type Application,
   type ApplicationStatus,
   type AuthProvider,
   type CreateApplication,
+  type CreatePersona,
   type CreatePrepTask,
   type CreateReport,
   type CreateRound,
   type CreateSkill,
+  type Persona,
   type Round,
   type RoundOutcome,
   type RoundPrepNotes,
@@ -56,6 +60,7 @@ import {
   type RoundTag,
   type Skill,
   type UpdateApplication,
+  type UpdatePersona,
   type UpdatePrepTask,
   type UpdateSkill,
 } from '@roundtable/contract';
@@ -105,6 +110,16 @@ export const skill = (fields: Partial<Skill> = {}): Skill => ({
   ...fields,
 });
 
+/** A Persona with every field defaulted: a test names only what it cares about. */
+export const persona = (fields: Partial<Persona> = {}): Persona => ({
+  id: crypto.randomUUID(),
+  name: 'Backend engineer',
+  archivedAt: null,
+  skillIds: [],
+  createdAt: CREATED,
+  ...fields,
+});
+
 /** The signed-in user, as Better Auth's session answers it. */
 export interface FakeUser {
   readonly id: string;
@@ -119,6 +134,8 @@ type Params = { readonly id: string };
 type RoundParams = { readonly id: string; readonly roundId: string };
 
 type PrepTaskParams = RoundParams & { readonly taskId: string };
+
+type PersonaSkillParams = Params & { readonly skillId: string };
 
 /**
  * What each endpoint received, as the contract decoded it: the payload, or the query, or the
@@ -148,6 +165,11 @@ export interface Received {
   'skills.list': object;
   'skills.create': CreateSkill;
   'skills.update': UpdateSkill;
+  'personas.list': object;
+  'personas.create': CreatePersona;
+  'personas.update': UpdatePersona;
+  'personas.addSkill': AddPersonaSkill;
+  'personas.removeSkill': PersonaSkillParams;
   'support.createReport': CreateReport;
   'factoryReports.get': Params;
   'auth.getSession': object;
@@ -187,6 +209,7 @@ export function createFakeApi() {
   let applications: Application[] = [];
   let rounds: Round[] = [];
   let skills: Skill[] = [];
+  let personas: Persona[] = [];
   let user: FakeUser | null = ADA;
   let protectedCallsLeft = Number.POSITIVE_INFINITY;
   let sessionNumber = 1;
@@ -704,6 +727,108 @@ export function createFakeApi() {
     ),
   );
 
+  /** Changes Persona `id` with `change`, or fails: not found. */
+  const changePersona = (id: string, change: (persona: Persona) => Persona) =>
+    Effect.suspend(() => {
+      const existing = personas.find((p) => p.id === id);
+
+      if (!existing) return Effect.fail(new PersonaNotFound());
+
+      const changed = change(existing);
+
+      personas = personas.map((p) => (p.id === id ? changed : p));
+
+      return Effect.succeed(changed);
+    });
+
+  /** `skillIds` in Skill name order, as the API answers them. */
+  const bySkillName = (skillIds: readonly string[]) =>
+    skillIds.toSorted((a, b) =>
+      (skills.find((s) => s.id === a)?.name ?? '').localeCompare(
+        skills.find((s) => s.id === b)?.name ?? '',
+        'en',
+        { sensitivity: 'base' },
+      ),
+    );
+
+  // Personas: store what they're told, like the skill library. They enforce neither the name rule,
+  // the limits nor archived Skills (the API does); a test that needs one overrides the endpoint.
+  const PersonasFake = HttpApiBuilder.group(RoundtableApi, 'personas', (handlers) =>
+    Effect.succeed(
+      handlers.handleAll({
+        list: () =>
+          answer(
+            'personas.list',
+            {},
+            Effect.sync(() =>
+              personas.toSorted((a, b) =>
+                a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+              ),
+            ),
+          ),
+
+        create: ({ payload }) =>
+          answer(
+            'personas.create',
+            payload,
+            Effect.sync(() => {
+              const created = persona({ name: payload.name, createdAt: new Date() });
+
+              personas = [...personas, created];
+
+              return created;
+            }),
+          ),
+
+        update: ({ params, payload }) =>
+          answer(
+            'personas.update',
+            payload,
+            changePersona(params.id, (existing) => ({
+              ...existing,
+              name: payload.name ?? existing.name,
+              archivedAt:
+                payload.archived === undefined
+                  ? existing.archivedAt
+                  : payload.archived
+                    ? (existing.archivedAt ?? new Date())
+                    : null,
+            })),
+          ),
+
+        addSkill: ({ params, payload }) =>
+          answer(
+            'personas.addSkill',
+            payload,
+            checkSkill(payload.skillId).pipe(
+              Effect.andThen(
+                changePersona(params.id, (existing) => ({
+                  ...existing,
+                  skillIds: existing.skillIds.includes(payload.skillId)
+                    ? existing.skillIds
+                    : bySkillName([...existing.skillIds, payload.skillId]),
+                })),
+              ),
+            ),
+          ),
+
+        removeSkill: ({ params }) =>
+          answer(
+            'personas.removeSkill',
+            params,
+            checkSkill(params.skillId).pipe(
+              Effect.andThen(
+                changePersona(params.id, (existing) => ({
+                  ...existing,
+                  skillIds: existing.skillIds.filter((id) => id !== params.skillId),
+                })),
+              ),
+            ),
+          ),
+      }),
+    ),
+  );
+
   const SupportFake = HttpApiBuilder.group(RoundtableApi, 'support', (handlers) =>
     Effect.succeed(
       handlers.handle('createReport', ({ payload }) =>
@@ -821,6 +946,7 @@ export function createFakeApi() {
       ApplicationsFake,
       AgendaFake,
       SkillsFake,
+      PersonasFake,
       SupportFake,
       FactoryReportsFake,
     ]),
@@ -901,6 +1027,15 @@ export function createFakeApi() {
       return seeded;
     },
 
+    /** Adds a Persona, every field defaulted, and returns it. */
+    seedPersona(fields: Partial<Persona> = {}) {
+      const seeded = persona(fields);
+
+      personas = [...personas, seeded];
+
+      return seeded;
+    },
+
     /** The Application `id` as the fake holds it now. */
     application: (id: string) => findApplication(id),
 
@@ -975,6 +1110,7 @@ export function createFakeApi() {
       applications = [];
       rounds = [];
       skills = [];
+      personas = [];
       user = ADA;
       protectedCallsLeft = Number.POSITIVE_INFINITY;
       sessionNumber = 1;

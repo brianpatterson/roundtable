@@ -40,6 +40,8 @@ describe('runMigrations', () => {
         'accounts',
         'applications',
         'email_sends',
+        'persona_skills',
+        'personas',
         'prep_tasks',
         'rounds',
         'sessions',

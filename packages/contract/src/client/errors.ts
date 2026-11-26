@@ -10,7 +10,20 @@ import {
   TooManyPrepTasks,
   TooManyTags,
 } from '../applications.js';
-import { MAX_SKILLS, SkillNameTaken, SkillNotFound, TooManySkills } from '../personas.js';
+import {
+  MAX_PERSONAS,
+  MAX_PERSONA_SKILLS,
+  MAX_SKILLS,
+  PersonaArchived,
+  PersonaNameTaken,
+  PersonaNotFound,
+  SkillArchived,
+  SkillNameTaken,
+  SkillNotFound,
+  TooManyPersonaSkills,
+  TooManyPersonas,
+  TooManySkills,
+} from '../personas.js';
 import { ReportNotFound, ReportRateLimited } from '../support.js';
 
 /** A failed API call, with a message fit to show the user. `cause` is the original error. */
@@ -38,6 +51,18 @@ const isSkillNotFound = Schema.is(SkillNotFound);
 const isSkillNameTaken = Schema.is(SkillNameTaken);
 
 const isTooManySkills = Schema.is(TooManySkills);
+
+const isSkillArchived = Schema.is(SkillArchived);
+
+const isPersonaNotFound = Schema.is(PersonaNotFound);
+
+const isPersonaArchived = Schema.is(PersonaArchived);
+
+const isPersonaNameTaken = Schema.is(PersonaNameTaken);
+
+const isTooManyPersonas = Schema.is(TooManyPersonas);
+
+const isTooManyPersonaSkills = Schema.is(TooManyPersonaSkills);
 
 // Support
 const isReportRateLimited = Schema.is(ReportRateLimited);
@@ -75,6 +100,35 @@ export function toApiError(cause: unknown): ApiError {
     return new ApiError(`You can have at most ${MAX_SKILLS} skills, archived ones included.`, {
       cause,
     });
+  }
+
+  if (isSkillArchived(cause)) {
+    return new ApiError('That skill is archived. Restore it to add it.', { cause });
+  }
+
+  if (isPersonaNotFound(cause)) return new ApiError('That persona no longer exists.', { cause });
+
+  if (isPersonaArchived(cause)) {
+    return new ApiError('That persona is archived. Restore it to pick it.', { cause });
+  }
+
+  if (isPersonaNameTaken(cause)) {
+    return new ApiError(
+      cause.archived
+        ? 'You have an archived persona with that name. Restore it instead.'
+        : 'You already have a persona with that name.',
+      { cause },
+    );
+  }
+
+  if (isTooManyPersonas(cause)) {
+    return new ApiError(`You can have at most ${MAX_PERSONAS} personas, archived ones included.`, {
+      cause,
+    });
+  }
+
+  if (isTooManyPersonaSkills(cause)) {
+    return new ApiError(`A persona can have at most ${MAX_PERSONA_SKILLS} skills.`, { cause });
   }
 
   if (isReportRateLimited(cause)) {

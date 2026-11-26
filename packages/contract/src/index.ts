@@ -5,7 +5,7 @@
 import { HttpApi, HttpApiMiddleware } from 'effect/http-api';
 import { AgendaApi, ApplicationsApi } from './applications.js';
 import { IdentityApi } from './identity.js';
-import { SkillsApi } from './personas.js';
+import { PersonasApi, SkillsApi } from './personas.js';
 import { FactoryReportsApi, SupportApi } from './support.js';
 import { SystemApi } from './system.js';
 
@@ -29,6 +29,7 @@ export class RoundtableApi extends HttpApi.make('roundtable')
   .add(ApplicationsApi)
   .add(AgendaApi)
   .add(SkillsApi)
+  .add(PersonasApi)
   .add(SupportApi)
   .add(FactoryReportsApi)
   .middleware(HttpApiMiddleware.ProblemDetails) {}

@@ -320,6 +320,52 @@ describe('what the contract accepts', () => {
     else expect(exit).toEqual(Exit.succeed(decoded));
   });
 
+  const personaCases = {
+    plain: [{ name: 'Backend engineer' }, { name: 'Backend engineer' }],
+    trimmed: [{ name: '  Backend engineer \n' }, { name: 'Backend engineer' }],
+    '80 characters once trimmed': [{ name: ` ${long(80)} ` }, { name: long(80) }],
+    '81 characters': [{ name: long(81) }, false],
+    blank: [{ name: '   ' }, false],
+    empty: [{ name: '' }, false],
+    missing: [{}, false],
+    'unknown key is dropped': [{ name: 'Mobile', skillIds: [] }, { name: 'Mobile' }],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(personaCases))('persona: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.CreatePersona)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
+  const personaUpdateCases = {
+    rename: [{ name: ' Mobile ' }, { name: 'Mobile' }],
+    archive: [{ archived: true }, { archived: true }],
+    restore: [{ archived: false }, { archived: false }],
+    empty: [{}, false],
+    'only unknown keys': [{ skillIds: [] }, false],
+    'blank name': [{ name: ' ' }, false],
+    'archived as text': [{ archived: 'true' }, false],
+  } satisfies Record<string, Case>;
+
+  it.each(Object.entries(personaUpdateCases))('persona update: %s', (_name, [input, decoded]) => {
+    const exit = Schema.decodeUnknownExit(contract.UpdatePersona)(input);
+
+    if (decoded === false) expect(Exit.isFailure(exit)).toBe(true);
+    else expect(exit).toEqual(Exit.succeed(decoded));
+  });
+
+  it('takes a Skill id to add to a Persona, and refuses a malformed one', () => {
+    const skillId = crypto.randomUUID();
+
+    expect(Schema.decodeExit(contract.AddPersonaSkill)({ skillId })).toEqual(
+      Exit.succeed({ skillId }),
+    );
+    expect(Exit.isFailure(Schema.decodeExit(contract.AddPersonaSkill)({ skillId: 'x' }))).toBe(
+      true,
+    );
+  });
+
   it('reads a Round from a server before Tags as having none', () => {
     const round = Schema.decodeSync(contract.Round)({
       id: 'r',
@@ -653,17 +699,32 @@ describe('expected errors stay out of Sentry', () => {
 
     expect(errorClassNames.sort()).toEqual([
       'ApplicationNotFound',
+      'PersonaArchived',
+      'PersonaNameTaken',
+      'PersonaNotFound',
       'PrepTaskNotFound',
       'ReportNotFound',
       'ReportRateLimited',
       'RoundNotFound',
+      'SkillArchived',
       'SkillNameTaken',
       'SkillNotFound',
+      'TooManyPersonaSkills',
+      'TooManyPersonas',
       'TooManyPrepTasks',
       'TooManySkills',
       'TooManyTags',
       'Unauthorized',
     ]);
+  });
+
+  it('PersonaNotFound (404), TooManyPersonas and TooManyPersonaSkills (400), PersonaNameTaken, PersonaArchived and SkillArchived (409) set ErrorReporter.ignore', () => {
+    expect(new contract.PersonaNotFound()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.TooManyPersonas()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.TooManyPersonaSkills()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.PersonaNameTaken({ archived: true })[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.PersonaArchived()[ErrorReporter.ignore]).toBe(true);
+    expect(new contract.SkillArchived()[ErrorReporter.ignore]).toBe(true);
   });
 
   it('ApplicationNotFound, RoundNotFound, PrepTaskNotFound, SkillNotFound and ReportNotFound (404), TooManyTags, TooManyPrepTasks and TooManySkills (400), Unauthorized (401), SkillNameTaken (409) and ReportRateLimited (429) set ErrorReporter.ignore', () => {
