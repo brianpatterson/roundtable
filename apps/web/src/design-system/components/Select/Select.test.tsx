@@ -156,6 +156,25 @@ describe('Select with groups', () => {
     expect(screen.getByRole('combobox', { name: 'Skill' })).toBeDefined();
   });
 
+  it('lists the options of a group with no label on their own, outside any group', async () => {
+    render(
+      <Select
+        label="Skill"
+        groups={[{ options: [{ value: 'none', label: 'No skill' }] }, ...groups]}
+        value="none"
+        onValueChange={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole('combobox', { name: 'Skill' }));
+
+    const listbox = await screen.findByRole('listbox');
+    const none = within(listbox).getByRole('option', { name: 'No skill' });
+
+    expect(within(listbox).getAllByRole('option')[0]).toBe(none);
+    expect(none.closest('[role="group"]')).toBeNull();
+    expect(within(listbox).getAllByRole('group')).toHaveLength(2);
+  });
+
   it('reports the option the user picks from a group', async () => {
     const onValueChange = vi.fn();
 

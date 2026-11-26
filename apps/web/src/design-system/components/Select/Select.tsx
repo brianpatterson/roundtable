@@ -6,9 +6,12 @@ export interface SelectOption<Value extends string> {
   readonly label: string;
 }
 
-/** Options listed under a heading, announced as a group named by its `label`. */
+/**
+ * Options listed under a heading, announced as a group named by its `label`. Without a label they
+ * are listed on their own, outside any group: an option like "None" before the groups.
+ */
 export interface SelectGroup<Value extends string> {
-  readonly label: string;
+  readonly label?: string;
   readonly options: readonly SelectOption<Value>[];
 }
 
@@ -34,7 +37,7 @@ export type SelectProps<Value extends string> = SelectBaseProps<Value> &
  *
  * Pass `groups` instead of `options` to list options under headings, in the order given: each
  * group is announced with its label, the arrow keys move through every option across groups, and
- * a group with no options isn't shown.
+ * a group with no options isn't shown. A group with no label lists its options outside any group.
  */
 export function Select<Value extends string>({
   label,
@@ -80,14 +83,19 @@ export function Select<Value extends string>({
           <BaseSelect.Popup className={styles.popup}>
             <BaseSelect.List>
               {groups ? (
-                groups.map((group) => (
-                  <BaseSelect.Group key={group.label}>
-                    <BaseSelect.GroupLabel className={styles.groupLabel}>
-                      {group.label}
-                    </BaseSelect.GroupLabel>
-                    <Items options={group.options} />
-                  </BaseSelect.Group>
-                ))
+                // Keyed by position: two groups may share a label.
+                groups.map((group, i) =>
+                  group.label === undefined ? (
+                    <Items key={i} options={group.options} />
+                  ) : (
+                    <BaseSelect.Group key={i}>
+                      <BaseSelect.GroupLabel className={styles.groupLabel}>
+                        {group.label}
+                      </BaseSelect.GroupLabel>
+                      <Items options={group.options} />
+                    </BaseSelect.Group>
+                  ),
+                )
               ) : (
                 <Items options={options} />
               )}
