@@ -111,3 +111,87 @@ test('writes Prep notes and keeps a checklist of prep tasks on a Round', async (
   await expect(prep.getByRole('checkbox')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'System design 1 prep' })).toBeVisible();
 });
+
+test('lists the Persona’s Skills first in the prep task’s Skill picker', async ({
+  page,
+}, testInfo) => {
+  const suffix = `${testInfo.project.name} ${testInfo.retry}`;
+  const personaName = `Data engineer ${suffix}`;
+  const ownSkill = `Pipelines ${suffix}`;
+  const otherSkill = `Negotiation ${suffix}`;
+
+  // Added through the API with the signed-in user's cookies, as the pages would.
+  const skillIdOf = async (name: string) => {
+    const created = await page.request.post('/api/skills', { data: { name } });
+
+    expect(created.status()).toBe(201);
+
+    // SAFETY: a 201 from POST /api/skills is the contract's Skill, which has an id.
+    return ((await created.json()) as { id: string }).id;
+  };
+
+  const pipelines = await skillIdOf(ownSkill);
+
+  await skillIdOf(otherSkill);
+
+  const persona = await page.request.post('/api/personas', { data: { name: personaName } });
+
+  expect(persona.status()).toBe(201);
+
+  // SAFETY: a 201 from POST /api/personas is the contract's Persona, which has an id.
+  const { id: personaId } = (await persona.json()) as { id: string };
+
+  const ticked = await page.request.post(`/api/personas/${personaId}/skills`, {
+    data: { skillId: pipelines },
+  });
+
+  expect(ticked.status()).toBe(200);
+
+  const created = await page.request.post('/api/applications', {
+    data: {
+      company: `Hooli ${suffix}`,
+      jobTitle: 'Data Engineer',
+      status: 'interviewing',
+      personaId,
+    },
+  });
+
+  expect(created.status()).toBe(201);
+
+  // SAFETY: a 201 from POST /api/applications is the contract's Application, which has an id.
+  const { id } = (await created.json()) as { id: string };
+
+  const round = await page.request.post(`/api/applications/${id}/rounds`, {
+    data: { interviewType: 'coding' },
+  });
+
+  expect(round.status()).toBe(201);
+
+  await page.goto(`/applications/${id}`);
+  await expect(page.getByRole('combobox', { name: 'Persona' })).toHaveText(personaName);
+
+  // From the keyboard: "No skill" first, then the Persona's group, then the others.
+  const form = page.getByRole('form', { name: 'Add a prep task to Coding 1' });
+
+  await form.getByRole('textbox', { name: 'Task' }).fill('Build a backfill');
+  await form.getByRole('combobox', { name: 'Skill' }).focus();
+  await page.keyboard.press('ArrowDown');
+
+  const listbox = page.getByRole('listbox');
+  const own = listbox.getByRole('group', { name: personaName });
+  const others = listbox.getByRole('group', { name: 'Other skills' });
+
+  await expect(own.getByRole('option')).toHaveText([ownSkill]);
+  await expect(others.getByRole('option', { name: otherSkill })).toBeVisible();
+  await expect(others.getByRole('option', { name: ownSkill })).toHaveCount(0);
+  await expect(listbox.getByRole('option').first()).toHaveText('No skill');
+  await expectAccessible(page);
+  await screenshotThemes(page, testInfo, 'prep-skill-picker-persona-first');
+
+  await expect(listbox.getByRole('option', { name: 'No skill' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(own.getByRole('option', { name: ownSkill })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(form.getByRole('combobox', { name: 'Skill' })).toHaveText(ownSkill);
+  await expect(form.getByRole('combobox', { name: 'Skill' })).toBeFocused();
+});

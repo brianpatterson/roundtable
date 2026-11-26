@@ -61,7 +61,7 @@ export function ApplicationPage({ applicationId }: { applicationId: string }) {
     );
   }
 
-  const { company, jobTitle, jobUrl, status, appliedAt } = application.data;
+  const { company, jobTitle, jobUrl, status, appliedAt, personaId } = application.data;
 
   return (
     <section className={styles.page}>
@@ -89,7 +89,7 @@ export function ApplicationPage({ applicationId }: { applicationId: string }) {
           <PersonaField application={application.data} />
         </dd>
       </dl>
-      <Rounds applicationId={applicationId} />
+      <Rounds applicationId={applicationId} personaId={personaId} />
     </section>
   );
 }
