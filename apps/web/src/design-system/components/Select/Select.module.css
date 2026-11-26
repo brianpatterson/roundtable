@@ -1,7 +1,9 @@
+/* Can shrink below its value in a flex row, which then ends in an ellipsis rather than overflowing. */
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--ds-space-1);
+  min-width: 0;
 }
 
 .label {
@@ -52,6 +54,16 @@
     cursor: default;
     opacity: var(--ds-state-disabled-content);
   }
+}
+
+/* One line, from the start: a long value is cut off with an ellipsis instead of wrapping. */
+.value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon {

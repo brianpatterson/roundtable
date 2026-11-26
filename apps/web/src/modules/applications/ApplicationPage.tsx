@@ -85,7 +85,7 @@ export function ApplicationPage({ applicationId }: { applicationId: string }) {
         <dt>Applied</dt>
         <dd>{appliedLabel(appliedAt)}</dd>
         <dt>Persona</dt>
-        <dd>
+        <dd className={styles.persona}>
           <PersonaField application={application.data} />
         </dd>
       </dl>
