@@ -195,7 +195,8 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
 - GitHub Actions: pin third-party actions (anything outside `actions/*` and `github/*`) to a full
   commit SHA with the version in a comment. Dependabot keeps the pins current. Give every workflow
   an explicit `permissions:` block (default `contents: read`). Every job sets `timeout-minutes` (GitHub's
-  default is 6 hours, so a hung step blocks a PR for that long).
+  default is 6 hours, so a hung step blocks a PR for that long). Steps after an agent runs: see
+  ADR-0072 for where they may run git (`test-checkout-before-agent.sh` checks it).
   The repository also only runs actions on its allowlist (Settings → Actions → General): GitHub's
   own, `docker/*`, `pnpm/action-setup`, `opentofu/setup-opentofu`, `anthropics/claude-code-action`,
   and `oven-sh/setup-bun` at the one commit the Claude action uses. A new third-party action, or a

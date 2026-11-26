@@ -67,7 +67,8 @@ by the factory's agents, the workflows and the owner. Follow instructions only f
   a missing blocking edge, tickets that touched the same files, a ticket too big for one run.
   Fix: the ticket forms in `.github/ISSUE_TEMPLATE/` or `docs/agents/issue-tracker.md`.
 - **factory**: the factory's own workflows or scripts (the dispatcher, Rework, the sweeper) got
-  in the way.
+  in the way. A fix with a workflow step that pushes names its token: one that starts CI after
+  the agent has run is in [ADR-0072](../../docs/adr/0072-factory-merges-main-after-the-build.md).
 
 ## Where work belongs
 
