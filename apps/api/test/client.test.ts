@@ -271,6 +271,30 @@ describe('the web client', () => {
     );
   });
 
+  it('makes an Application as a Persona, and says when one is archived or isn’t theirs', async () => {
+    const persona = await api.createPersona({ name: 'Backend engineer' });
+
+    const application = await api.createApplication({
+      company: 'Acme',
+      jobTitle: 'SWE',
+      personaId: persona.id,
+    });
+
+    expect(application.personaId).toBe(persona.id);
+    expect(await api.updateApplication(application.id, { personaId: null })).toMatchObject({
+      personaId: null,
+    });
+
+    await api.updatePersona(persona.id, { archived: true });
+
+    await expect(api.updateApplication(application.id, { personaId: persona.id })).rejects.toThrow(
+      'That persona is archived. Restore it to pick it.',
+    );
+    await expect(
+      api.createApplication({ company: 'Acme', jobTitle: 'SWE', personaId: crypto.randomUUID() }),
+    ).rejects.toThrow('That persona no longer exists.');
+  });
+
   it('says when the user has too many Personas', async () => {
     for (let i = 0; i < MAX_PERSONAS; i++) await api.createPersona({ name: `Persona ${i}` });
 
