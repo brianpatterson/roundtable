@@ -2,10 +2,13 @@
 # Merges main into a factory branch the implementer pushed without it, when main gained only
 # changes to the files the agent's sandbox can't write (`.github/`, `.claude/`, `CLAUDE.md`), so
 # its own `git merge origin/main` was refused (ADR-0072, retro #241). The build job runs it from
-# main, after the agent, in a fresh checkout of the branch with full history: nothing the agent
-# left in its workspace (hooks, config) takes part.
+# main, after the agent. It fetches the branch and main into a new repository of its own, outside
+# the workspace, so nothing the agent left there (hooks, config) takes part, and only git touches
+# the branch's files: nothing from it runs.
 #
 #   merge-main.sh <branch>
+#
+# REPO_URL is where to fetch and push (default: this repository on GitHub, which is public).
 #
 # Leaves the branch alone, exiting 0, when it already has main, when main also changed files the
 # agent could have merged itself, or when the merge conflicts (the conflict resolver takes that,
@@ -19,6 +22,15 @@ branch=${1:?branch}
 CURL=${CURL:-curl}
 EXCHANGE_URL=${EXCHANGE_URL:-https://api.anthropic.com/api/github/github-app-token-exchange}
 protected='^(\.github/|\.claude/|CLAUDE\.md$)'
+REPO_URL=${REPO_URL:-https://github.com/${GITHUB_REPOSITORY:?}.git}
+
+repo=${MERGE_DIR:-$(mktemp -d)} # MERGE_DIR: tests
+mkdir -p "$repo"
+cd "$repo"
+git init -q
+git remote add origin "$REPO_URL"
+git fetch -q origin "+refs/heads/main:refs/remotes/origin/main" "+refs/heads/$branch:refs/remotes/origin/$branch"
+git checkout -q -b "$branch" "origin/$branch"
 
 if git merge-base --is-ancestor origin/main HEAD; then
   echo "$branch already has main."

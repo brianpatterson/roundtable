@@ -38,8 +38,8 @@ Forces:
 ## Decision
 
 Option 4. After the build job's agent step and its checks of what the agent published,
-`.github/factory/merge-main.sh` (copied from main) runs in a fresh checkout of the accepted
-`claude/issue-<n>-` branch. It merges main only when main changed nothing since the merge base but
+`.github/factory/merge-main.sh` (copied from main) fetches the accepted
+`claude/issue-<n>-` branch and main into a new repository outside the workspace, with no checkout action, so CodeQL's untrusted-checkout rules hold. It merges main only when main changed nothing since the merge base but
 `.github/`, `.claude/` and `CLAUDE.md` (both names of a renamed file count), with git hooks off. A
 conflict is aborted and left to the conflict resolver; a main that changed other files too is left
 alone, since a pull request needn't be up to date to merge ([ADR-0035](0035-merge-without-updating-branches.md)).

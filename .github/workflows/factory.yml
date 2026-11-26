@@ -531,20 +531,13 @@ jobs:
 
       # The agent's sandbox can't write .github/, .claude/ or CLAUDE.md, so its `git merge
       # origin/main` is refused once main has changed them (the owner's edits after a retro), and
-      # the owner merged by hand (retro #241). Merged here instead, by main's script, in a fresh
-      # checkout of the branch the check above accepted: only when main changed nothing else, and
-      # never through a conflict, which the conflict resolver takes (ADR-0058). Pushed with a fresh
-      # Claude App token, so CI and the reviewer run on the merge (ADR-0072).
-      - uses: actions/checkout@v7
-        if: always() && steps.result.outputs.branch != ''
-        with:
-          ref: ${{ steps.result.outputs.branch }}
-          path: .factory-merge
-          fetch-depth: 0
-          persist-credentials: false
+      # the owner merged by hand (retro #241). Merged here instead, by main's script, in a
+      # repository of its own outside the workspace, on the branch the check above accepted: only
+      # when main changed nothing else, and never through a conflict, which the conflict resolver
+      # takes (ADR-0058). Pushed with a fresh Claude App token, so CI and the reviewer run on the
+      # merge (ADR-0072). Nothing from the branch runs: no checkout action, only git's merge.
       - name: Merge main if only the factory's own files changed there
         if: always() && steps.result.outputs.branch != ''
-        working-directory: .factory-merge
         # A push that fails leaves a pull request behind main, which may merge (ADR-0035): the
         # error is annotated, and the steps below still run.
         continue-on-error: true

@@ -41,15 +41,13 @@ setup() {
   git -C "$dir/seed" switch -q main
   for file in "$@"; do commit "$dir/seed" "$file"; done
   git -C "$dir/seed" push -q origin main
-  # The fresh checkout the build job makes: the branch, with origin/main.
-  git clone -q -b claude/issue-1-x "$dir/origin.git" "$dir/work"
   : >"$dir/calls"
 }
 
 run() { # run <case>: prints the script's output; sets $code
   local dir=$work/$1
   code=0
-  out=$(cd "$dir/work" && CALLS=$dir/calls CURL=$work/curl EXCHANGE_URL=https://x/exchange \
+  out=$(REPO_URL=$dir/origin.git MERGE_DIR=$dir/work CALLS=$dir/calls CURL=$work/curl EXCHANGE_URL=https://x/exchange \
     ACTIONS_ID_TOKEN_REQUEST_URL='https://oidc?x=1' ACTIONS_ID_TOKEN_REQUEST_TOKEN=req \
     "$here/merge-main.sh" claude/issue-1-x 2>&1) || code=$?
 }
@@ -79,7 +77,6 @@ mkdir "$work/rename/seed/.github"
 git -C "$work/rename/seed" mv README.md .github/README.md
 git -C "$work/rename/seed" commit -qm rename
 git -C "$work/rename/seed" push -q origin main
-git -C "$work/rename/work" fetch -q origin
 before=$(remote_head rename)
 run rename
 expect "a rename into .github/ leaves the branch alone" "$before" "$(remote_head rename)"
@@ -106,8 +103,6 @@ git -C "$work/conflict/seed" push -q origin main
 git -C "$work/conflict/seed" switch -q claude/issue-1-x
 commit "$work/conflict/seed" .github/a.md branch-side
 git -C "$work/conflict/seed" push -q origin claude/issue-1-x
-git -C "$work/conflict/work" pull -q --ff-only
-git -C "$work/conflict/work" fetch -q origin
 before=$(remote_head conflict)
 run conflict
 expect "a conflict exits 0" 0 "$code"
@@ -120,7 +115,7 @@ expect "no token is asked for on a conflict" "" "$(cat "$work/conflict/calls")"
 setup notoken CLAUDE.md
 before=$(remote_head notoken)
 code=0
-out=$(cd "$work/notoken/work" && NO_TOKEN=1 CALLS=$work/notoken/calls CURL=$work/curl EXCHANGE_URL=https://x/exchange \
+out=$(REPO_URL=$work/notoken/origin.git MERGE_DIR=$work/notoken/work NO_TOKEN=1 CALLS=$work/notoken/calls CURL=$work/curl EXCHANGE_URL=https://x/exchange \
   ACTIONS_ID_TOKEN_REQUEST_URL='https://oidc?x=1' ACTIONS_ID_TOKEN_REQUEST_TOKEN=req \
   "$here/merge-main.sh" claude/issue-1-x 2>&1) || code=$?
 expect "no App token fails the step" 1 "$code"
