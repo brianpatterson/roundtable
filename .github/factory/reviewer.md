@@ -41,6 +41,9 @@ the owner always merges.
    description says the change adds or fixes), find the test that covers it and
    ask whether that test would fail without the change. Name the test, or say there is none. A
    test that only renders something, or asserts what the code trivially does, doesn't count.
+   Each promise a test expects to reject is created where it's awaited: a list of calls already
+   started, then awaited one by one in a loop, leaves the later ones unhandled and fails the run
+   at random (#247). That's **minor**.
 2. **Scope.** Call out anything the ticket (or the description) didn't ask for, and anything in
    its "Out of scope".
    An addition can be fine; the owner decides, but must see it.
