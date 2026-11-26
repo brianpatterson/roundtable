@@ -98,13 +98,29 @@ describe('App: the Agenda and the Applications table', () => {
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Agenda', 'Applications', 'Skills']);
+    ).toEqual(['Agenda', 'Applications', 'Personas', 'Skills']);
 
     await userEvent.click(within(nav).getByRole('link', { name: 'Skills' }));
     expect(await screen.findByRole('heading', { name: 'Skills' })).toBeDefined();
     expect(window.location.pathname).toBe('/skills');
     expect(currentPages()).toEqual(['Skills']);
     expect(await screen.findByText('System design')).toBeDefined();
+  });
+
+  it('shows the Personas page at /personas, marked as the current page', async () => {
+    fake.seedPersona({ name: 'Backend engineer' });
+    await openApp('/');
+    await findAgenda();
+
+    await userEvent.click(
+      within(screen.getByRole('navigation', { name: 'Pages' })).getByRole('link', {
+        name: 'Personas',
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Personas' })).toBeDefined();
+    expect(window.location.pathname).toBe('/personas');
+    expect(currentPages()).toEqual(['Personas']);
+    expect(await screen.findByRole('link', { name: 'Backend engineer' })).toBeDefined();
   });
 
   it('goes between them through the header, and marks neither on an application’s page', async () => {
@@ -213,6 +229,44 @@ describe('App: an application’s page', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined();
     expect(screen.getByRole('status').textContent).toBe('You were signed out. Sign in again.');
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
+  });
+});
+
+describe('App: a Persona’s page', () => {
+  const PERSONA_ID = '00000000-0000-4000-8000-000000000002';
+
+  it('opens from the Personas page, unmarked in the header, and links back', async () => {
+    fake.seedPersona({ id: PERSONA_ID, name: 'Backend engineer' });
+    await openApp('/personas');
+
+    await userEvent.click(await screen.findByRole('link', { name: 'Backend engineer' }));
+
+    expect(await screen.findByRole('heading', { name: 'Backend engineer' })).toBeDefined();
+    expect(window.location.pathname).toBe(`/personas/${PERSONA_ID}`);
+    expect(currentPages()).toEqual([]);
+    expect(
+      screen.getByRole('link', { name: 'Back to my personas' }).getAttribute('aria-current'),
+    ).toBeNull();
+
+    await userEvent.click(screen.getByRole('link', { name: 'Back to my personas' }));
+    expect(await screen.findByRole('heading', { name: 'Personas' })).toBeDefined();
+    expect(window.location.pathname).toBe('/personas');
+  });
+
+  it('shows the Persona when its URL is opened directly', async () => {
+    fake.seedPersona({ id: PERSONA_ID, name: 'Backend engineer' });
+    await openApp(`/personas/${PERSONA_ID}`);
+
+    expect(await screen.findByRole('heading', { name: 'Backend engineer' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDefined();
+  });
+
+  it('says a Persona that isn’t the user’s is not found, with a way back', async () => {
+    await openApp(`/personas/${MISSING_ID}`);
+
+    expect(await screen.findByRole('heading', { name: 'Persona not found' })).toBeDefined();
+    await userEvent.click(screen.getByRole('link', { name: 'Back to my personas' }));
+    expect(await screen.findByRole('heading', { name: 'Personas' })).toBeDefined();
   });
 });
 

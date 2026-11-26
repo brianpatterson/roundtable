@@ -38,6 +38,9 @@ export function App() {
                       <Link to="/applications" activeOptions={{ exact: true }}>
                         Applications
                       </Link>
+                      <Link to="/personas" activeOptions={{ exact: true }}>
+                        Personas
+                      </Link>
                       <Link to="/skills" activeOptions={{ exact: true }}>
                         Skills
                       </Link>
