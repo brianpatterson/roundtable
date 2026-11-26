@@ -272,6 +272,17 @@ describe('Tags on a Round', () => {
     expect(res.json<RoundJson>().tags).toEqual(['React']);
   });
 
+  it('leaves the Round unchanged, updatedAt included, when its Tags stay the same', async () => {
+    const round = await newRound();
+    const tagged = (await addTag(round, 'React')).json<RoundJson>();
+
+    const again = await addTag(round, ' react ');
+    const absent = await removeTag(round, 'Vue');
+
+    expect(again.json<RoundJson>()).toEqual(tagged);
+    expect(absent.json<RoundJson>()).toEqual(tagged);
+  });
+
   it('rejects a blank Tag, or one longer than 40 characters once trimmed', async () => {
     const round = await newRound();
 
