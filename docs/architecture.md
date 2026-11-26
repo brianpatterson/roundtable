@@ -582,6 +582,12 @@ sequenceDiagram
   (Better Auth, in memory), then at most 3 emails of each kind per address and 80 in total per
   24 hours (Postgres, survives deploys). Over a limit the email is silently dropped
   ([ADR-0018](adr/0018-email-sending-limits.md)).
+- **Request size:** no request body over 256 KiB is read; it's answered 413 before parsing
+  (`MAX_REQUEST_BODY_BYTES` in `platform/http/body-limit.ts`). Caddy refuses one first, and the
+  API enforces it on its own: Effect's `MaxBodySize` for the contract's endpoints, and
+  `limitingBodySize` around Better Auth's handler, which reads the body as a Web `Request`
+  stream that `MaxBodySize` doesn't reach. The largest real body, a problem report, is well
+  under 100 KiB; the 1 GB droplet couldn't buffer many unbounded ones.
 - **Problem reports** ([ADR-0038](adr/0038-user-problem-reports.md)): the endpoint is public, so
   one client address may send 5 reports an hour (counted in Postgres, by the HMAC of the last
   `X-Forwarded-For` entry, which Caddy sets; an IPv6 address by its /64), everyone together 50 an
@@ -630,7 +636,8 @@ flowchart LR
 
 - **Edge:** Caddy terminates TLS with automatic Let's Encrypt certificates, redirects HTTP and
   `www` to `https://<domain>`, serves the SPA (hashed assets cached for a year, `index.html`
-  never cached), and sets HSTS, CSP, frame-deny and related headers.
+  never cached), sets HSTS, CSP, frame-deny and related headers, and refuses `/api/*` request
+  bodies over 256 KiB with a 413.
 - **Startup order:** `db` healthy → `migrate` exits 0 → `api` healthy → `web` starts. A failed
   migration means the new API never starts.
 - **Factory clock:** a Cloudflare Worker whose Cron Trigger starts the factory's sweeper and
