@@ -126,17 +126,6 @@ describe('rounds API', () => {
     expect(again.statusCode).toBe(404);
   });
 
-  it('answers 404 for a Round under another of the user’s applications', async () => {
-    const first = await createApplication();
-    const second = await createApplication();
-    const round = (await addRound(first.id)).json<RoundJson>();
-
-    const res = await request('DELETE', `${roundsOf(second.id)}/${round.id}`);
-
-    expect(res.statusCode).toBe(404);
-    expect((await request('GET', roundsOf(first.id))).json<RoundJson[]>()).toHaveLength(1);
-  });
-
   it('deletes an application’s Rounds with it', async () => {
     const application = await createApplication();
 
@@ -323,19 +312,6 @@ describe('Tags on a Round', () => {
     expect(answers.filter((res) => res.statusCode === 200)).toHaveLength(MAX_TAGS);
     expect(await tagsListed(round)).toHaveLength(MAX_TAGS);
   });
-
-  it('answers 404 for a Round that doesn’t exist or is under another application', async () => {
-    const round = await newRound();
-    const other = await createApplication();
-    const elsewhere = { ...round, applicationId: other.id };
-    const missing = { ...round, id: MISSING_ID };
-
-    expect((await addTag(elsewhere, 'React')).statusCode).toBe(404);
-    expect((await removeTag(elsewhere, 'React')).statusCode).toBe(404);
-    expect((await addTag(missing, 'React')).statusCode).toBe(404);
-    expect((await removeTag(missing, 'React')).statusCode).toBe(404);
-    expect(await tagsListed(round)).toEqual([]);
-  });
 });
 
 const scheduleOf = (applicationId: string, roundId: string) =>
@@ -516,21 +492,6 @@ describe('scheduling a Round', () => {
     await expect(insert({ startsAt, durationMinutes: 481 })).rejects.toThrow();
     await expect(insert({ startsAt, durationMinutes: 480 })).resolves.toBeDefined();
   });
-
-  it('answers 404 for a missing Round, or one under another of the user’s applications', async () => {
-    const first = await createApplication();
-    const second = await createApplication();
-    const round = (await addRound(first.id)).json<RoundJson>();
-
-    const elsewhere = await request('PUT', scheduleOf(second.id, round.id), {
-      dueOn: '2026-11-28',
-    });
-
-    const missing = await request('PUT', scheduleOf(first.id, MISSING_ID), { dueOn: '2026-11-28' });
-
-    expect([elsewhere.statusCode, missing.statusCode]).toEqual([404, 404]);
-    expect((await request('GET', roundsOf(first.id))).json()).toEqual([round]);
-  });
 });
 
 const ratingOf = (round: RoundJson) => `${roundsOf(round.applicationId)}/${round.id}/rating`;
@@ -670,20 +631,6 @@ describe('rating a Round', () => {
     await expect(insert({ ratingNote: 'x'.repeat(2001) })).rejects.toThrow();
     await expect(insert({ selfRating: 5, ratingNote: 'x'.repeat(2000) })).resolves.toBeDefined();
   });
-
-  it('answers 404 for a missing Round, or one under another of the user’s applications', async () => {
-    const round = await newRound();
-    const other = await createApplication();
-
-    const elsewhere = await request('PUT', ratingOf({ ...round, applicationId: other.id }), {
-      selfRating: 3,
-    });
-
-    const missing = await request('PUT', ratingOf({ ...round, id: MISSING_ID }), { selfRating: 3 });
-
-    expect([elsewhere.statusCode, missing.statusCode]).toEqual([404, 404]);
-    expect((await request('GET', roundsOf(round.applicationId))).json()).toEqual([round]);
-  });
 });
 
 const outcomeOf = (round: RoundJson) => `${roundsOf(round.applicationId)}/${round.id}/outcome`;
@@ -768,22 +715,6 @@ describe('a Round’s Outcome', () => {
         sql`insert into rounds (application_id, interview_type, outcome) values (${application.id}, 'coding', 'advanced')`,
       ),
     ).rejects.toThrow();
-  });
-
-  it('answers 404 for a missing Round, or one under another of the user’s applications', async () => {
-    const round = await newRound();
-    const other = await createApplication();
-
-    const elsewhere = await request('PUT', outcomeOf({ ...round, applicationId: other.id }), {
-      outcome: 'passed',
-    });
-
-    const missing = await request('PUT', outcomeOf({ ...round, id: MISSING_ID }), {
-      outcome: 'passed',
-    });
-
-    expect([elsewhere.statusCode, missing.statusCode]).toEqual([404, 404]);
-    expect((await request('GET', roundsOf(round.applicationId))).json()).toEqual([round]);
   });
 });
 
@@ -1129,61 +1060,9 @@ describe('another user’s Rounds', () => {
     expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
   });
 
-  it('schedules as not found, changing nothing', async () => {
-    const res = await request(
-      'PUT',
-      scheduleOf(theirs.id, theirRound.id),
-      { dueOn: '2026-11-28' },
-      mine,
-    );
-
-    expect(res.statusCode).toBe(404);
-    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
-  });
-
-  it('rates as not found, changing nothing', async () => {
-    const res = await request(
-      'PUT',
-      ratingOf(theirRound),
-      { selfRating: 1, ratingNote: 'Not mine to rate' },
-      mine,
-    );
-
-    expect(res.statusCode).toBe(404);
-    expect(Schema.decodeUnknownSync(RoundNotFound)(res.json())).toBeInstanceOf(RoundNotFound);
-    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
-  });
-
-  it('sets their Outcome as not found, changing nothing', async () => {
-    const res = await request('PUT', outcomeOf(theirRound), { outcome: 'failed' }, mine);
-
-    expect(res.statusCode).toBe(404);
-    expect(Schema.decodeUnknownSync(RoundNotFound)(res.json())).toBeInstanceOf(RoundNotFound);
-    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
-  });
-
-  it('deletes as not found, deleting nothing', async () => {
-    const res = await request('DELETE', `${roundsOf(theirs.id)}/${theirRound.id}`, undefined, mine);
-
-    expect(res.statusCode).toBe(404);
-    expect((await request('GET', roundsOf(theirs.id))).json<RoundJson[]>()).toEqual([theirRound]);
-  });
-
-  it('changes their Tags as not found, changing nothing', async () => {
-    await addTag(theirRound, 'React');
-
-    const added = await addTag(theirRound, 'SQL', mine);
-    const removed = await removeTag(theirRound, 'React', mine);
-
-    expect([added.statusCode, removed.statusCode]).toEqual([404, 404]);
-    expect(Schema.decodeUnknownSync(RoundNotFound)(added.json())).toBeInstanceOf(RoundNotFound);
-    expect(await tagsListed(theirRound)).toEqual(['React']);
-  });
-
   it('answers a missing application the same as theirs', async () => {
     expect((await request('GET', roundsOf(MISSING_ID))).statusCode).toBe(404);
     expect((await addRound(MISSING_ID)).statusCode).toBe(404);
-    expect((await request('DELETE', `${roundsOf(MISSING_ID)}/${MISSING_ID}`)).statusCode).toBe(404);
   });
 
   it('answers a malformed id with 400 on every endpoint', async () => {
@@ -1205,5 +1084,197 @@ describe('another user’s Rounds', () => {
     ];
 
     expect(malformed.map((res) => res.statusCode)).toEqual(Array(12).fill(400));
+  });
+});
+
+/** A Round with a Tag, Prep notes and the prep tasks A and B, as `as`. */
+async function seededRound(as = cookie) {
+  const application = (
+    await request('POST', '/api/applications', { company: 'Acme', jobTitle: 'SWE' }, as)
+  ).json<ApplicationJson>();
+
+  const round = (await addRound(application.id, 'coding', as)).json<RoundJson>();
+  const url = `${roundsOf(application.id)}/${round.id}`;
+
+  await request('POST', `${url}/tags`, { tag: 'React' }, as);
+  await request('PUT', `${url}/prep-notes`, { notes: 'Notes' }, as);
+  await request('POST', `${url}/prep-tasks`, { title: 'A' }, as);
+
+  const added = await request('POST', `${url}/prep-tasks`, { title: 'B' }, as);
+  const [taskA] = added.json<RoundJson>().prepTasks ?? [];
+
+  if (!taskA) throw new Error('no prep task was added');
+
+  return { applicationId: application.id, roundId: round.id, taskId: taskA.id };
+}
+
+type Seeded = Awaited<ReturnType<typeof seededRound>>;
+
+/** The Round `seeded` as its application lists it, or undefined once it's gone. */
+async function listedRound(seeded: Seeded, as = cookie) {
+  const list = await request('GET', roundsOf(seeded.applicationId), undefined, as);
+
+  return list.json<RoundJson[]>().find((r) => r.id === seeded.roundId);
+}
+
+/**
+ * Every endpoint under a Round's path (rounds.ts): how `as` calls it on the Round at `url`, naming
+ * the prep task `taskId` where it takes one; its status on success; and the titles of the Round's
+ * prep tasks it answers with, where it answers the Round.
+ */
+interface RoundEndpoint {
+  readonly call: (url: string, taskId: string, as: string) => ReturnType<typeof request>;
+  readonly status: number;
+  readonly tasks?: readonly string[];
+}
+
+const ROUND_ENDPOINTS = {
+  schedule: {
+    call: (url, _taskId, as) => request('PUT', `${url}/schedule`, { dueOn: '2026-12-01' }, as),
+    status: 200,
+    tasks: ['A', 'B'],
+  },
+  rating: {
+    call: (url, _taskId, as) => request('PUT', `${url}/rating`, { selfRating: 4 }, as),
+    status: 200,
+    tasks: ['A', 'B'],
+  },
+  outcome: {
+    call: (url, _taskId, as) => request('PUT', `${url}/outcome`, { outcome: 'passed' }, as),
+    status: 200,
+    tasks: ['A', 'B'],
+  },
+  delete: { call: (url, _taskId, as) => request('DELETE', url, undefined, as), status: 204 },
+  'adding a Tag': {
+    call: (url, _taskId, as) => request('POST', `${url}/tags`, { tag: 'SQL' }, as),
+    status: 200,
+    tasks: ['A', 'B'],
+  },
+  'removing a Tag': {
+    call: (url, _taskId, as) => request('DELETE', `${url}/tags?tag=React`, undefined, as),
+    status: 200,
+    tasks: ['A', 'B'],
+  },
+  'Prep notes': {
+    call: (url, _taskId, as) => request('PUT', `${url}/prep-notes`, { notes: 'Changed' }, as),
+    status: 200,
+    tasks: ['A', 'B'],
+  },
+  'adding a prep task': {
+    call: (url, _taskId, as) => request('POST', `${url}/prep-tasks`, { title: 'C' }, as),
+    status: 201,
+    tasks: ['A', 'B', 'C'],
+  },
+  'changing a prep task': {
+    call: (url, taskId, as) =>
+      request('PATCH', `${url}/prep-tasks/${taskId}`, { title: 'A2', done: true }, as),
+    status: 200,
+    tasks: ['A2', 'B'],
+  },
+  'deleting a prep task': {
+    call: (url, taskId, as) => request('DELETE', `${url}/prep-tasks/${taskId}`, undefined, as),
+    status: 200,
+    tasks: ['B'],
+  },
+} satisfies Record<string, RoundEndpoint>;
+
+const endpoints = Object.entries<RoundEndpoint>(ROUND_ENDPOINTS);
+
+const answering = endpoints.flatMap(([name, endpoint]) =>
+  endpoint.tasks ? [[name, endpoint, endpoint.tasks] as const] : [],
+);
+
+// CLAUDE.md rule 8, once for every Round endpoint: a Round the user doesn't own is RoundNotFound,
+// whatever is missing or another user's, and nothing changes.
+describe('every endpoint under a Round', () => {
+  const expectRoundNotFound = (res: Awaited<ReturnType<typeof request>>, path: string) => {
+    expect(res.statusCode, path).toBe(404);
+    expect(Schema.decodeUnknownSync(RoundNotFound)(res.json())).toBeInstanceOf(RoundNotFound);
+  };
+
+  it.each(endpoints)(
+    'answers another user’s Round as RoundNotFound, changing nothing: %s',
+    async (_name, { call }) => {
+      const theirs = await seededRound();
+      const before = await listedRound(theirs);
+      const { cookie: mine } = await signUp(t);
+
+      const res = await call(
+        `${roundsOf(theirs.applicationId)}/${theirs.roundId}`,
+        theirs.taskId,
+        mine,
+      );
+
+      expectRoundNotFound(res, 'their Round');
+      expect(await listedRound(theirs)).toEqual(before);
+    },
+  );
+
+  it.each(endpoints)(
+    'answers a path that isn’t to one of my Rounds as RoundNotFound, changing nothing: %s',
+    async (_name, { call }) => {
+      const round = await seededRound();
+      const before = await listedRound(round);
+      const other = await seededRound();
+      const { cookie: theirCookie } = await signUp(t);
+      const theirs = await seededRound(theirCookie);
+
+      const paths = {
+        'a missing application': `${roundsOf(MISSING_ID)}/${round.roundId}`,
+        'a missing Round': `${roundsOf(round.applicationId)}/${MISSING_ID}`,
+        'my Round under another of my applications': `${roundsOf(other.applicationId)}/${round.roundId}`,
+        'their Round under my application': `${roundsOf(round.applicationId)}/${theirs.roundId}`,
+      };
+
+      for (const [path, url] of Object.entries(paths)) {
+        expectRoundNotFound(await call(url, round.taskId, cookie), path);
+      }
+
+      expect(await listedRound(round)).toEqual(before);
+      expect(await listedRound(theirs, theirCookie)).toMatchObject({ tags: ['React'] });
+    },
+  );
+
+  it.each(answering)(
+    'answers my Round as it is afterwards, with its prep tasks in the order added: %s',
+    async (_name, endpoint, tasks) => {
+      const round = await seededRound();
+
+      const res = await endpoint.call(
+        `${roundsOf(round.applicationId)}/${round.roundId}`,
+        round.taskId,
+        cookie,
+      );
+
+      expect(res.statusCode).toBe(endpoint.status);
+      expect(() => Schema.decodeUnknownSync(Round)(res.json())).not.toThrow();
+      expect(res.json<RoundJson>().prepTasks?.map((task) => task.title)).toEqual(tasks);
+      expect(res.json<RoundJson>()).toEqual(await listedRound(round));
+    },
+  );
+
+  it('deletes my Round', async () => {
+    const round = await seededRound();
+
+    const res = await ROUND_ENDPOINTS.delete.call(
+      `${roundsOf(round.applicationId)}/${round.roundId}`,
+      round.taskId,
+      cookie,
+    );
+
+    expect(res.statusCode).toBe(204);
+    expect(await listedRound(round)).toBeUndefined();
+  });
+
+  it('answers a new Round with no prep tasks, as every Round is answered', async () => {
+    const application = await createApplication();
+
+    const res = await addRound(application.id);
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json<RoundJson>()).toMatchObject({ prepNotes: null, prepTasks: [] });
+    expect([res.json<RoundJson>()]).toEqual(
+      (await request('GET', roundsOf(application.id))).json<RoundJson[]>(),
+    );
   });
 });

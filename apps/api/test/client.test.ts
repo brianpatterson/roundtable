@@ -246,6 +246,19 @@ describe('the web client', () => {
     );
   });
 
+  it('tells the user a Round is gone when its application is', async () => {
+    const application = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
+    const round = await api.createRound(application.id, { interviewType: 'coding' });
+    const missing = crypto.randomUUID();
+
+    for (const call of [
+      api.setPrepNotes(missing, round.id, 'Review graphs'),
+      api.addPrepTask(missing, round.id, { title: 'BFS' }),
+    ]) {
+      await expect(call).rejects.toThrow('That round no longer exists.');
+    }
+  });
+
   it('reads another user’s application as not found', async () => {
     const theirs = await api.createApplication({ company: 'Acme', jobTitle: 'SWE' });
     const mine = clientFor((await signUp(t)).cookie);

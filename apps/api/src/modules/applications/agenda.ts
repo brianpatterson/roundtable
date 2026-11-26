@@ -9,7 +9,7 @@ import {
   isUpcoming,
 } from '@roundtable/contract';
 import { Database } from '../../platform/database/effect.js';
-import { withPrepTasks } from './prep.js';
+import { withPrepTasks } from './rounds.js';
 import { applications, rounds } from './schema.js';
 
 /** A Round's columns on the Agenda: all but its Prep notes, which only the Round's page shows. */
