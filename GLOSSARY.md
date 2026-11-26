@@ -25,6 +25,10 @@ mark, the code is what's true.
 - **Interview type**: what a Round tests, from a fixed list (recruiter screen, hiring manager,
   coding, system design, behavioral, take-home, presentation, other). Fixed so analytics can
   compare like with like; finer detail goes in Tags.
+- **Library**: a user's named, archivable list (the skill library, their Personas). A name is
+  unique per user ignoring case and surrounding spaces; it has a limit that counts archived
+  entries; entries are renamed, archived and restored, never deleted. Skills and Personas are each
+  a Library.
 - **Outcome** (of a Round): whether the user advanced past it: pending, passed, failed or unknown
   (never told). A new Round is pending. The user can set it, and one they set is never
   overridden. Inferred where possible: adding the next Round passes the earlier pending ones, and

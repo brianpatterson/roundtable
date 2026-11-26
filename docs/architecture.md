@@ -237,8 +237,10 @@ also exports for other modules: `Skills.findOwned(userId, id)` is how one checks
 storing it, failing with the contract's `SkillNotFound` for any id that isn't the user's, archived
 Skills included ([ADR-0044](adr/0044-links-between-modules.md) rule 1), and
 `Personas.findOwned(userId, id)` does the same for a Persona id, failing with `PersonaNotFound`.
-Skills and Personas are archived and restored, never deleted (rule 3). Personas' documents and
-Versions come later (`docs/roadmap.md`).
+Skills and Personas are archived and restored, never deleted (rule 3). Both are a Library
+(`GLOSSARY.md`), built by `Library.make` in `library.ts` from a table, its lock key, its limit and
+its errors: it holds the name, limit, archiving and 404 rules and the per-user lock once, and
+`Personas` adds only its Skills. Personas' documents and Versions come later (`docs/roadmap.md`).
 
 **Identity** gives the App one layer, `IdentityLive`: its endpoint (`/api/auth-config`), the
 `Authorization` middleware every protected group relies on, and Better Auth's `/api/auth/*`
