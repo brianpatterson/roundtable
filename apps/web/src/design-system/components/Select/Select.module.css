@@ -93,6 +93,15 @@
   }
 }
 
+/* A heading over a group's options: smaller and muted, so the options stand out. */
+.groupLabel {
+  padding: var(--ds-space-3) var(--ds-space-4) var(--ds-space-1);
+  font: var(--ds-type-body-small);
+  color: var(--ds-color-on-surface-variant);
+  cursor: default;
+  user-select: none;
+}
+
 .item {
   display: flex;
   align-items: center;

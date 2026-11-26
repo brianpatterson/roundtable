@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Select } from './Select';
@@ -60,5 +60,109 @@ describe('Select', () => {
     );
 
     expect(screen.getByRole('combobox', { name: 'Status for Acme' })).toBeDefined();
+  });
+});
+
+const groups = [
+  {
+    label: 'Backend Engineer',
+    options: [
+      { value: 'system-design', label: 'System design' },
+      { value: 'sql', label: 'SQL' },
+    ],
+  },
+  { label: 'Empty', options: [] },
+  {
+    label: 'Other Skills',
+    options: [{ value: 'negotiation', label: 'Negotiation' }],
+  },
+] as const;
+
+describe('Select with groups', () => {
+  it('lists each group, named by its label, with its options in the order given', async () => {
+    render(<Select label="Skill" groups={groups} value="sql" onValueChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Skill' }));
+
+    const listbox = await screen.findByRole('listbox');
+    const persona = within(listbox).getByRole('group', { name: 'Backend Engineer' });
+    const others = within(listbox).getByRole('group', { name: 'Other Skills' });
+
+    expect(within(listbox).getAllByRole('group')).toEqual([persona, others]);
+    expect(
+      within(persona)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['System design', 'SQL']);
+    expect(
+      within(others)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Negotiation']);
+  });
+
+  it('hides a group with no options', async () => {
+    render(<Select label="Skill" groups={groups} value="sql" onValueChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Skill' }));
+    await screen.findByRole('listbox');
+
+    expect(screen.queryByRole('group', { name: 'Empty' })).toBeNull();
+    expect(screen.queryByText('Empty')).toBeNull();
+  });
+
+  it('shows the selected option on the trigger, whichever group it is in', () => {
+    render(<Select label="Skill" groups={groups} value="negotiation" onValueChange={vi.fn()} />);
+
+    expect(screen.getByRole('combobox', { name: 'Skill' }).textContent).toContain('Negotiation');
+  });
+
+  it('moves through the options across groups with the arrow keys, skipping the labels', async () => {
+    const onValueChange = vi.fn();
+
+    render(
+      <Select label="Skill" groups={groups} value="system-design" onValueChange={onValueChange} />,
+    );
+    screen.getByRole('combobox', { name: 'Skill' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await screen.findByRole('listbox');
+    await waitFor(() => {
+      expect(
+        screen.getByRole('option', { name: 'System design' }).hasAttribute('data-highlighted'),
+      ).toBe(true);
+    });
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{ArrowDown}');
+
+    expect(
+      screen.getByRole('option', { name: 'Negotiation' }).hasAttribute('data-highlighted'),
+    ).toBe(true);
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(onValueChange).toHaveBeenCalledWith('negotiation');
+  });
+
+  it('takes options or groups, never both', () => {
+    render(
+      // @ts-expect-error: a Select lists either flat options or groups of them.
+      <Select
+        label="Skill"
+        options={options}
+        groups={groups}
+        value="sql"
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('combobox', { name: 'Skill' })).toBeDefined();
+  });
+
+  it('reports the option the user picks from a group', async () => {
+    const onValueChange = vi.fn();
+
+    render(<Select label="Skill" groups={groups} value="sql" onValueChange={onValueChange} />);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Skill' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'System design' }));
+
+    expect(onValueChange).toHaveBeenCalledWith('system-design');
   });
 });
