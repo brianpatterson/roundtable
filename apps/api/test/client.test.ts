@@ -251,11 +251,13 @@ describe('the web client', () => {
     const round = await api.createRound(application.id, { interviewType: 'coding' });
     const missing = crypto.randomUUID();
 
+    // Each call starts only when awaited: a second promise made up front rejects while the first
+    // is awaited, and Vitest fails the run on that unhandled rejection.
     for (const call of [
-      api.setPrepNotes(missing, round.id, 'Review graphs'),
-      api.addPrepTask(missing, round.id, { title: 'BFS' }),
+      () => api.setPrepNotes(missing, round.id, 'Review graphs'),
+      () => api.addPrepTask(missing, round.id, { title: 'BFS' }),
     ]) {
-      await expect(call).rejects.toThrow('That round no longer exists.');
+      await expect(call()).rejects.toThrow('That round no longer exists.');
     }
   });
 
