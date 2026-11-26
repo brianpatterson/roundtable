@@ -6,50 +6,59 @@ import { ErrorReporter, Schema, SchemaGetter, SchemaTransformation } from 'effec
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api';
 import { Authorization } from './identity.js';
 
+/**
+ * The name of an entry in a Library (GLOSSARY.md), a Skill or a Persona: 1–`max` characters once
+ * trimmed. Trimmed in both directions, like the applications module's `Text`, so the typed client
+ * sends " System design " as "System design". Two names that differ only in case are the same
+ * entry: the database's unique index decides that, nothing else.
+ */
+const LibraryName = (max: number) =>
+  Schema.String.pipe(
+    Schema.decodeTo(
+      Schema.String.check(
+        Schema.makeFilter((value: string) => {
+          const length = value.trim().length;
+
+          if (length === 0) return 'must not be blank';
+
+          return length > max ? `must be at most ${max} characters` : undefined;
+        }),
+      ),
+      new SchemaTransformation.Transformation(SchemaGetter.trim(), SchemaGetter.trim()),
+    ),
+  );
+
+/**
+ * Renames an entry in a Library, archives it (`archived: true`) or restores it
+ * (`archived: false`), or both. Archiving an archived entry keeps the date it was first archived.
+ */
+const UpdateLibraryItem = (name: ReturnType<typeof LibraryName>) =>
+  Schema.Struct({
+    name: Schema.optional(name),
+    archived: Schema.optional(Schema.Boolean),
+  }).check(
+    Schema.makeFilter((value) =>
+      value.name === undefined && value.archived === undefined
+        ? 'At least one field is required'
+        : undefined,
+    ),
+  );
+
 /** The most characters a Skill's name can have, once trimmed. */
 export const MAX_SKILL_NAME = 80;
 
 /** The most Skills one user can have, archived ones included. */
 export const MAX_SKILLS = 200;
 
-/**
- * A Skill's name: 1–80 characters once trimmed. Trimmed in both directions, like the applications
- * module's `Text`, so the typed client sends " System design " as "System design". Two names that
- * differ only in case are the same Skill: the database's unique index decides that, nothing else.
- */
-export const SkillName = Schema.String.pipe(
-  Schema.decodeTo(
-    Schema.String.check(
-      Schema.makeFilter((value: string) => {
-        const length = value.trim().length;
-
-        if (length === 0) return 'must not be blank';
-
-        return length > MAX_SKILL_NAME ? `must be at most ${MAX_SKILL_NAME} characters` : undefined;
-      }),
-    ),
-    new SchemaTransformation.Transformation(SchemaGetter.trim(), SchemaGetter.trim()),
-  ),
-);
+/** A Skill's name: 1–80 characters once trimmed, ignoring case when compared. */
+export const SkillName = LibraryName(MAX_SKILL_NAME);
 
 export const CreateSkill = Schema.Struct({ name: SkillName });
 
 export type CreateSkill = typeof CreateSkill.Type;
 
-/**
- * Renames a Skill, archives it (`archived: true`) or restores it (`archived: false`), or both.
- * Archiving an archived Skill keeps the date it was first archived.
- */
-export const UpdateSkill = Schema.Struct({
-  name: Schema.optional(SkillName),
-  archived: Schema.optional(Schema.Boolean),
-}).check(
-  Schema.makeFilter((value) =>
-    value.name === undefined && value.archived === undefined
-      ? 'At least one field is required'
-      : undefined,
-  ),
-);
+/** Renames, archives or restores a Skill. */
+export const UpdateSkill = UpdateLibraryItem(SkillName);
 
 export type UpdateSkill = typeof UpdateSkill.Type;
 
@@ -129,45 +138,15 @@ export const MAX_PERSONAS = 20;
 /** The most Skills one Persona can have, archived Skills included. */
 export const MAX_PERSONA_SKILLS = 50;
 
-/**
- * A Persona's name: 1–80 characters once trimmed, trimmed in both directions like `SkillName`.
- * Two names that differ only in case are the same Persona: the database's unique index decides.
- */
-export const PersonaName = Schema.String.pipe(
-  Schema.decodeTo(
-    Schema.String.check(
-      Schema.makeFilter((value: string) => {
-        const length = value.trim().length;
-
-        if (length === 0) return 'must not be blank';
-
-        return length > MAX_PERSONA_NAME
-          ? `must be at most ${MAX_PERSONA_NAME} characters`
-          : undefined;
-      }),
-    ),
-    new SchemaTransformation.Transformation(SchemaGetter.trim(), SchemaGetter.trim()),
-  ),
-);
+/** A Persona's name: 1–80 characters once trimmed, ignoring case when compared. */
+export const PersonaName = LibraryName(MAX_PERSONA_NAME);
 
 export const CreatePersona = Schema.Struct({ name: PersonaName });
 
 export type CreatePersona = typeof CreatePersona.Type;
 
-/**
- * Renames a Persona, archives it (`archived: true`) or restores it (`archived: false`), or both.
- * Archiving an archived Persona keeps the date it was first archived.
- */
-export const UpdatePersona = Schema.Struct({
-  name: Schema.optional(PersonaName),
-  archived: Schema.optional(Schema.Boolean),
-}).check(
-  Schema.makeFilter((value) =>
-    value.name === undefined && value.archived === undefined
-      ? 'At least one field is required'
-      : undefined,
-  ),
-);
+/** Renames, archives or restores a Persona. */
+export const UpdatePersona = UpdateLibraryItem(PersonaName);
 
 export type UpdatePersona = typeof UpdatePersona.Type;
 
