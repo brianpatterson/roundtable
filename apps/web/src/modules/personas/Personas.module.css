@@ -1,0 +1,88 @@
+/* The Personas page and a Persona's own page. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+}
+
+/* The name field and the Add button on one line, wrapping on narrow screens. */
+.add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ds-space-3);
+
+  /* The field takes the room left; the button lines up with the input, below the label. */
+  & > :first-child {
+    flex: 1 1 16rem;
+  }
+
+  & > button {
+    margin-top: 20px;
+  }
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A Persona: its name, linking to its page, with its Skill count beside it, under it on a phone. */
+.persona {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-1) var(--ds-space-3);
+  padding: var(--ds-space-2) 0;
+  border-bottom: 1px solid var(--ds-color-outline-variant);
+}
+
+/* A long name wraps instead of widening the page. */
+.name {
+  overflow-wrap: anywhere;
+}
+
+.archived {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ds-space-2);
+
+  & > ul {
+    align-self: stretch;
+  }
+}
+
+/* A Persona's page: its heading, then Rename and Archive (or Restore) in a row. */
+.heading {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+.skills {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+
+  & > h3 {
+    margin: 0;
+  }
+}
+
+/* The Skill checkboxes, one per line. */
+.checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}

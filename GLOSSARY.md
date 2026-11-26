@@ -34,9 +34,9 @@ mark, the code is what's true.
 - **Pass rate** _(planned)_: for a group of Rounds (one Interview type, say), the share of those with a known
   Outcome that passed. Pending and unknown Rounds don't count either way, and the number of
   Rounds behind it is always shown with it.
-- **Persona** _(planned)_: one way the user presents themselves for a kind of job (for example "Backend
-  engineer" or "Engineering manager"). It holds the resume, cover letter and skills to practice
-  for applications made as that persona. Not to be confused with the user's account. A name is
+- **Persona**: one way the user presents themselves for a kind of job (for example "Backend
+  engineer" or "Engineering manager"). It holds the skills to practice for applications made as
+  that persona, and _(planned)_ its resume and cover letter, which are Documents. Not to be confused with the user's account. A name is
   up to 80 characters, and two that differ only in case or surrounding spaces are the same
   Persona. Renamed, archived and restored, never deleted; an archived Persona can't be picked for
   an Application but still shows on the ones that use it. Its **Skills** are picked from the skill
