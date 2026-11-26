@@ -15,10 +15,13 @@ for file in "$workflows"/*.yml; do
     for check in "${checks[@]}"; do
       [[ "$text" == *"Bash(pnpm $check)"* ]] || fail "$(basename "$file"):$line lets the agent run \`pnpm check\` piecemeal but not \`pnpm $check\`"
     done
+    # The cheapest way to search tracked files, and read-only: refused 7 times in one batch (retro #241).
+    [[ "$text" == *"Bash(git grep:*)"* ]] || fail "$(basename "$file"):$line lets the agent change code but not search it with \`git grep\`"
   done < <(grep -n -- '--allowedTools .*Bash(pnpm check:boundaries)' "$file" || true)
 done
 
-[ "$seen" -gt 0 ] || fail "found no agent allowlist to check: has the workflows' layout changed?"
+# The build, follow-up, CI fixer, rework and conflict resolver.
+[ "$seen" -ge 5 ] || fail "found $seen of the 5 implementer allowlists: has the workflows' layout changed?"
 
 # An agent allowed Stryker must be able to run it on one file (`test:mutation --mutate <file>`,
 # as implementer.md says). An entry without `:*` matches only the bare command, and `test:*`

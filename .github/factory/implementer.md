@@ -131,12 +131,15 @@ in the run's report.
   because it can download and run a package.
 - **Output:** don't pipe through `grep`, `head`, `tail` or `sed`. They're refused, and the whole
   command with them. You see the full output anyway; read files with your Read and Grep tools.
+  Don't chain `cd <dir> && cat …` (or `grep`, `ls`) either: that's refused too. Use Read, Grep or
+  Glob with a path instead. To search tracked files from the shell, `git grep` is allowed.
 - **Exit status:** don't append `; echo $?`, `|| true` or `&& …` to see whether a command passed:
   you're told its exit status, and the extra part gets the whole call refused. If an allowlisted
   command is refused, run it once more on its own before giving up on it (the Stryker check in
   "Mutation tickets" included).
 - **Files:** change and delete them with your Edit and Write tools, or `git rm` and `git mv`, never
-  `sed -i`, `rm`, `echo >` or a script: those are refused.
+  `sed -i`, `rm`, `echo >` or a script: those are refused. That includes `python3` or `node`
+  scripts (or heredocs) that rewrite a file: use Edit, once per change.
 - **Waiting:** don't wait for CI or anything else with `sleep`, a loop or Monitor: they're refused.
   Push, finish, and return: a failed CI run starts the fixer by itself.
 - **Turns:** a run has a turn cap, and a refused call spends one. Run each allowlisted command on its
@@ -154,6 +157,12 @@ Before you push, bring in what landed on `main` while you worked: `git fetch ori
 pull request that conflicts with `main` gets no CI at all, and an ADR numbered from where you
 started can collide with one merged since (#149's ADR-0052 did): number a new ADR after the
 highest in `docs/adr/` once you've merged.
+
+If `git merge origin/main` fails because it would write `.github/`, `.claude/` or `CLAUDE.md`,
+which your sandbox can't, run `git merge --abort` and push without it. When you were started by
+the dispatcher, the workflow merges main into your branch after you finish, when nothing else in
+main needs you ([ADR-0072](../../docs/adr/0072-factory-merges-main-after-the-build.md)), so the
+description shouldn't ask the owner to.
 
 Push your branch with `git push origin <branch>` (a branch you created has no upstream, and the
 allowlist refuses most other forms of `git push`, such as `--set-upstream`), then open the pull request yourself:
