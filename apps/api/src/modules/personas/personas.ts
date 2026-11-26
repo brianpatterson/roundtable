@@ -147,13 +147,19 @@ export class Personas extends Context.Service<
           if (!owned) return yield* new PersonaNotFound();
         });
 
-      /** The user's Skill `skillId`, whether it's archived, or `SkillNotFound`. */
+      /**
+       * The user's Skill `skillId`, whether it's archived, or `SkillNotFound`. The row is read
+       * `for share`: archiving a Skill holds only the skills lock, not this one, so it waits for
+       * this transaction to commit (or this read waits for the archive) and no link is added to a
+       * Skill archived in between.
+       */
       const ownedSkill = (tx: Transaction, userId: string, skillId: string) =>
         Effect.gen(function* () {
           const [skill] = yield* tx
             .select({ archivedAt: skills.archivedAt })
             .from(skills)
             .where(and(eq(skills.id, skillId), eq(skills.userId, userId)))
+            .for('share')
             .pipe(Effect.orDie);
 
           if (!skill) return yield* new SkillNotFound();
