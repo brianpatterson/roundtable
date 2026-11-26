@@ -36,10 +36,14 @@ const BetterAuthRoute = Layer.unwrap(
  * Better Auth built inside from the App's Mailer and Promise database. If identity ever becomes
  * its own service, this layer is what gets swapped for one that asks it over the network.
  */
-export const IdentityLive = (env: Env, log: Log) =>
+export const IdentityLive = (
+  env: Env,
+  log: Log,
+  options: { readonly onBackgroundSend?: (sent: Promise<void>) => void } = {},
+) =>
   Layer.mergeAll(
     IdentityApiLive(env),
     AuthorizationLive,
     OptionalSessionLive,
     BetterAuthRoute,
-  ).pipe(Layer.provide(BetterAuth.layer(env, log)));
+  ).pipe(Layer.provide(BetterAuth.layer(env, log, options)));

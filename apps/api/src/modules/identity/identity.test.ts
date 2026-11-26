@@ -89,7 +89,7 @@ describe('authentication', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(takeEmail(t, email, 'Reset your').text).toContain('/reset-password');
+    expect((await takeEmail(t, email, 'Reset your')).text).toContain('/reset-password');
   });
 
   it('signs out other devices after a password reset', async () => {
@@ -102,7 +102,7 @@ describe('authentication', () => {
     });
 
     const token = new URL(
-      takeEmail(t, email, 'Reset your').text.match(/https?:\/\/\S+/)![0],
+      (await takeEmail(t, email, 'Reset your')).text.match(/https?:\/\/\S+/)![0],
     ).pathname
       .split('/')
       .pop();
@@ -124,14 +124,14 @@ describe('email verification', () => {
   it('emails a link on sign-up and does not sign in until it is clicked', async () => {
     const { email, res } = await signUpUnverified(t);
     expect(res.cookies.some((c) => c.name.endsWith('session_token'))).toBe(false);
-    expect(takeEmail(t, email, 'Confirm your email').text).toContain(
+    expect((await takeEmail(t, email, 'Confirm your email')).text).toContain(
       '/api/auth/verify-email?token=',
     );
   });
 
   it('refuses an unverified sign-in and sends a fresh link', async () => {
     const { email, password } = await signUpUnverified(t);
-    takeEmail(t, email, 'Confirm your email');
+    await takeEmail(t, email, 'Confirm your email');
 
     const res = await t.inject({
       method: 'POST',
@@ -142,7 +142,7 @@ describe('email verification', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.json<{ code: string }>().code).toBe('EMAIL_NOT_VERIFIED');
-    expect(takeEmail(t, email, 'Confirm your email')).toBeDefined();
+    expect(await takeEmail(t, email, 'Confirm your email')).toBeDefined();
   });
 
   it('signs in and redirects home when the link is clicked', async () => {
@@ -150,7 +150,7 @@ describe('email verification', () => {
 
     const res = await t.inject({
       method: 'GET',
-      url: linkPath(takeEmail(t, email, 'Confirm your email')),
+      url: linkPath(await takeEmail(t, email, 'Confirm your email')),
     });
 
     expect(res.statusCode).toBe(302);

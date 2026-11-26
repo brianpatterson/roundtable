@@ -37,6 +37,11 @@ export interface AppOptions {
   readonly githubIssues?: Layer.Layer<GitHubIssues>;
   /** Tests: Sentry options, e.g. a beforeSend that captures events. Sentry needs SENTRY_DSN. */
   readonly errorTracking?: Partial<Sentry.NodeOptions>;
+  /**
+   * Tests: called with each email identity sends in the background (a reset link, a verification
+   * link), settled once it was sent, dropped or failed, so a test can wait for it.
+   */
+  readonly onBackgroundSend?: (sent: Promise<void>) => void;
 }
 
 /** The API's own endpoints, outside any module: the health check deploys and monitors use. */
@@ -81,7 +86,7 @@ const LimitBodySize = HttpRouter.middleware(
 );
 
 /** Every route, with the modules and the resources they need. */
-function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
+function routesLayer({ env, log, emailTransport, githubIssues, onBackgroundSend }: AppOptions) {
   const api = HttpApiBuilder.layer(RoundtableApi).pipe(
     Layer.provide([
       SystemLive,
@@ -93,7 +98,7 @@ function routesLayer({ env, log, emailTransport, githubIssues }: AppOptions) {
     ]),
     // Identity's endpoints, the Authorization and OptionalSession middleware the groups above
     // rely on, and Better Auth's own routes, all in one.
-    Layer.provide(IdentityLive(env, log)),
+    Layer.provide(IdentityLive(env, log, { onBackgroundSend })),
     // Name the invalid values in 400s: clients, and agents reading a failure, see what was wrong.
     Layer.provide(HttpApiMiddleware.layerProblemDetails({ includeDetails: true })),
   );

@@ -6,7 +6,8 @@ import { configuredProviders, createAuth, reportingFailures } from './better-aut
 import { createDb } from '../../platform/database/promise.js';
 import { Sentry } from '../../platform/observability/error-tracking.js';
 import { createLogger } from '../../platform/observability/logging.js';
-import { env, setupTestApp } from '#test/helpers';
+import type { Email } from '../email/index.js';
+import { env, setupTestApp, signUp } from '#test/helpers';
 
 const startSocialSignIn = (t: ReturnType<typeof setupTestApp>, provider: string) =>
   t.inject({
@@ -246,5 +247,63 @@ describe('telemetry', () => {
     // Better Auth skips telemetry under tests whatever the option says, so this pins the option.
     expect(auth.options.telemetry).toEqual({ enabled: false });
     await close();
+  });
+});
+
+// Only some answers send an email: a reset for an existing account, a sign-up for a new address.
+// The answer can't wait for it, or how long it takes says which case it was. The mailer here
+// stays blocked until the test releases it: an answer that waited for it would never come.
+describe("sending Better Auth's emails", () => {
+  const delivered: Email[] = [];
+  let release = () => {};
+  const blocked = new Promise<void>((resolve) => (release = resolve));
+
+  const accounts = setupTestApp();
+
+  const t = setupTestApp({
+    sendEmail: async (email) => {
+      await blocked;
+      delivered.push(email);
+    },
+  });
+
+  beforeAll(async () => {
+    await accounts.migrate();
+    await accounts.reset();
+  });
+  afterAll(async () => {
+    release();
+    await t.close();
+    await accounts.close();
+  });
+
+  it('answers before the email is sent, then sends it', async () => {
+    const { email: existing } = await signUp(accounts);
+    const created = `new-${crypto.randomUUID()}@example.com`;
+
+    const reset = await t.inject({
+      method: 'POST',
+      url: '/api/auth/request-password-reset',
+      headers: { origin: env.BETTER_AUTH_URL },
+      payload: { email: existing, redirectTo: '/reset-password' },
+    });
+
+    const signedUp = await t.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      headers: { origin: env.BETTER_AUTH_URL },
+      payload: { email: created, password: 'correct horse battery', name: 'Someone' },
+    });
+
+    expect([reset.statusCode, signedUp.statusCode]).toEqual([200, 200]);
+    expect(delivered).toEqual([]);
+
+    release();
+    await t.settled();
+
+    expect(delivered.map(({ to, kind }) => ({ to, kind }))).toEqual([
+      { to: existing, kind: 'password-reset' },
+      { to: created, kind: 'verification' },
+    ]);
   });
 });

@@ -80,7 +80,7 @@ describe('server logs during a database outage', () => {
       payload: { email: user.email, redirectTo: '/reset-password' },
     });
 
-    const resetPath = linkPath(takeEmail(t, user.email, 'Reset'));
+    const resetPath = linkPath(await takeEmail(t, user.email, 'Reset'));
     const resetSegment = new URL(resetPath, env.BETTER_AUTH_URL).pathname.split('/').pop() ?? '';
 
     expect(resetSegment).not.toBe('');
@@ -143,7 +143,7 @@ describe('request log for a password reset link', () => {
       payload: { email, redirectTo: `${env.BETTER_AUTH_URL}/reset-password` },
     });
 
-    const link = linkPath(takeEmail(t, email, 'Reset your'));
+    const link = linkPath(await takeEmail(t, email, 'Reset your'));
     const token = new URL(link, env.BETTER_AUTH_URL).pathname.split('/').pop() ?? '';
     expect(token).not.toBe('');
 

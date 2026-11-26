@@ -4,7 +4,7 @@ import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { PromiseDatabase, type Db } from '../../platform/database/promise.js';
 import { accounts, sessions, users, verifications } from './schema.js';
-import { Mailer, type SendEmail } from '../email/index.js';
+import { Mailer, type Email, type SendEmail } from '../email/index.js';
 import type { Env } from '../../platform/config/env.js';
 import { limitingBodySize } from '../../platform/http/body-limit.js';
 import { betterAuthLogger, type Log } from '../../platform/observability/logging.js';
@@ -167,13 +167,44 @@ export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/
    * Better Auth calls back with Promises (its emails, its errors), so the callbacks run Effects
    * on the context this layer is built in: the same logger and error reporter as the routes.
    */
-  static readonly layer = (env: Env, log: Log) =>
+  static readonly layer = (
+    env: Env,
+    log: Log,
+    { onBackgroundSend }: { readonly onBackgroundSend?: (sent: Promise<void>) => void } = {},
+  ) =>
     Layer.effect(
       BetterAuth,
       Effect.gen(function* () {
         const db = yield* PromiseDatabase;
         const { send } = yield* Mailer;
         const run = Effect.runPromiseWith(yield* Effect.context<never>());
+
+        // Better Auth answers once its email callback returns, and only some answers send one
+        // (a reset for an existing account, a sign-up for a new address). Waiting for the send
+        // would make those answers slower, and say which case it was, so the send runs on after
+        // the answer. With no request left to fail, it logs and reports its own failures.
+        const sending = new Set<Promise<void>>();
+
+        const sendInBackground = (email: Email) => {
+          const sent = run(
+            send(email).pipe(
+              // The Mailer has logged and reported a failed send itself.
+              Effect.catchTag('EmailSendFailed', () => Effect.void),
+              Effect.catchCause((cause) =>
+                Effect.logError('Email send failed', cause).pipe(
+                  Effect.andThen(ErrorReporter.report(cause)),
+                ),
+              ),
+            ),
+          );
+
+          sending.add(sent);
+          void sent.finally(() => sending.delete(sent));
+          onBackgroundSend?.(sent);
+        };
+
+        // Sends still running finish before the App closes the database the Mailer records them in.
+        yield* Effect.addFinalizer(() => Effect.promise(() => Promise.allSettled(sending)));
 
         const reportUnexpected = (error: Error) => {
           const cause = Cause.fail(new BetterAuthFailed({ cause: error }));
@@ -185,7 +216,7 @@ export class BetterAuth extends Context.Service<BetterAuth, Auth>()('roundtable/
           );
         };
 
-        const auth = createAuth(db, env, (email) => run(send(email)), log);
+        const auth = createAuth(db, env, async (email) => sendInBackground(email), log);
 
         // Its route gets the body as a Web Request, past Effect's MaxBodySize: limited here.
         return {

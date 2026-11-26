@@ -11,8 +11,12 @@ function requestReset(t: TestApp, email: string) {
   });
 }
 
-const resetsTo = (t: TestApp, email: string) =>
-  t.sentEmails.filter((e) => e.to === email && e.kind === 'password-reset').length;
+// Resets are sent after the answer: count them once they're out.
+const resetsTo = async (t: TestApp, email: string) => {
+  await t.settled();
+
+  return t.sentEmails.filter((e) => e.to === email && e.kind === 'password-reset').length;
+};
 
 describe('email limits', () => {
   const t = setupTestApp();
@@ -27,7 +31,7 @@ describe('email limits', () => {
       expect((await requestReset(t, email)).statusCode).toBe(200);
     }
 
-    expect(resetsTo(t, email)).toBe(3);
+    expect(await resetsTo(t, email)).toBe(3);
   });
 
   it('counts each kind separately', async () => {
@@ -35,7 +39,7 @@ describe('email limits', () => {
     const { email } = await signUp(t);
 
     for (let i = 0; i < 3; i++) await requestReset(t, email);
-    expect(resetsTo(t, email)).toBe(3);
+    expect(await resetsTo(t, email)).toBe(3);
   });
 
   it('forgets sends older than 24 hours', async () => {
@@ -49,7 +53,7 @@ describe('email limits', () => {
       })),
     );
     await requestReset(t, email);
-    expect(resetsTo(t, email)).toBe(1);
+    expect(await resetsTo(t, email)).toBe(1);
   });
 });
 
@@ -64,8 +68,8 @@ describe('daily email limit', () => {
     const bob = await signUp(t); // 2
     await requestReset(t, alice.email); // 3
     await requestReset(t, bob.email); // over the limit: dropped
-    expect(resetsTo(t, alice.email)).toBe(1);
-    expect(resetsTo(t, bob.email)).toBe(0);
+    expect(await resetsTo(t, alice.email)).toBe(1);
+    expect(await resetsTo(t, bob.email)).toBe(0);
   });
 });
 
@@ -81,6 +85,7 @@ describe('limit logging', () => {
     const { email } = await signUp(t);
 
     for (let i = 0; i < 4; i++) await requestReset(t, email);
+    await t.settled();
 
     const dropped = lines.filter((line) => line.includes('per-address limit reached'));
 

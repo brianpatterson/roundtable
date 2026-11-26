@@ -85,6 +85,8 @@ export function setupTestApp(options: TestAppOptions = {}) {
   // For migrations and resets: test-only work the App knows nothing about, as in production.
   const admin = createDb(env.DATABASE_URL, 'roundtable-test-admin');
   const sentEmails: Email[] = [];
+  // Identity sends its emails after answering: each send, until a test waits for it.
+  const backgroundSends: Promise<void>[] = [];
   const { errorEvents } = options;
 
   const appEnv: Env = {
@@ -105,6 +107,7 @@ export function setupTestApp(options: TestAppOptions = {}) {
     ),
     githubIssues:
       options.githubIssues ?? (options.openIssue && GitHubIssues.fromPromise(options.openIssue)),
+    onBackgroundSend: (sent) => void backgroundSends.push(sent),
     errorTracking: errorEvents && {
       // Capture instead of sending anywhere.
       beforeSend: (event, hint) => {
@@ -139,12 +142,18 @@ export function setupTestApp(options: TestAppOptions = {}) {
     routes: () => answeredRoutes(inject),
     db: admin.db,
     sentEmails,
+    /** Waits for every email identity started sending in the background, including any it starts meanwhile. */
+    settled: async () => {
+      while (backgroundSends.length > 0) await Promise.all(backgroundSends.splice(0));
+    },
     migrate: () => runMigrations(admin.db),
     /**
      * Empties every table in `public`, whichever module owns it. Drizzle's migration history is
      * in its own `drizzle` schema, so it stays.
      */
     reset: async () => {
+      // A send still running from the test before would otherwise land in the next one.
+      while (backgroundSends.length > 0) await Promise.allSettled(backgroundSends.splice(0));
       sentEmails.length = 0;
 
       const { rows } = await admin.pool.query<{ name: string }>(
@@ -261,8 +270,13 @@ const isInjectMethod = (method: string): method is InjectRequest['method'] =>
 
 export type TestApp = ReturnType<typeof setupTestApp>;
 
-/** Finds (and removes) the most recent email sent to `to` whose subject contains `subject`. */
-export function takeEmail(t: TestApp, to: string, subject: string): Email {
+/**
+ * Finds (and removes) the most recent email sent to `to` whose subject contains `subject`, once
+ * the emails identity sends after answering are out.
+ */
+export async function takeEmail(t: TestApp, to: string, subject: string): Promise<Email> {
+  await t.settled();
+
   const index = t.sentEmails.findLastIndex((e) => e.to === to && e.subject.includes(subject));
 
   if (index === -1) throw new Error(`no "${subject}" email to ${to}`);
@@ -307,7 +321,7 @@ export async function signUp(t: TestApp, email?: string, password?: string) {
 
   const verify = await t.inject({
     method: 'GET',
-    url: linkPath(takeEmail(t, signedUp.email, 'Confirm your email')),
+    url: linkPath(await takeEmail(t, signedUp.email, 'Confirm your email')),
   });
 
   if (verify.statusCode !== 302) {

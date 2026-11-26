@@ -133,7 +133,7 @@ describe('GitHub sign-in', () => {
   it('refuses to link to an account whose owner never confirmed the email (pre-hijacking)', async () => {
     // Someone registers the victim's address with their own password and never confirms it...
     const { email } = await signUpUnverified(t, 'victim@example.com');
-    takeEmail(t, email, 'Confirm your email');
+    await takeEmail(t, email, 'Confirm your email');
     // ...then the real owner signs in with GitHub. They must not land in that account.
     fakeGitHub(githubUser('victim@example.com'));
     const result = await signInWithGitHub(t);

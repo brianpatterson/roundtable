@@ -92,8 +92,8 @@ export class Mailer extends Context.Service<
 
         return Mailer.of({
           send: Effect.fn('Mailer.send')(function* (email: Email) {
-            // A database failure here is a defect: Better Auth gets a rejected Promise and the
-            // route's reporter sees it.
+            // A database failure here is a defect, reported by the caller: the route's reporter, or
+            // for identity's emails (sent after Better Auth answers) the send itself.
             const verdict = yield* claim(email).pipe(Effect.orDie);
 
             if (verdict === 'daily limit') {

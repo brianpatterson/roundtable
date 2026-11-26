@@ -211,6 +211,7 @@ describe('error reporting', () => {
 
     // Better Auth still answers 200 ("check your email"): the failure is only visible in Sentry.
     expect(res.statusCode).toBe(200);
+    await t.settled();
     await Sentry.flush(2000);
     const event = events.find((e) => e.exception?.values?.[0]?.value === 'Resend is down');
 
@@ -234,6 +235,7 @@ describe('error reporting', () => {
       });
     }
 
+    await t.settled();
     await Sentry.flush(2000);
     const event = events.find((e) => e.exception?.values?.[0]?.type === 'DailyEmailLimitReached');
 
