@@ -723,8 +723,10 @@ flowchart LR
   bodies over 256 KiB with a 413.
 - **Startup order:** `db` healthy → `migrate` exits 0 → `api` healthy → `web` starts. A failed
   migration means the new API never starts. It prints one line to the public deploy log: the
-  migration's name, Postgres's message and its code, never `detail` or the query's parameters,
-  which can quote row values. `migrate` runs only the `pre` phase: migrations whose folder ends
+  name of the pending migration that holds the failed statement, Postgres's message and its
+  code, never `detail` or the query's parameters, which can quote row values. The CI migration
+  check's replay names a failure the same way: both read it from `runMigrations`'s
+  `MigrationFailed` (`platform/database/migrate.ts`). `migrate` runs only the `pre` phase: migrations whose folder ends
   in `_postdeploy` remove schema, so they run after the deploy is healthy, once an encrypted
   snapshot of the database is on the volume (`deploy/post-migrate.sh`, kept 7 days). A rollback
   happens before them, so the previous release never meets a dropped column

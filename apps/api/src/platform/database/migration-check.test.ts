@@ -21,6 +21,7 @@ import {
 } from './migration-check.js';
 import { Redacted } from 'effect';
 import { migrationsFolder, runMigrations } from './migrate.js';
+import { runMigrateCommand } from './migrate-command.js';
 import { createDb } from './promise.js';
 import { sharedTestDatabase } from '#test/test-database';
 
@@ -40,16 +41,13 @@ function judge(name: string, sql: string) {
 }
 
 describe('classifyMigration', () => {
-  it('splits on statement breakpoints, without comments or semicolons', () => {
-    const sql = [
-      '-- Why this migration exists.',
-      'ALTER TABLE "rounds" DROP COLUMN "legacy";--> statement-breakpoint',
-      'UPDATE "rounds" SET "status" = \'done\';',
-      '--> statement-breakpoint',
-      '',
-    ].join('\n');
-
-    expect(classifyMigration(sql)).toEqual([
+  it('classifies each statement splitStatements reads', () => {
+    expect(
+      classifyMigration(
+        'ALTER TABLE "rounds" DROP COLUMN "legacy";--> statement-breakpoint\n' +
+          'UPDATE "rounds" SET "status" = \'done\';',
+      ),
+    ).toEqual([
       {
         sql: 'ALTER TABLE "rounds" DROP COLUMN "legacy"',
         changes: [{ kind: 'drop-column', table: 'rounds', column: 'legacy' }],
@@ -541,6 +539,54 @@ describe('checkMigrations', () => {
       );
       expect(await databaseExists(scratch)).toBe(false);
     });
+
+    it.each([
+      [
+        'pre',
+        'one of 20270102000000_add_notes, 20270104000000_notes_again',
+        {
+          '20270102000000_add_notes': 'ALTER TABLE "rounds" ADD COLUMN "notes" integer;',
+          '20270103000000_drop_notes_postdeploy': 'ALTER TABLE "rounds" DROP COLUMN "notes";',
+          '20270104000000_notes_again': 'ALTER TABLE "rounds" ADD COLUMN "notes" integer;',
+        },
+      ],
+      [
+        'post',
+        '20270102000000_drop_missing_postdeploy',
+        { '20270102000000_drop_missing_postdeploy': 'ALTER TABLE "rounds" DROP COLUMN "missing";' },
+      ],
+    ] as const)(
+      'names the migrations and phase the deploy entry names (%s)',
+      async (phase, named, added) => {
+        const merged = { '20270101000000_create_rounds': createRounds };
+        const { folder, add } = repository(merged);
+
+        for (const [name, sql] of Object.entries(added)) add(name, sql);
+
+        const { output } = await check(folder);
+
+        // The deploy on a database main built: the entry runs pre, then post.
+        const entry = await withScratchDatabase(sharedTestDatabase, async (url) => {
+          const mainOnly = join(fixtureRoot, `main-only-${repos}`);
+
+          mkdirSync(join(mainOnly, '20270101000000_create_rounds'), { recursive: true });
+          writeFileSync(
+            join(mainOnly, '20270101000000_create_rounds', 'migration.sql'),
+            createRounds,
+          );
+
+          await runMigrateCommand([], Redacted.make(url), mainOnly);
+
+          const pre = await runMigrateCommand(['pre'], Redacted.make(url), folder);
+
+          return pre.code === 1 ? pre : runMigrateCommand(['post'], Redacted.make(url), folder);
+        });
+
+        expect(entry.output).toMatch(new RegExp(`^Migration ${named} failed: `));
+        expect(output).toContain(`\n${named}:\n  ALTER TABLE`);
+        expect(output).toContain(`Fails in the ${phase} phase of the deploy's replay`);
+      },
+    );
 
     it('fails a post-deploy drop of a column still NOT NULL without a default after pre', async () => {
       const { folder, add } = repository({ '20270101000000_create_rounds': createRequired });

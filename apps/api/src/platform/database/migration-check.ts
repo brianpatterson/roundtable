@@ -1,13 +1,22 @@
-import { DrizzleQueryError } from 'drizzle-orm';
 import { Redacted } from 'effect';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import pg from 'pg';
-import { isPostDeploy, runMigrations, type MigrationDb, type Phase } from './migrate.js';
+import {
+  isPostDeploy,
+  MigrationFailed,
+  migrationLabel,
+  readMigrations,
+  runMigrations,
+  splitStatements,
+  type Migration,
+  type MigrationDb,
+  type Phase,
+} from './migrate.js';
 import { createDb } from './promise.js';
 
 // The migration check (ADR-0073): every migration added since `origin/main` is judged against the
@@ -44,24 +53,14 @@ export interface Statement {
 }
 
 /**
- * Splits a `migration.sql` into its statements (drizzle-kit separates them with
- * `--> statement-breakpoint`), without comment lines or the trailing semicolon, and classifies
- * each. A statement it doesn't recognize has no changes.
+ * A `migration.sql`'s statements, split as the migration runner splits them (`splitStatements`),
+ * each classified. A statement it doesn't recognize has no changes.
  */
 export function classifyMigration(sql: string): Statement[] {
-  return sql
-    .split('--> statement-breakpoint')
-    .map((part) =>
-      part
-        .split('\n')
-        .filter((line) => !line.trimStart().startsWith('--'))
-        .join('\n')
-        .trim()
-        .replace(/;\s*$/, '')
-        .trim(),
-    )
-    .filter((statement) => statement !== '')
-    .map((statement) => ({ sql: statement, changes: classifyStatement(statement) }));
+  return splitStatements(sql).map((statement) => ({
+    sql: statement,
+    changes: classifyStatement(statement),
+  }));
 }
 
 // An identifier, quoted or not, optionally schema-qualified: the last part is captured.
@@ -248,12 +247,6 @@ export interface Schema {
   readonly tables: ReadonlySet<string>;
   readonly columns: ReadonlySet<string>;
   readonly types: ReadonlySet<string>;
-}
-
-/** A migration folder's name and its `migration.sql`. */
-export interface Migration {
-  readonly name: string;
-  readonly sql: string;
 }
 
 /** A statement in a new migration that the previous release's code can't live with. */
@@ -489,20 +482,6 @@ export async function migrationsAt(folder: string, ref: string): Promise<Migrati
   );
 }
 
-/** The migrations in `folder` on disk, committed or not. */
-export async function migrationsIn(folder: string): Promise<Migration[]> {
-  const entries = await readdir(folder, { withFileTypes: true });
-
-  return Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => ({
-        name: entry.name,
-        sql: await readFile(join(folder, entry.name, 'migration.sql'), 'utf8'),
-      })),
-  );
-}
-
 /** Writes migrations to a fresh temporary folder, calls `use` with it, and removes it after. */
 async function withMigrationsFolder<A>(
   migrations: readonly Migration[],
@@ -541,7 +520,7 @@ export async function checkMigrations(options: {
   const merged = await migrationsAt(options.folder, options.ref);
   const mergedNames = new Set(merged.map((migration) => migration.name));
 
-  const added = (await migrationsIn(options.folder)).filter(
+  const added = (await readMigrations(options.folder)).filter(
     (migration) => !mergedNames.has(migration.name),
   );
 
@@ -574,23 +553,23 @@ export async function checkMigrations(options: {
 /**
  * Replays the deploy on a database with `main`'s schema, through the code the deploy runs
  * (ADR-0073): phase `pre`, then the post-deploy drops the new release would insert without, then
- * phase `post`. A failing statement is named by the new migration it belongs to and the phase.
+ * phase `post`. A failing statement is named as the deploy's own entry names it.
  */
 async function replayDeploy(
   db: MigrationDb,
   folder: string,
   added: readonly Migration[],
 ): Promise<Problem[]> {
-  const sorted = [...added].sort((a, b) => a.name.localeCompare(b.name));
-  const preDeploy = sorted.filter((migration) => !isPostDeploy(migration.name));
-  const postDeploy = sorted.filter((migration) => isPostDeploy(migration.name));
-
-  const pre = await replayPhase(db, folder, 'pre', preDeploy);
+  const pre = await replayPhase(db, folder, 'pre');
 
   if (pre) return [pre];
 
+  const postDeploy = [...added]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter((migration) => isPostDeploy(migration.name));
+
   const stillRequired = await requiredDrops(db.$client, postDeploy);
-  const post = await replayPhase(db, folder, 'post', postDeploy);
+  const post = await replayPhase(db, folder, 'post');
 
   return post ? [...stillRequired, post] : stillRequired;
 }
@@ -603,48 +582,30 @@ const phaseAdvice: Record<Phase, string> = {
   post: 'It runs after every pre-deploy migration, as the deploy will: fix it so it applies there.',
 };
 
-/** Runs one phase; a failed statement becomes a problem, any other error is rethrown. */
+/**
+ * Runs one phase; a failed statement becomes a problem, named by the pending migration(s) that
+ * hold it, as `MigrationFailed` names them. Any other error is rethrown.
+ */
 async function replayPhase(
   db: MigrationDb,
   folder: string,
   phase: Phase,
-  pending: readonly Migration[],
 ): Promise<Problem | undefined> {
   try {
     await runMigrations(db, phase, folder);
 
     return undefined;
   } catch (error) {
-    if (!(error instanceof DrizzleQueryError)) throw error;
-
-    const [failed] = classifyMigration(error.query);
-    const statement = failed?.sql ?? error.query.trim();
-
-    // The same statement can be in more than one pending migration (add, drop, add again), and
-    // only the SQL says which failed: name every one that has it rather than guess.
-    const candidates = pending.flatMap((candidate) =>
-      classifyMigration(candidate.sql).some((each) => each.sql === statement)
-        ? [candidate.name]
-        : [],
-    );
-
-    const cause = error.cause instanceof Error ? error.cause.message : error.message;
+    if (!(error instanceof MigrationFailed)) throw error;
 
     return {
-      migration: migrationNamed(candidates, phase),
-      statement,
-      reason: `Fails in the ${phase} phase of the deploy's replay: ${cause}. ${phaseAdvice[phase]}`,
+      migration: migrationLabel(error.migrations) ?? `a new ${phase}-deploy migration`,
+      statement: error.statement,
+      reason:
+        `Fails in the ${phase} phase of the deploy's replay: ${error.reason}. ` +
+        phaseAdvice[phase],
     };
   }
-}
-
-/** The migration a failed statement belongs to, or each that could be it. */
-function migrationNamed(candidates: readonly string[], phase: Phase): string {
-  const [only, ...others] = candidates;
-
-  if (only === undefined) return `a new ${phase}-deploy migration`;
-
-  return others.length === 0 ? only : `one of ${candidates.join(', ')}`;
 }
 
 /**
