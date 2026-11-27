@@ -76,6 +76,12 @@ Option 4.
     or `CHECK` constraint or unique index (old writes can violate it), and removing an enum value.
   - fails `ADD COLUMN … NOT NULL` without a default in either phase: before `post` the old code's
     inserts violate it. Add it with a default, or nullable now and `SET NOT NULL` post-deploy.
+  - applies these two rules only to tables, columns and types that exist on `main`, the schema
+    the previous release runs on; the replay below knows it. The previous release can't write to a
+    table it has never seen, so a new table's unique index, a `NOT NULL` column added to it, or a
+    constraint on it stays in `pre`, as drizzle-kit writes it (a new table's `CREATE UNIQUE INDEX`
+    is its own statement). Made post-deploy instead, the new code would run without it until
+    `post`.
   - **replays the deploy on `app_test`**: `main`'s migrations in full, then `pre`, then `post`.
     drizzle-kit generates each migration from the schema after the one before it, so a pre-deploy
     migration generated after a pending post-deploy one can depend on it (re-creating a dropped
@@ -112,6 +118,12 @@ Option 4.
     by element for arrays, or set to null where a hash can't take the type's place. Hashing keeps
     what migrations trip over (nulls, equal values, duplicates) and destroys the content, so
     nothing the job reports can carry it. A new column type is scrubbed by default.
+  - **Accepted residual risk:** the kept values (interview times such as `rounds.starts_at`,
+    `applied_at`, statuses, ids) and row counts are still readable to branch SQL, one bit per run
+    through pass or fail. They identify no one without the scrubbed text, extracting anything
+    takes many runs, each a pull request someone can see, and every run is of an owner-approved
+    ticket. Scrubbing them too would hide the data the rehearsal exists to test (dates that a
+    `NOT NULL` or a cast trips over).
   - The SQL is also contained: the Postgres container has no network, and the migrations run as a
     role that isn't a superuser (no `COPY … TO PROGRAM`, no extensions). The age key is used for
     the decryption and removed before the branch's SQL runs.

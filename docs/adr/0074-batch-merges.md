@@ -124,7 +124,11 @@ Option 3.
   ticket as completed, with a link to the merged pull request. The dispatcher counts a blocker in
   the same batch as done once it's merged into the batch branch, and a ticket as no longer in
   flight then; a blocker outside the batch must still be merged and deployed. One ticket at a time
-  is unchanged.
+  is unchanged. A closure the workflow makes has no closer GitHub records, which `dispatch.sh`
+  today reads as "nothing left to deploy". So the dispatcher takes the commit from the pull
+  request named in the workflow's marked closing comment (its squash commit on the batch branch)
+  and compares that with the deployed SHA, as it does a merge commit now. The batch's merge into
+  `main` keeps that commit as an ancestor, so it counts as deployed once the batch is.
 - **Keeping up with `main`.** When `main` changes, the same workflow merges it into every open
   batch branch and pushes the merge commit with the batch merger's bypass, only when the merge is
   clean: git made it, with hooks off and no code from either branch run, so it adds nothing that
