@@ -244,7 +244,8 @@ The API is moving to Effect 4 ([ADR-0022](docs/adr/0022-effect-for-the-api.md), 
 
 `/plan-step` (`.claude/skills/plan-step/`) takes a step from grilling to a filed batch: docs PR,
 spec and tickets drafted for the owner, then `scripts/file-batch.sh` files them with their
-sub-issues and blocking edges.
+sub-issues and blocking edges. It applies an open `retro` issue first, in one PR that closes it;
+`/plan-step <retro>` does only that.
 
 ### Issue tracker
 

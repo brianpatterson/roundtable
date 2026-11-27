@@ -40,10 +40,12 @@ body:
         - label: 'API: applications'
         - label: 'API: identity'
         - label: 'API: email'
+        - label: 'API: personas'
         - label: 'API: platform (config, database, observability)'
         - label: 'Contract (packages/contract)'
         - label: 'Web: applications'
         - label: 'Web: identity'
+        - label: 'Web: personas'
         - label: 'Web: shell'
         - label: 'Web: design system'
         - label: 'Infra (infra/, deploy)'
@@ -52,7 +54,10 @@ body:
     id: design-system
     attributes:
       label: Design system components
-      description: Existing components to use, or new ones the change needs (ADR-0024). "None" is fine.
+      description: >-
+        Existing components to use, or new ones the change needs (ADR-0024). "None" is fine. A
+        component built for a later ticket's use: its acceptance criteria spell out exactly what
+        that ticket will pass it (docs/agents/issue-tracker.md, "Writing a ticket").
   - type: textarea
     id: shared-rules
     attributes:
