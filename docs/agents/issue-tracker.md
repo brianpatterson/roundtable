@@ -82,6 +82,13 @@ For example, Round order (`GLOSSARY.md`) lives in one function in `packages/cont
 `inRoundOrder` in `src/applications.ts`, which the web app and the API both use. In the Rounds
 batch it was written three times before it got that home (#166), and the copies disagreed.
 
+A ticket that builds something a later ticket in the batch uses (a design-system component, an
+endpoint, a helper) spells out the consumer's exact shape in its acceptance criteria: the full
+list of options the picker will show, ungrouped items included, or the fields the page will read.
+Otherwise the later ticket has to reopen it: in the Personas batch, `Select`'s option groups
+(#256) required a label on every group, and the prep picker (#258) had to change the component to
+put "No skill" before them.
+
 The factory never adds, removes or upgrades a package: its sandbox leaves `node_modules` and the
 lockfile read-only ([ADR-0050](../adr/0050-factory-adds-no-dependencies.md)). If a ticket needs a new
 dependency, say so to the user before publishing: a human adds it (with its `docs/dependencies.md`
