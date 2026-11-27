@@ -11,7 +11,15 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { isPostDeploy, parsePhase, runMigrations, usage, withPreDeployFolder } from './migrate.js';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
+import {
+  describeMigrationFailure,
+  isPostDeploy,
+  parsePhase,
+  runMigrations,
+  usage,
+  withPreDeployFolder,
+} from './migrate.js';
 import { createDb } from './promise.js';
 import { env } from '#test/helpers';
 
@@ -316,20 +324,164 @@ describe('the migrate entry', () => {
   });
 
   it('prints its usage and exits 1 on any other argument, without touching the database', async () => {
-    const entry = fileURLToPath(new URL('../../migrate.ts', import.meta.url));
-
     // An address nothing listens on: reaching for the database would fail differently.
-    const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
-      (done) => {
-        const child = execFile(
-          process.execPath,
-          ['--import', 'tsx', entry, 'sideways'],
-          { env: { ...process.env, DATABASE_URL: 'postgres://nobody@127.0.0.1:9/none' } },
-          (_error, stdout, stderr) => done({ code: child.exitCode, stdout, stderr }),
-        );
-      },
-    );
+    const result = await runEntry(['sideways'], {
+      DATABASE_URL: 'postgres://nobody@127.0.0.1:9/none',
+    });
 
     expect(result).toEqual({ code: 1, stdout: '', stderr: `${usage}\n` });
   }, 30_000);
+
+  // The deploy log is public, and a failed migration's output reaches it (deploy.sh's
+  // `recent_logs migrate`, post-migrate.sh). Postgres's `detail` quotes the rows that broke the
+  // constraint, so the entry prints only the migration's name, the message and the code.
+  const email = 'someone-private@example.com';
+
+  async function failingRun(label: string, args: string[], breaking: string) {
+    const migrations = migrationsFolder(`entry-${label}`);
+
+    migrations.add(
+      '20260101000000_create_people',
+      `create table people (id serial primary key, email text, age text);
+      --> statement-breakpoint
+      insert into people (email, age) values ('${email}', 'forty-two'), ('${email}', null);`,
+    );
+
+    const url = await emptyDatabase(`entry_${label}`);
+
+    await withDb(url, ({ db }) => runMigrations(db, undefined, migrations.folder));
+    migrations.add('20260102000000_tighten_people', breaking);
+
+    const result = await runEntry(args, {
+      DATABASE_URL: url,
+      MIGRATIONS_FOLDER: migrations.folder,
+    });
+
+    return { result, url };
+  }
+
+  it.each([
+    ['pre', ['pre']],
+    ['post', ['post']],
+    ['all', []],
+  ])(
+    'prints only the safe fields of a constraint failure and exits 1 (%s)',
+    async (label, args) => {
+      const { result, url } = await failingRun(
+        `unique_${label}`,
+        args,
+        'create unique index people_email on people (email);',
+      );
+
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(
+        'Migration 20260102000000_tighten_people failed: ' +
+          'could not create unique index "people_email" (code 23505)\n',
+      );
+      expect(`${result.stdout}${result.stderr}`).not.toContain(email);
+
+      await withDb(url, async ({ pool }) => {
+        expect(await applied(pool)).toEqual(['create_people']);
+      });
+    },
+    30_000,
+  );
+
+  it('names a NOT NULL failure without the row', async () => {
+    const { result } = await failingRun(
+      'not_null',
+      ['pre'],
+      'alter table people alter column age set not null;',
+    );
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: '',
+      stderr:
+        'Migration 20260102000000_tighten_people failed: ' +
+        'column "age" of relation "people" contains null values (code 23502)\n',
+    });
+  }, 30_000);
+
+  it('drops the value a data exception quotes', async () => {
+    const { result } = await failingRun(
+      'cast',
+      ['pre'],
+      'alter table people alter column age type integer using age::integer;',
+    );
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: '',
+      stderr:
+        'Migration 20260102000000_tighten_people failed: ' +
+        'invalid input syntax for type integer: "<redacted>" (code 22P02)\n',
+    });
+  }, 30_000);
 });
+
+describe('describeMigrationFailure', () => {
+  const migrations = migrationsFolder('describe');
+
+  migrations.add('20260101000000_add_flag', 'alter table rounds add column flag boolean;');
+  migrations.add('20260102000000_drop_flag_postdeploy', 'alter table rounds drop column flag;');
+  migrations.add('20260103000000_add_flag_again', 'alter table rounds add column flag boolean;');
+
+  it('names every migration that holds the failed statement', () => {
+    const error = new DrizzleQueryError('alter table rounds add column flag boolean;', undefined);
+
+    expect(describeMigrationFailure(error, 'post', migrations.folder)).toBe(
+      'Migration one of 20260101000000_add_flag, 20260103000000_add_flag_again failed: ' +
+        'Failed query: alter table rounds add column flag boolean;',
+    );
+  });
+
+  it('leaves out post-deploy migrations in the pre phase', () => {
+    const error = new DrizzleQueryError('alter table rounds drop column flag;', undefined);
+
+    expect(describeMigrationFailure(error, 'pre', migrations.folder)).toBe(
+      'Migrations failed: Failed query: alter table rounds drop column flag;',
+    );
+    expect(describeMigrationFailure(error, 'post', migrations.folder)).toBe(
+      'Migration 20260102000000_drop_flag_postdeploy failed: ' +
+        'Failed query: alter table rounds drop column flag;',
+    );
+  });
+
+  it('redacts query params, and gives a failure outside a query its own code', () => {
+    const query = new DrizzleQueryError('select $1', ['a-session-token']);
+
+    const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9'), {
+      code: 'ECONNREFUSED',
+    });
+
+    expect(describeMigrationFailure(query, undefined, migrations.folder)).toBe(
+      'Migrations failed: Failed query: select $1\nparams: <redacted: string(15)>',
+    );
+    expect(describeMigrationFailure(refused, undefined, migrations.folder)).toBe(
+      'Migrations failed: connect ECONNREFUSED 127.0.0.1:9 (code ECONNREFUSED)',
+    );
+  });
+});
+
+/** Runs the migrate entry as the deploy does, in its own process, with the tests' environment. */
+function runEntry(args: string[], overrides: Record<string, string>) {
+  const entry = fileURLToPath(new URL('../../migrate.ts', import.meta.url));
+
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>((done) => {
+    const child = execFile(
+      process.execPath,
+      ['--import', 'tsx', entry, ...args],
+      {
+        env: {
+          ...process.env,
+          BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long',
+          BETTER_AUTH_URL: 'http://localhost:5173',
+          ...overrides,
+        },
+      },
+      (_error, stdout, stderr) => done({ code: child.exitCode, stdout, stderr }),
+    );
+  });
+}

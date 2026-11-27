@@ -1,10 +1,14 @@
+import { DrizzleQueryError } from 'drizzle-orm/errors';
+import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Option, Schema } from 'effect';
 import { mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
+import { causeChain, describeError, postgresFields } from '../observability/redact.js';
 import type { Db } from './promise.js';
 
 // In the bundled production image the SQL files sit next to dist/, so the path is configurable.
@@ -78,6 +82,62 @@ export async function runMigrations(
   } finally {
     client.release(true);
   }
+}
+
+/** A failure's own code: Postgres's SQLSTATE, or Node's (`ECONNREFUSED`). Nothing else is read. */
+const readCode = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }));
+
+/**
+ * The one line the migrate entry prints when a run fails. The deploy log that shows it is public,
+ * and Postgres's `detail` quotes the rows that broke a constraint ("Key (email)=(…) is
+ * duplicated"), so this gives only the failing migration's name, the innermost error's message
+ * (values a data exception quotes removed, Drizzle's query params redacted) and its code. Never
+ * `detail`, `where`, `hint`, the query or its parameters.
+ */
+export function describeMigrationFailure(
+  error: Error,
+  phase?: Phase,
+  folder: string = migrationsFolder,
+): string {
+  const innermost = causeChain(error).at(-1) ?? error;
+  const message = describeError(innermost).message || innermost.name;
+  const code = postgresFields(error)?.code ?? Option.getOrUndefined(readCode(innermost))?.code;
+
+  const migration =
+    error instanceof DrizzleQueryError ? failedMigration(error.query, phase, folder) : undefined;
+
+  return [
+    migration === undefined ? 'Migrations failed: ' : `Migration ${migration} failed: `,
+    message,
+    code === undefined ? '' : ` (code ${code})`,
+  ].join('');
+}
+
+/**
+ * The migration a failed statement came from: Drizzle runs every pending one in a single
+ * transaction and says only which statement failed. A statement in more than one migration names
+ * each; one that's in none (Drizzle's own bookkeeping) names nothing.
+ */
+function failedMigration(query: string, phase: Phase | undefined, folder: string) {
+  const statement = query.trim();
+  let migrations: MigrationMeta[];
+
+  try {
+    migrations = readMigrationFiles({ migrationsFolder: folder });
+  } catch {
+    return undefined;
+  }
+
+  const candidates = migrations
+    .filter((migration) => phase !== 'pre' || !isPostDeploy(migration.name))
+    .filter((migration) => migration.sql.some((each) => each.trim() === statement))
+    .map((migration) => migration.name);
+
+  const [only, ...others] = candidates;
+
+  if (only === undefined) return undefined;
+
+  return others.length === 0 ? only : `one of ${candidates.join(', ')}`;
 }
 
 /**
