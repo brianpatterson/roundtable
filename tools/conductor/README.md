@@ -62,12 +62,13 @@ gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state,
   - **An Executor queued or running** for the Work item: nothing more starts, and the state names
     it (`building`, `fixing`, `reviewing`, `reworking`, `resolving`; a mention keeps the state).
   - **The Owner's `@claude`** on the pull request, after the last mention run: start the
-    `mention` Executor, even on a pull request handed over.
+    `mention` Executor, except on one handed over, which every Executor's guard refuses: remove
+    `needs-human` to have it answered.
   - **Merged:** `deployed` once a deploy includes the merge; handed over when it isn't Deployed
     3 hours after it merged, naming the merge commit.
   - **Before the pull request,** as `dispatch.sh` decides, except that `needs-human` and
     `needs-info` hold no slot: one Ticket builds at a time, from its build until its merge is
-    Deployed; the Owner's Tickets before the nightly run's, each oldest Approval first. A build
+    Deployed, and a Work item that couldn't be read holds the slot until it can be; the Owner's Tickets before the nightly run's, each oldest Approval first. A build
     that ended without a pull request is started again, and handed over after two. A Ticket
     `building` with no build run and no pull request after 90 minutes is handed over.
   - **On the pull request,** as `attempt.sh next` and `sweep-prs.sh` decide: a conflict goes to
@@ -76,7 +77,9 @@ gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state,
     is handed over; a failure goes to the CI fixer (labeled `factory` or `autofix`, two Attempts
     since the last human push); a cancelled check is rerun once; a pass goes to the reviewer,
     except on a pull request with only Dependabot's commits; `changes` go to Rework (the factory's
-    own, two Attempts), and a ready Review with minor findings gets one Minor pass. Where an
+    own, two Attempts), and a ready Review with minor findings gets one Minor pass. A pull request
+    labeled neither `factory` nor `autofix` is reviewed, but, as the sweeper leaves it, never
+    handed over or rerun: its reason says what the Owner can do. Where an
     Executor has already answered the evidence (its run was asked for after it) and nothing
     changed, `decide` waits, then hands over after the sweeper's threshold for it.
   - **The dispatch budget** (below): where a start would pass it, `decide` starts nothing and says

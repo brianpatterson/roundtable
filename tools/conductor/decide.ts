@@ -171,6 +171,13 @@ function taken(context: Context, kind: RunKind, head: string | null, since: stri
 const handedOver = (ticket: TicketState | null, pr: PullRequestState | null): boolean =>
   ticket?.held === 'needs-human' || (pr?.labels.includes('needs-human') ?? false);
 
+/**
+ * A pull request labeled neither `factory` nor `autofix` (Dependabot's own) is the Owner's, as the
+ * sweeper leaves it (ADR-0040): the factory reviews it, but neither hands it over nor reruns it.
+ */
+const UNSWEPT =
+  'and the factory looks after only pull requests labeled `factory` or `autofix`, so it is yours';
+
 const HELD =
   'It is labeled `needs-human`, so it waits for you: settle what it needs, then remove the label to hand it back to the factory.';
 
@@ -391,6 +398,14 @@ function onPullRequest(
   const attempts = pr.attempts;
 
   if (pr.mergeable.known && pr.mergeable.value === 'CONFLICTING') {
+    if (!fixable) {
+      return wait(
+        number,
+        'checking',
+        `It conflicts with main, ${UNSWEPT}: merge main into the branch and resolve it.`,
+      );
+    }
+
     if (!factory) {
       return handOver(
         number,
@@ -472,6 +487,14 @@ function checks(
     const minutes = pr.headAt.known ? minutesBetween(pr.headAt.value, at) : 0;
 
     if (minutes > policy.stale.ciStart) {
+      if (!fixable) {
+        return wait(
+          number,
+          'checking',
+          `No CI run has started on its head ${sha} in ${minutes} minutes, ${UNSWEPT}: push again or start CI.`,
+        );
+      }
+
       return handOver(
         number,
         `No CI run has started on its head ${sha} in ${minutes} minutes, so it is yours: push again or start CI, then remove \`needs-human\`.`,
@@ -487,6 +510,14 @@ function checks(
     const minutes = minutesBetween(earliest(running.map((check) => check.startedAt)), at);
 
     if (minutes > policy.stale.ciRun) {
+      if (!fixable) {
+        return wait(
+          number,
+          'checking',
+          `CI has been running on ${sha} for ${minutes} minutes, ${UNSWEPT}: cancel or rerun it.`,
+        );
+      }
+
       return handOver(
         number,
         `CI has been running on ${sha} for ${minutes} minutes, so it is yours: cancel or rerun it, then remove \`needs-human\`.`,
@@ -500,9 +531,10 @@ function checks(
 
   if (failed.length > 0) {
     if (!fixable) {
-      return handOver(
+      return wait(
         number,
-        `CI failed on ${sha}, and the factory fixes CI only on pull requests labeled \`factory\` or \`autofix\`, so it is yours: push a fix, or label it \`autofix\` and remove \`needs-human\`.`,
+        'checking',
+        `CI failed on ${sha}, ${UNSWEPT}: push a fix, or label it \`autofix\` to have the factory fix it.`,
       );
     }
 
@@ -557,6 +589,10 @@ function checks(
       ...new Set(ended.map((check) => `\`${check.conclusion ?? 'no conclusion'}\``)),
     ].join(', ');
 
+    if (!fixable) {
+      return wait(number, 'checking', `CI ended ${how} on ${sha}, ${UNSWEPT}: rerun it.`);
+    }
+
     if (ended.some((check) => check.runs > policy.reruns)) {
       return handOver(
         number,
@@ -580,7 +616,7 @@ function checks(
 function review(
   context: Context,
   pr: PullRequestState,
-  { head, sha, factory, checks: list }: Head,
+  { head, sha, factory, fixable, checks: list }: Head,
 ): Decision {
   const { number, at } = context.state;
   const { policy } = context;
@@ -612,6 +648,14 @@ function review(
       const minutes = minutesBetween(passedAt, at);
 
       if (minutes > policy.stale.review) {
+        if (!fixable) {
+          return wait(
+            number,
+            'reviewing',
+            `The reviewer ran on ${sha} and left no Review ${minutes} minutes after CI passed, ${UNSWEPT}: review it or rerun the reviewer.`,
+          );
+        }
+
         return handOver(
           number,
           `The reviewer ran on ${sha} and left no Review ${minutes} minutes after CI passed, so it is yours: review it or rerun the reviewer, then remove \`needs-human\`.`,
@@ -766,8 +810,10 @@ function decideItem(state: WorkItemState, policy: Policy): Pending {
     );
   }
 
-  // The Owner's `@claude` on the pull request after the last answer: their ask comes first.
+  // The Owner's `@claude` on the pull request after the last answer: their ask comes first, unless
+  // it's handed over, which every Executor's guard refuses (ADR-0075).
   if (
+    !handedOver(ticket, pr) &&
     pr !== null &&
     pr.status === 'open' &&
     pr.head.known &&
@@ -882,7 +928,14 @@ export function decide(states: readonly WorkItemState[], policy: Policy): Decisi
         a.state.number - b.state.number,
     );
 
-  const started = inFlight.length === 0 ? queue[0]?.state.number : undefined;
+  // A Work item whose Ticket or pull request couldn't be read may be the one in flight, so it
+  // holds the slot until it can be read: nothing fails open (ADR-0047's one at a time).
+  const unreadable = pending.flatMap((item) =>
+    !item.state.ticket.known || !item.state.pullRequest.known ? [item.state.number] : [],
+  );
+
+  const started =
+    inFlight.length === 0 && unreadable.length === 0 ? queue[0]?.state.number : undefined;
 
   return pending.map((item) => {
     if (item.wantsSlot === null) return guarded(item.state, policy, item.decision);
@@ -893,6 +946,14 @@ export function decide(states: readonly WorkItemState[], policy: Policy): Decisi
     if (refused !== null) return wait(item.state.number, 'waiting', refused);
 
     if (item.state.number === started) return item.decision;
+
+    if (started === undefined && inFlight.length === 0) {
+      return wait(
+        item.state.number,
+        'waiting',
+        `The factory builds one Ticket at a time, and ${refs(unreadable)} couldn't be read, so it may be in flight: the factory starts no build until it can read it again.`,
+      );
+    }
 
     const ahead = started === undefined ? inFlight : [started];
 

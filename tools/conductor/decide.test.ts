@@ -707,6 +707,13 @@ describe('Executors, the budget and mentions', () => {
     // An older answer doesn't answer a newer mention.
     expect(asked({ finished: [finished('mention', 30)] }), 'reviewed: start mention');
   });
+
+  test("the Owner's @claude on a pull request handed over starts nothing, since every Executor's guard refuses needs-human", () => {
+    expect(
+      onPr({ mention: known(ago(5)), labels: ['factory', 'needs-human'] }),
+      'needs-human: nothing',
+    );
+  });
 });
 
 describe("Dependabot's pull requests", () => {
@@ -721,10 +728,39 @@ describe("Dependabot's pull requests", () => {
   test('CI failed: the CI fixer only when it is labeled autofix', () => {
     const failing = known([passed({ conclusion: 'failure' })]);
 
-    expect(alone({ dependabotOnly: true, labels: [], checks: failing }), 'needs-human: hand-over');
+    expect(alone({ dependabotOnly: true, labels: [], checks: failing }), 'checking: nothing');
     expect(
       alone({ dependabotOnly: true, labels: ['autofix'], checks: failing }),
       'fixing: start ci-fix',
+    );
+  });
+
+  test('labeled neither factory nor autofix: reviewed, but never handed over or rerun, as the sweeper leaves it', () => {
+    const unswept = (patch: Partial<PullRequestState>) => alone({ labels: [], ...patch });
+
+    expect(unswept({ review: known(null) }), 'reviewing: start review');
+    expect(unswept({ mergeable: known('CONFLICTING') }), 'checking: nothing');
+    expect(unswept({ checks: known([]), headAt: known(ago(31)) }), 'checking: nothing');
+    expect(
+      unswept({
+        checks: known([
+          passed({
+            status: 'in_progress',
+            conclusion: null,
+            completedAt: null,
+            startedAt: ago(91),
+          }),
+        ]),
+      }),
+      'checking: nothing',
+    );
+    expect(unswept({ checks: known([passed({ conclusion: 'cancelled' })]) }), 'checking: nothing');
+    expect(
+      alone(
+        { labels: [], review: known(null), checks: known([passed({ completedAt: ago(61) })]) },
+        { runs: known(runs({ finished: [finished('review', 60)] })) },
+      ),
+      'reviewing: nothing',
     );
   });
 
@@ -753,6 +789,21 @@ describe('every state has a sentence', () => {
 
       assert.equal(outcome(decision), 'waiting: nothing');
       assert.match(decision.reason, /it was not gathered/);
+    }
+  });
+
+  test('a Work item that could not be read may be the one in flight, so it holds the build slot', () => {
+    const next = item({
+      number: 12,
+      ticket: known(ticket({ number: 12 })),
+    });
+
+    for (const unreadable of [item({ ticket: unknown }), item({ pullRequest: unknown })]) {
+      const [, waiting] = all([unreadable, next]);
+
+      assert.ok(waiting !== undefined);
+      assert.equal(outcome(waiting), 'waiting: nothing');
+      assert.match(waiting.reason, /#10 couldn't be read/);
     }
   });
 
