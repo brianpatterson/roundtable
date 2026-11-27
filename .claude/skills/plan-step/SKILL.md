@@ -1,6 +1,6 @@
 ---
 name: plan-step
-description: Take a roadmap step from design to a batch the factory can build - grill it, land the docs, draft the spec and tickets, file them.
+description: Take a roadmap step from design to a batch the factory can build - grill it, land the docs, draft the spec and tickets, file them - and apply the batch's retrospective when it opens.
 disable-model-invocation: true
 ---
 
@@ -13,6 +13,15 @@ retrospective and architecture review.
 
 The owner gates three moments: the design (step 2), the docs PR's merge (step 3), and the drafts
 (step 4). At each, stop and wait for their word. Labeling `ready` (step 6) is theirs too.
+
+The retrospective opens a `retro` issue when a batch's last ticket closes, usually long after this
+session. Given a retro issue (`/plan-step 265`), go straight to step 7.
+
+## 0. Apply an open retro first
+
+`gh issue list --label retro --state open`. A retro's fixes change the factory that will build the
+next batch, so they land first: tell the owner which retro is open and run step 7 on it before
+grounding, unless they say to leave it.
 
 ## 1. Ground
 
@@ -83,3 +92,24 @@ close them. Report the spec and ticket numbers with their links.
 
 When the owner says to, `gh issue edit <n> --add-label ready` on each ticket, never the spec, and
 check the labels with `gh issue view`. The dispatcher builds them in edge order from there.
+
+## 7. Apply a retro
+
+Most findings change `.github/`, `.claude/` or `CLAUDE.md`, which the factory's sandbox can't
+write, so a human-run session applies them.
+
+1. Read the retro (`gh issue view <n> --json body`). List its findings with their severity and ask
+   the owner which to accept ("accept all" is common). Stop for their word.
+2. Work in a worktree, never the owner's checkout:
+   `git worktree add <scratchpad>/retro-<batch> -b chore/retro-of-<spec> origin/main`, then
+   `pnpm install` there.
+3. Apply each accepted finding as its own commit, its message naming the retro and the finding's
+   number. Meet the finding's acceptance criteria as written. A finding that adds a check or test
+   proves it: run it without the fix (it fails) and with it (it passes). Small fixes outside the
+   findings go in their own commit, listed under **Incidental changes**.
+4. Run `pnpm check` and every `.github/factory/test-*.sh`, then push and open one PR with the
+   repo's template: each finding's change, how it was proved, and `Closes #<retro>`.
+5. Comment on the retro with the findings the owner declined and why, so the next retrospective
+   knows. Remove the worktree once the PR merges.
+
+Done when the PR is open, its CI is green, and declined findings have their comment.

@@ -211,7 +211,7 @@ jobs:
                 "**Acceptance criteria**\n\n" + ($f.acceptance_criteria | map("- \(.)") | join("\n")) + "\n"
               ] | join("\n"))
             end) +
-            "\n<sub>From the batch retrospective ([run](\($run)), ADR-0064). Not labeled `ready`. File each finding worth building as a sub-issue of this one (a hand-built one too, with `Closes` in its pull request), and comment on the rest so the next retrospective knows. This closes itself when the last sub-issue does.</sub>"
+            "\n<sub>From the batch retrospective ([run](\($run)), ADR-0064). Not labeled `ready`. Apply it with `/plan-step <this issue>`: one pull request that `Closes` it. Or file each finding worth building as a sub-issue of this one (a hand-built one too, with `Closes` in its pull request), and this closes itself when the last sub-issue does. Either way, comment on the findings you decline so the next retrospective knows.</sub>"
           ' <<<"$RESULT")
           .github/factory/guard-secrets.sh <<<"$body" || exit 1
 

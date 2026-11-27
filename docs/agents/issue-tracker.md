@@ -57,6 +57,9 @@ in `.github/`, `.claude/` or `CLAUDE.md`), an issue that the hand-made pull requ
 that issue **before** the pull request merges. Comment on the findings you decline. The retro closes
 itself when its last sub-issue closes, and never gets a retrospective of its own.
 
+When one hand-made pull request applies every finding you accept, it can `Closes` the retro
+itself instead, with no sub-issues: `/plan-step <retro>` does this (its step 7).
+
 ## Writing a ticket
 
 Write the body with the headings of the issue forms in `.github/ISSUE_TEMPLATE/`, since the
