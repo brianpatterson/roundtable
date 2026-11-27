@@ -87,9 +87,11 @@ Option 3.
     branch's code holds `statuses: write`**: a `pull_request` run uses the branch's code with its
     own `GITHUB_TOKEN`. Today `ci.yml` and `codeql.yml` hold `contents: read` only. The
     implementation adds a check of every workflow for this invariant, beside
-    `test-checkout-before-agent.sh`. If a ruleset turns out not to pin a commit status's source
-    (it does for check runs), `review` and `migration-rehearsal` are published as check runs
-    (`checks: write`) instead, under the same invariant.
+    `test-checkout-before-agent.sh`. Tested on 2026-11-26 with a temporary ruleset pinning the
+    `factory` status to GitHub Actions: a push whose commit had that status from a workflow was
+    accepted, and one whose commit had it from the owner's own token was rejected ("was not set by
+    the expected GitHub app"). Commit statuses are enough; `review` and `migration-rehearsal`
+    needn't be check runs.
   - **One bypass: a new GitHub App, the batch merger,** whose key only `batch-merge.yml` holds, in
     a `batch-merge` environment that admits only `main` and in which no job runs an agent or code
     from a branch. The factory has no App of its own today (ADR-0072's merge uses the Claude App's
