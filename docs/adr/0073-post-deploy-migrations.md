@@ -90,6 +90,34 @@ Option 4.
   The check enforces only what it lists. Anything else that the previous release's code can't
   live with is left to the reviewer, and the list grows when one is found.
 
+- **Rehearsing on real data:** the checks above see only the schema. A migration can still fail
+  on the data (`SET NOT NULL` over existing nulls, a unique index over duplicates, a cast that one
+  row breaks) or take minutes rewriting a table. So every pull request that adds a migration is
+  rehearsed on the latest nightly backup ([ADR-0015](0015-backups.md)), the way `backup.yml`
+  already restores it into a throwaway Postgres to verify it:
+  - On the restored database: whatever of the base branch's migrations the backup lacks, then the
+    pull request's through `pre` and `post`, each migration timed. It fails on an error or on any migration over **5 seconds**, which flags a
+    table rewrite or a long lock.
+  - It runs from `main`'s workflow (after CI, as Review does), in the `backups` environment, with
+    no agent in the job. The pull request's SQL files are read as data (`git show`), and a script
+    from `main` applies them with `psql`. The branch's `migrate.ts` and code never run.
+  - The SQL comes from a branch, so it's contained: the Postgres container has no network, and
+    the migrations run as a role that isn't a superuser (no `COPY … TO PROGRAM`, no extensions).
+    The age key is used for the decryption and removed before any of the branch's SQL runs.
+  - The job reports pass or fail and the timings only: no rows, no values, nothing from the data
+    in its logs or output. It sets a `migration-rehearsal` commit status, which a merge into a
+    batch requires when the diff adds a migration ([ADR-0074](0074-batch-merges.md)).
+- **Guarding production:** `migrate.ts` sets `lock_timeout` (5 seconds) and `statement_timeout`
+  (60 seconds, inside the health check's 90) on its connection in both phases. A migration that
+  waits on a busy table fails fast and the deploy rolls back, instead of queueing every request
+  behind its lock.
+- **Recovering:** right before `post`, the deploy dumps the database (`pg_dump`), encrypts it to
+  the backups' age recipient and keeps it on the volume for 7 days. Post-deploy migrations are the
+  only ones that destroy data, so a bad drop is a restore, not a loss. If the dump fails, `post`
+  doesn't run.
+- **Showing them:** the batch pull request lists every migration in the batch with its SQL, its
+  phase and its rehearsal timings, which is where the owner reviews them.
+
 - **Writing them:** a ticket that both adds and removes schema generates twice: the additions
   first, then the removals as `_postdeploy`. A column dropped post-deploy is first made nullable
   or given a default in a pre-deploy migration, because the new code stops writing it before
@@ -112,6 +140,15 @@ This amends ADR-0014: the deploy gains the post-deploy step after the smoke test
   it does today. Fix forward.
 - The `_postdeploy` suffix carries the safety: a destructive migration without it runs before the
   health check. The CI check is what makes the convention safe; don't drop it.
+- Migrations merge into a batch without the owner. The checks, the rehearsal, the timeouts and
+  the snapshot replace a click that couldn't see the data anyway; the owner still reads every
+  migration once, on the batch pull request.
+- The rehearsal uses last night's data: a row written since can still break a migration, and then
+  `pre` fails and the deploy rolls back. It also brings a branch's SQL near production data in CI,
+  which is why it's contained as above and why no agent ever runs in that job.
+- A large table's migration can outgrow the 5-second limit for good. Then the limit is raised for
+  that migration by hand, in the rehearsal script on `main`, or the change is rewritten to batch
+  its work.
 - It depends on Drizzle choosing migrations by name. A Drizzle upgrade that applies them strictly
   in timestamp order, or refuses one older than the newest applied, breaks the `post` phase. The
   spike's two scenarios become a test of `migrate.ts` against `app_test`, so an upgrade that

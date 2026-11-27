@@ -281,8 +281,10 @@ Building blocks, in order:
     Fewer, larger deploys, made safe by running destructive migrations only after the health
     check ([ADR-0073](adr/0073-post-deploy-migrations.md)). In order:
     - **Post-deploy migrations**: `migrate.ts` phases, the deploy's last step, the CI check on
-      new migrations, a test of both phases against `app_test`, and the schema rule in CLAUDE.md
-      and the implementer prompt.
+      new migrations, a test of both phases against `app_test`, the lock and statement timeouts,
+      the snapshot before `post`, and the schema rule in CLAUDE.md and the implementer prompt.
+    - **Migration rehearsal**: each pull request's migrations on the latest backup, contained and
+      timed, setting the `migration-rehearsal` status.
     - **The `review` status**: Review's status job sets it from the verdict.
     - **Batch branches**: the dispatcher creates them and the build targets them;
       `batch-merge.yml` merges, closes tickets, keeps batches up to date with `main` and opens the

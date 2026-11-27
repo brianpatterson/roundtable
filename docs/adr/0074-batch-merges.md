@@ -52,22 +52,27 @@ Option 3.
   - the checks `main` requires, plus the browser tests;
   - a new `review` status, set by Review's status job, which is success only when the verdict is
     ready ([ADR-0053](0053-review-verdict-from-blocking-findings.md));
+  - a `migration-rehearsal` status that is success: the pull request's migrations ran on the
+    latest backup within their time limit ([ADR-0073](0073-post-deploy-migrations.md)). It's set
+    on every pull request into a batch, as success with "no migrations" when there are none, so
+    the ruleset can require it;
   - no `needs-human` label, and the ticket's `ready` label is the owner's (the dispatcher's rule);
   - the ticket isn't a user report (`user-report` label, ADR-0041);
   - the diff touches none of: `apps/api/src/modules/identity/`, `apps/api/src/server.ts`,
     `apps/api/src/platform/` (config, the database and `migrate.ts`, and the observability
-    redaction), `apps/api/drizzle/`, `infra/`, `.github/`, `.claude/`, `CLAUDE.md`,
-    `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`, `deploy/`, any `package.json`
-    or the lockfile. These are the changes the owner sees one at a time, not lost in a batch's
-    diff. A ticket that adds a migration therefore always waits for the owner's merge into the
-    batch.
+    redaction), `infra/`, `.github/`, `.claude/`, `CLAUDE.md`, `compose.prod.yml`,
+    `apps/*/Dockerfile`, `apps/web/Caddyfile`, `deploy/`, any `package.json` or the lockfile.
+    These are the changes the owner sees one at a time, not lost in a batch's diff. Migrations
+    (`apps/api/drizzle/`) are not on the list: ADR-0073's checks, its rehearsal on the latest
+    backup, its timeouts and its snapshot before `post` gate them, and the batch pull request
+    lists every one for the owner. The code that runs them, `platform/database/`, stays on it.
 
   A pull request that fails only the last two is labeled `needs-human`, saying which; the owner
   merges it into the batch by hand. Each gate is read from GitHub, never from what an agent
   reported.
 
 - **The ruleset is the boundary.** A ruleset on `batch/**` requires a pull request, the same
-  checks and `review`, and blocks force pushes and deletion. The Claude App's token, which agents
+  checks, `review` and `migration-rehearsal`, and blocks force pushes and deletion. The Claude App's token, which agents
   hold, can push to any branch; the ruleset is what keeps it from writing a batch branch
   directly.
   - **Required checks are pinned to GitHub Actions** (the `integration_id` of each required check,
