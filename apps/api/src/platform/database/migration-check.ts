@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm';
 import { Redacted } from 'effect';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -5,11 +6,12 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import pg from 'pg';
-import { isPostDeploy, runMigrations } from './migrate.js';
+import { isPostDeploy, runMigrations, type MigrationDb, type Phase } from './migrate.js';
 import { createDb } from './promise.js';
 
 // The migration check (ADR-0073): every migration added since `origin/main` is judged against the
-// schema `main` builds, the one the previous release runs on. It enforces only what it lists.
+// schema `main` builds, the one the previous release runs on. It enforces only what it lists, then
+// replays the deploy's two phases on that schema, which catches how the migrations interact.
 
 const run = promisify(execFile);
 
@@ -497,8 +499,9 @@ export interface CheckResult {
 }
 
 /**
- * The whole check: the migrations in `folder` that `ref` doesn't have are new, and each is judged
- * against the schema `ref`'s migrations build in a scratch database next to `testDatabaseUrl`.
+ * The whole check: the migrations in `folder` that `ref` doesn't have are new. In one scratch
+ * database next to `testDatabaseUrl`, `ref`'s migrations build `main`'s schema, each new migration
+ * is judged against it, and, when the rules pass, the deploy is replayed: phase `pre`, then `post`.
  */
 export async function checkMigrations(options: {
   readonly folder: string;
@@ -515,11 +518,127 @@ export async function checkMigrations(options: {
   if (added.length === 0)
     return { code: 0, output: `Migration check: no new migrations since ${options.ref}.` };
 
-  const main = await withMigrationsFolder(merged, (folder) =>
-    schemaOf(folder, options.testDatabaseUrl),
+  const problems = await withMigrationsFolder(merged, (mainFolder) =>
+    withMigrationsFolder([...merged, ...added], (allFolder) =>
+      withScratchDatabase(options.testDatabaseUrl, async (url) => {
+        const { db, pool } = createDb(Redacted.make(url), 'roundtable-migration-check');
+
+        try {
+          await runMigrations(db, undefined, mainFolder);
+
+          const ruled = judgeMigrations(added, await readSchema(pool));
+
+          if (ruled.length > 0) return ruled;
+
+          return await replayDeploy(db, allFolder, added);
+        } finally {
+          await pool.end();
+        }
+      }),
+    ),
   );
 
-  return report(added, judgeMigrations(added, main));
+  return report(added, problems);
+}
+
+/**
+ * Replays the deploy on a database with `main`'s schema, through the code the deploy runs
+ * (ADR-0073): phase `pre`, then the post-deploy drops the new release would insert without, then
+ * phase `post`. A failing statement is named by the new migration it belongs to and the phase.
+ */
+export async function replayDeploy(
+  db: MigrationDb,
+  folder: string,
+  added: readonly Migration[],
+): Promise<Problem[]> {
+  const sorted = [...added].sort((a, b) => a.name.localeCompare(b.name));
+  const preDeploy = sorted.filter((migration) => !isPostDeploy(migration.name));
+  const postDeploy = sorted.filter((migration) => isPostDeploy(migration.name));
+
+  const pre = await replayPhase(db, folder, 'pre', preDeploy);
+
+  if (pre) return [pre];
+
+  const stillRequired = await requiredDrops(db.$client, postDeploy);
+  const post = await replayPhase(db, folder, 'post', postDeploy);
+
+  return post ? [...stillRequired, post] : stillRequired;
+}
+
+const phaseAdvice: Record<Phase, string> = {
+  pre:
+    'It runs before the pending post-deploy migrations, so it can not depend on them: make it ' +
+    'post-deploy too (end its folder name in _postdeploy), or stop reusing a name a post-deploy ' +
+    'migration drops.',
+  post: 'It runs after every pre-deploy migration, as the deploy will: fix it so it applies there.',
+};
+
+/** Runs one phase; a failed statement becomes a problem, any other error is rethrown. */
+async function replayPhase(
+  db: MigrationDb,
+  folder: string,
+  phase: Phase,
+  pending: readonly Migration[],
+): Promise<Problem | undefined> {
+  try {
+    await runMigrations(db, phase, folder);
+
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof DrizzleQueryError)) throw error;
+
+    const [failed] = classifyMigration(error.query);
+    const statement = failed?.sql ?? error.query.trim();
+
+    const migration = pending.find((candidate) =>
+      classifyMigration(candidate.sql).some((each) => each.sql === statement),
+    );
+
+    const cause = error.cause instanceof Error ? error.cause.message : error.message;
+
+    return {
+      migration: migration?.name ?? `a new ${phase}-deploy migration`,
+      statement,
+      reason: `Fails in the ${phase} phase of the deploy's replay: ${cause}. ${phaseAdvice[phase]}`,
+    };
+  }
+}
+
+/**
+ * The columns pending post-deploy migrations drop that are still `NOT NULL` without a default
+ * after `pre`: between the phases the new release inserts rows without them, and every insert
+ * fails (ADR-0073). The drops come from the statement classifier.
+ */
+async function requiredDrops(pool: pg.Pool, postDeploy: readonly Migration[]): Promise<Problem[]> {
+  const problems: Problem[] = [];
+
+  for (const migration of postDeploy)
+    for (const statement of classifyMigration(migration.sql))
+      for (const change of statement.changes) {
+        if (change.kind !== 'drop-column') continue;
+
+        const { rowCount } = await pool.query(
+          `select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = $1 and column_name = $2
+              and is_nullable = 'NO' and column_default is null
+              and is_identity = 'NO' and is_generated = 'NEVER'`,
+          [change.table, change.column],
+        );
+
+        if (rowCount === 0) continue;
+
+        problems.push({
+          migration: migration.name,
+          statement: statement.sql,
+          reason:
+            `Drops column ${change.table}.${change.column}, which after the pre phase is still ` +
+            'NOT NULL without a default: until post runs, the new release inserts rows without ' +
+            'it and every insert fails. Make it nullable (DROP NOT NULL) or give it a default ' +
+            'in a pre-deploy migration first.',
+        });
+      }
+
+  return problems;
 }
 
 /** Each problem by migration folder, statement and fix. */
@@ -529,7 +648,9 @@ export function report(added: readonly Migration[], problems: readonly Problem[]
   if (problems.length === 0)
     return {
       code: 0,
-      output: `Migration check: ${judged}, nothing the previous release can't live with.`,
+      output:
+        `Migration check: ${judged}, nothing the previous release can't live with, ` +
+        'and the deploy applies them pre then post.',
     };
 
   const lines = problems.flatMap((problem) => [

@@ -391,7 +391,9 @@ describe('checkMigrations', () => {
 
     expect(await check(folder)).toEqual({
       code: 0,
-      output: "Migration check: 1 new migration, nothing the previous release can't live with.",
+      output:
+        "Migration check: 1 new migration, nothing the previous release can't live with, " +
+        'and the deploy applies them pre then post.',
     });
   });
 
@@ -426,6 +428,106 @@ describe('checkMigrations', () => {
     add('20270102000000_drop_legacy', 'ALTER TABLE "rounds" DROP COLUMN IF EXISTS "legacy";');
 
     expect((await check(folder)).code).toBe(1);
+  });
+
+  describe("the deploy's replay", () => {
+    const scratch = scratchDatabaseName(sharedTestDatabase);
+
+    const createRequired =
+      'CREATE TABLE "rounds" ("id" serial PRIMARY KEY, "required" text NOT NULL);';
+
+    it('fails a pre-deploy migration that depends on a pending post-deploy one', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+
+      add('20270102000000_drop_legacy_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "legacy";');
+      add('20270103000000_legacy_again', 'ALTER TABLE "rounds" ADD COLUMN "legacy" integer;');
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          '20270103000000_legacy_again:',
+          '  ALTER TABLE "rounds" ADD COLUMN "legacy" integer',
+          '  Fails in the pre phase of the deploy\'s replay: column "legacy" of relation "rounds" already exists.',
+        ].join('\n'),
+      );
+      expect(result.output).toContain('make it post-deploy too');
+      expect(result.output).toContain('stop reusing a name a post-deploy migration drops');
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('fails a post-deploy drop of a column still NOT NULL without a default after pre', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRequired });
+
+      add(
+        '20270102000000_drop_required_postdeploy',
+        'ALTER TABLE "rounds" DROP COLUMN "required";',
+      );
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          '20270102000000_drop_required_postdeploy:',
+          '  ALTER TABLE "rounds" DROP COLUMN "required"',
+          '  Drops column rounds.required, which after the pre phase is still NOT NULL without a default',
+        ].join('\n'),
+      );
+      expect(result.output).toContain(
+        'Make it nullable (DROP NOT NULL) or give it a default in a pre-deploy migration first.',
+      );
+    });
+
+    it.each([
+      ['drops its NOT NULL', 'ALTER TABLE "rounds" ALTER COLUMN "required" DROP NOT NULL;'],
+      ['gives it a default', 'ALTER TABLE "rounds" ALTER COLUMN "required" SET DEFAULT \'\';'],
+    ])('passes that drop when a pre-deploy migration %s first', async (_, sql) => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRequired });
+
+      add('20270102000000_relax_required', sql);
+      add(
+        '20270103000000_drop_required_postdeploy',
+        'ALTER TABLE "rounds" DROP COLUMN "required";',
+      );
+
+      expect(await check(folder)).toEqual({
+        code: 0,
+        output:
+          "Migration check: 2 new migrations, nothing the previous release can't live with, " +
+          'and the deploy applies them pre then post.',
+      });
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('fails an error in the post phase, naming the migration and the phase', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+
+      add('20270102000000_drop_missing_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "missing";');
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          '20270102000000_drop_missing_postdeploy:',
+          '  ALTER TABLE "rounds" DROP COLUMN "missing"',
+          '  Fails in the post phase of the deploy\'s replay: column "missing" of relation "rounds" does not exist.',
+        ].join('\n'),
+      );
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('runs post after pre, so a post-deploy migration sees what pre added', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+
+      // Sorted by name, the post-deploy migration comes first; the deploy still runs it last.
+      add('20270102000000_drop_notes_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "notes";');
+      add('20270103000000_add_notes', 'ALTER TABLE "rounds" ADD COLUMN "notes" text;');
+
+      expect((await check(folder)).code).toBe(0);
+    });
   });
 
   it('fails, saying to fetch it, when the ref can not be read', async () => {

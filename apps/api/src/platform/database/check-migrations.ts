@@ -2,8 +2,8 @@ import { checkMigrations, UnreadableRef } from './migration-check.js';
 import { migrationsFolder } from './migrate.js';
 
 // `pnpm check:migrations` (scripts/check-migrations.sh): judges the migrations added since
-// origin/main against the schema main builds, in a scratch database next to the tests' own
-// (ADR-0073). Exits 1 on a problem or when origin/main can't be read. It lives here, in an owner
+// origin/main against the schema main builds, then replays the deploy (pre, then post) on it, in a
+// scratch database next to the tests' own (ADR-0073). Exits 1 on a problem or when origin/main can't be read. It lives here, in an owner
 // path (ADR-0074), rather than in test/, so a ticket can't weaken what the gate runs; that's why
 // it keeps its own copy of the tests' default database instead of importing test plumbing.
 const testDatabaseUrl =
