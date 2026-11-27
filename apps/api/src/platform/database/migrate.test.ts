@@ -1,25 +1,19 @@
 // The migrations build the whole schema from nothing, as on a new server. Every other test runs
 // on a database that's already migrated, so it can't tell whether runMigrations does anything.
 // The phases (ADR-0073) run on fixture migrations, each scenario in its own empty database, and
-// pin what they rely on: Drizzle applies any folder whose name it hasn't recorded.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+// pin what they rely on: Drizzle applies any folder whose name it hasn't recorded. A failed run
+// is told apart through MigrationFailed, and the migrate entry's output through
+// runMigrateCommand, with one run of the real process.
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Redacted } from 'effect';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readlinkSync, readdirSync, rmSync } from 'node:fs';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { DrizzleQueryError } from 'drizzle-orm/errors';
-import {
-  describeMigrationFailure,
-  isPostDeploy,
-  parsePhase,
-  runMigrations,
-  usage,
-  withPreDeployFolder,
-} from './migrate.js';
+import { isPostDeploy, MigrationFailed, runMigrations, splitStatements } from './migrate.js';
+import { runMigrateCommand, usage } from './migrate-command.js';
 import { createDb } from './promise.js';
 import { env } from '#test/helpers';
 
@@ -258,6 +252,47 @@ describe('runMigrations', () => {
   }, 30_000);
 });
 
+describe('the pre phase', () => {
+  // Drizzle reads a folder, so pre hands it a temporary one without the post-deploy migrations.
+  // os.tmpdir() reads TMPDIR, so each test gets its own and can see what's left in it.
+  function ownTmpdir() {
+    const dir = mkdtempSync(join(fixtureRoot, 'tmp-'));
+
+    vi.stubEnv('TMPDIR', dir);
+
+    return dir;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('leaves no temporary folder behind', async () => {
+    const { folder } = roundsMigrations('pre-tmp');
+    const dir = ownTmpdir();
+
+    await withDb(await emptyDatabase('pre_tmp'), ({ db }) => runMigrations(db, 'pre', folder));
+
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('leaves none behind when a migration fails', async () => {
+    const migrations = roundsMigrations('pre-tmp-fails');
+
+    migrations.add('20260104000000_broken', 'alter table missing add column notes text;');
+
+    const dir = ownTmpdir();
+
+    await withDb(await emptyDatabase('pre_tmp_fails'), async ({ db }) => {
+      await expect(runMigrations(db, 'pre', migrations.folder)).rejects.toBeInstanceOf(
+        MigrationFailed,
+      );
+    });
+
+    expect(readdirSync(dir)).toEqual([]);
+  });
+});
+
 describe('isPostDeploy', () => {
   it.each([
     ['20261127000000_drop_legacy_postdeploy', true],
@@ -271,66 +306,192 @@ describe('isPostDeploy', () => {
   });
 });
 
-describe('withPreDeployFolder', () => {
-  const migrations = roundsMigrations('pre-folder');
+describe('splitStatements', () => {
+  it('splits on statement breakpoints, without comments, semicolons or empty statements', () => {
+    const sql = [
+      '-- Why this migration exists.',
+      'ALTER TABLE "rounds" DROP COLUMN "legacy";--> statement-breakpoint',
+      '  UPDATE "rounds"',
+      '  -- a note in the middle',
+      '  SET "status" = \'done\';  ',
+      '--> statement-breakpoint',
+      '',
+    ].join('\n');
 
-  it('links every migration but the post-deploy ones, by absolute path', async () => {
-    const links = await withPreDeployFolder(migrations.folder, async (pre) =>
-      readdirSync(pre).map((entry) => readlinkSync(join(pre, entry))),
-    );
-
-    expect(links).toEqual([
-      resolve(migrations.folder, '20260101000000_create_rounds'),
-      resolve(migrations.folder, '20260103000000_add_tags'),
+    expect(splitStatements(sql)).toEqual([
+      'ALTER TABLE "rounds" DROP COLUMN "legacy"',
+      'UPDATE "rounds"\n  SET "status" = \'done\'',
     ]);
-    expect(links.every((link) => isAbsolute(link))).toBe(true);
-  });
-
-  it('is a fresh temporary folder each time, removed after the run', async () => {
-    const first = await withPreDeployFolder(migrations.folder, async (pre) => pre);
-    const second = await withPreDeployFolder(migrations.folder, async (pre) => pre);
-
-    expect(first).not.toBe(second);
-    expect(first.startsWith(tmpdir())).toBe(true);
-    expect(existsSync(first)).toBe(false);
-    expect(existsSync(second)).toBe(false);
-  });
-
-  it('is removed when the run fails', async () => {
-    let seen = '';
-
-    await expect(
-      withPreDeployFolder(migrations.folder, async (pre) => {
-        seen = pre;
-        throw new Error('migration failed');
-      }),
-    ).rejects.toThrow('migration failed');
-    expect(seen).not.toBe('');
-    expect(existsSync(seen)).toBe(false);
   });
 });
 
-describe('the migrate entry', () => {
-  it.each([
-    [[], undefined],
-    [['pre'], 'pre'],
-    [['post'], 'post'],
-    [['both'], false],
-    [['PRE'], false],
-    [['pre', 'post'], false],
-    [[''], false],
-  ])('reads %j as %s', (args, expected) => {
-    expect(parsePhase(args)).toBe(expected);
+describe('a failed run', () => {
+  /** rounds, with `flag` added by an applied migration. */
+  async function roundsWithFlag(label: string) {
+    const migrations = migrationsFolder(`failed-${label}`);
+
+    migrations.add('20260101000000_create_rounds', 'create table rounds (id serial primary key);');
+    migrations.add('20260102000000_add_flag', 'alter table rounds add column flag boolean;');
+
+    const url = await emptyDatabase(`failed_${label}`);
+
+    await withDb(url, ({ db }) => runMigrations(db, undefined, migrations.folder));
+
+    return { migrations, url };
+  }
+
+  async function failure(url: string, phase: 'pre' | 'post' | undefined, folder: string) {
+    return withDb(url, async ({ db }) => {
+      try {
+        await runMigrations(db, phase, folder);
+      } catch (error) {
+        expect(error).toBeInstanceOf(MigrationFailed);
+
+        return error instanceof MigrationFailed ? error : undefined;
+      }
+
+      expect.fail('the run succeeded');
+    });
+  }
+
+  it('carries the pending migration, the phase, the statement, the message and the code', async () => {
+    const { migrations, url } = await roundsWithFlag('fields');
+
+    migrations.add('20260103000000_drop_missing', 'alter table rounds drop column missing;');
+
+    const failed = await failure(url, 'pre', migrations.folder);
+
+    expect({ ...failed }).toEqual({
+      name: 'MigrationFailed',
+      migrations: ['20260103000000_drop_missing'],
+      phase: 'pre',
+      statement: 'alter table rounds drop column missing',
+      reason: 'column "missing" of relation "rounds" does not exist',
+      code: '42703',
+    });
+    expect(failed?.message).toBe(
+      'Migration 20260103000000_drop_missing failed: ' +
+        'column "missing" of relation "rounds" does not exist (code 42703)',
+    );
   });
 
-  it('prints its usage and exits 1 on any other argument, without touching the database', async () => {
-    // An address nothing listens on: reaching for the database would fail differently.
-    const result = await runEntry(['sideways'], {
-      DATABASE_URL: 'postgres://nobody@127.0.0.1:9/none',
-    });
+  it('names only the pending migration when an applied one holds the same statement', async () => {
+    const { migrations, url } = await roundsWithFlag('applied');
 
-    expect(result).toEqual({ code: 1, stdout: '', stderr: `${usage}\n` });
-  }, 30_000);
+    migrations.add('20260103000000_add_flag_again', 'alter table rounds add column flag boolean;');
+
+    expect(await runMigrateCommand(['post'], Redacted.make(url), migrations.folder)).toEqual({
+      code: 1,
+      output:
+        'Migration 20260103000000_add_flag_again failed: ' +
+        'column "flag" of relation "rounds" already exists (code 42701)',
+    });
+  });
+
+  it('names each pending migration that holds the failed statement', async () => {
+    const { migrations, url } = await roundsWithFlag('both');
+    const addNotes = 'alter table rounds add column notes text;';
+
+    migrations.add('20260103000000_add_notes', addNotes);
+    migrations.add('20260104000000_add_notes_again', `-- Again.\n${addNotes}`);
+
+    const failed = await failure(url, 'pre', migrations.folder);
+
+    expect(failed?.migrations).toEqual([
+      '20260103000000_add_notes',
+      '20260104000000_add_notes_again',
+    ]);
+    expect(failed?.message).toBe(
+      'Migration one of 20260103000000_add_notes, 20260104000000_add_notes_again failed: ' +
+        'column "notes" of relation "rounds" already exists (code 42701)',
+    );
+  });
+
+  it('leaves the post-deploy migrations out of a pre run, and names them in post', async () => {
+    const { migrations, url } = await roundsWithFlag('phases');
+    const dropMissing = 'alter table rounds drop column missing;';
+
+    migrations.add('20260103000000_drop_missing_postdeploy', dropMissing);
+
+    expect((await failure(url, 'post', migrations.folder))?.migrations).toEqual([
+      '20260103000000_drop_missing_postdeploy',
+    ]);
+
+    migrations.add('20260104000000_drop_missing', dropMissing);
+
+    expect((await failure(url, 'pre', migrations.folder))?.migrations).toEqual([
+      '20260104000000_drop_missing',
+    ]);
+  });
+
+  it("names no migration when Drizzle's own bookkeeping fails", async () => {
+    const { migrations, url } = await roundsWithFlag('bookkeeping');
+
+    migrations.add(
+      '20260103000000_refuse_records',
+      `create function refuse() returns trigger language plpgsql as $$
+        begin raise exception 'no more records'; end $$;
+      --> statement-breakpoint
+      create trigger refuse before insert on drizzle.__drizzle_migrations
+        for each row execute function refuse();`,
+    );
+
+    const failed = await failure(url, undefined, migrations.folder);
+
+    expect(failed?.migrations).toEqual([]);
+    expect(failed?.message).toBe('Migrations failed: no more records (code P0001)');
+  });
+
+  it('leaves a failure outside a statement as it is: a refused connection', async () => {
+    const { folder } = roundsMigrations('refused');
+
+    await withDb('postgres://nobody@127.0.0.1:9/none', async ({ db }) => {
+      const run = runMigrations(db, 'pre', folder);
+
+      await expect(run).rejects.toThrow('ECONNREFUSED');
+      await expect(run).rejects.not.toBeInstanceOf(MigrationFailed);
+    });
+  });
+});
+
+describe('runMigrateCommand', () => {
+  // An address nothing listens on: reaching for the database fails.
+  const nowhere = Redacted.make('postgres://nobody@127.0.0.1:9/none');
+
+  it.each([[['both']], [['PRE']], [['pre', 'post']], [['']]])(
+    'answers %j with its usage, without touching the database',
+    async (args) => {
+      expect(await runMigrateCommand(args, nowhere)).toEqual({ code: 1, output: usage });
+    },
+  );
+
+  it.each([
+    [[], 'Migrations applied'],
+    [['pre'], 'Migrations applied (pre)'],
+    [['post'], 'Migrations applied (post)'],
+  ])('runs %j and says so', async (args, output) => {
+    const { folder } = roundsMigrations(`command-${args.join('') || 'all'}`);
+    const url = await emptyDatabase(`command_${args.join('') || 'all'}`);
+
+    expect(await runMigrateCommand(args, Redacted.make(url), folder)).toEqual({ code: 0, output });
+
+    await withDb(url, async ({ pool }) => {
+      expect(await applied(pool)).toEqual(
+        args[0] === 'pre'
+          ? ['create_rounds', 'add_tags']
+          : ['create_rounds', 'drop_legacy_postdeploy', 'add_tags'],
+      );
+    });
+  });
+
+  it('gives a failure outside a statement only its message and code', async () => {
+    const { folder } = roundsMigrations('command-refused');
+
+    expect(await runMigrateCommand(['pre'], nowhere, folder)).toEqual({
+      code: 1,
+      output: 'Migrations failed: connect ECONNREFUSED 127.0.0.1:9 (code ECONNREFUSED)',
+    });
+  });
 
   // The deploy log is public, and a failed migration's output reaches it (deploy.sh's
   // `recent_logs migrate`, post-migrate.sh). Postgres's `detail` quotes the rows that broke the
@@ -352,117 +513,85 @@ describe('the migrate entry', () => {
     await withDb(url, ({ db }) => runMigrations(db, undefined, migrations.folder));
     migrations.add('20260102000000_tighten_people', breaking);
 
-    const result = await runEntry(args, {
-      DATABASE_URL: url,
-      MIGRATIONS_FOLDER: migrations.folder,
-    });
-
-    return { result, url };
+    return { migrations, url };
   }
 
   it.each([
     ['pre', ['pre']],
     ['post', ['post']],
     ['all', []],
-  ])(
-    'prints only the safe fields of a constraint failure and exits 1 (%s)',
-    async (label, args) => {
-      const { result, url } = await failingRun(
-        `unique_${label}`,
-        args,
-        'create unique index people_email on people (email);',
-      );
+  ])('prints only the safe fields of a constraint failure (%s)', async (label, args) => {
+    const { migrations, url } = await failingRun(
+      `unique_${label}`,
+      args,
+      'create unique index people_email on people (email);',
+    );
 
-      expect(result.code).toBe(1);
-      expect(result.stdout).toBe('');
-      expect(result.stderr).toBe(
+    const result = await runMigrateCommand(args, Redacted.make(url), migrations.folder);
+
+    expect(result).toEqual({
+      code: 1,
+      output:
         'Migration 20260102000000_tighten_people failed: ' +
-          'could not create unique index "people_email" (code 23505)\n',
-      );
-      expect(`${result.stdout}${result.stderr}`).not.toContain(email);
+        'could not create unique index "people_email" (code 23505)',
+    });
+    expect(result.output).not.toContain(email);
 
-      await withDb(url, async ({ pool }) => {
-        expect(await applied(pool)).toEqual(['create_people']);
-      });
-    },
-    30_000,
-  );
+    await withDb(url, async ({ pool }) => {
+      expect(await applied(pool)).toEqual(['create_people']);
+    });
+  });
 
   it('names a NOT NULL failure without the row', async () => {
-    const { result } = await failingRun(
+    const { migrations, url } = await failingRun(
       'not_null',
       ['pre'],
       'alter table people alter column age set not null;',
     );
 
-    expect(result).toEqual({
+    expect(await runMigrateCommand(['pre'], Redacted.make(url), migrations.folder)).toEqual({
       code: 1,
-      stdout: '',
-      stderr:
+      output:
         'Migration 20260102000000_tighten_people failed: ' +
-        'column "age" of relation "people" contains null values (code 23502)\n',
+        'column "age" of relation "people" contains null values (code 23502)',
     });
-  }, 30_000);
+  });
 
   it('drops the value a data exception quotes', async () => {
-    const { result } = await failingRun(
+    const { migrations, url } = await failingRun(
       'cast',
       ['pre'],
       'alter table people alter column age type integer using age::integer;',
     );
 
+    expect(await runMigrateCommand(['pre'], Redacted.make(url), migrations.folder)).toEqual({
+      code: 1,
+      output:
+        'Migration 20260102000000_tighten_people failed: ' +
+        'invalid input syntax for type integer: "<redacted>" (code 22P02)',
+    });
+  });
+
+  it('runs as the deploy runs it: its own process, one line on stderr, exit 1', async () => {
+    const { migrations, url } = await failingRun(
+      'process',
+      ['pre'],
+      'create unique index people_email on people (email);',
+    );
+
+    const result = await runEntry(['pre'], {
+      DATABASE_URL: url,
+      MIGRATIONS_FOLDER: migrations.folder,
+    });
+
     expect(result).toEqual({
       code: 1,
       stdout: '',
       stderr:
         'Migration 20260102000000_tighten_people failed: ' +
-        'invalid input syntax for type integer: "<redacted>" (code 22P02)\n',
+        'could not create unique index "people_email" (code 23505)\n',
     });
   }, 30_000);
-});
-
-describe('describeMigrationFailure', () => {
-  const migrations = migrationsFolder('describe');
-
-  migrations.add('20260101000000_add_flag', 'alter table rounds add column flag boolean;');
-  migrations.add('20260102000000_drop_flag_postdeploy', 'alter table rounds drop column flag;');
-  migrations.add('20260103000000_add_flag_again', 'alter table rounds add column flag boolean;');
-
-  it('names every migration that holds the failed statement', () => {
-    const error = new DrizzleQueryError('alter table rounds add column flag boolean;', undefined);
-
-    expect(describeMigrationFailure(error, 'post', migrations.folder)).toBe(
-      'Migration one of 20260101000000_add_flag, 20260103000000_add_flag_again failed: ' +
-        'Failed query: alter table rounds add column flag boolean;',
-    );
-  });
-
-  it('leaves out post-deploy migrations in the pre phase', () => {
-    const error = new DrizzleQueryError('alter table rounds drop column flag;', undefined);
-
-    expect(describeMigrationFailure(error, 'pre', migrations.folder)).toBe(
-      'Migrations failed: Failed query: alter table rounds drop column flag;',
-    );
-    expect(describeMigrationFailure(error, 'post', migrations.folder)).toBe(
-      'Migration 20260102000000_drop_flag_postdeploy failed: ' +
-        'Failed query: alter table rounds drop column flag;',
-    );
-  });
-
-  it('redacts query params, and gives a failure outside a query its own code', () => {
-    const query = new DrizzleQueryError('select $1', ['a-session-token']);
-
-    const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9'), {
-      code: 'ECONNREFUSED',
-    });
-
-    expect(describeMigrationFailure(query, undefined, migrations.folder)).toBe(
-      'Migrations failed: Failed query: select $1\nparams: <redacted: string(15)>',
-    );
-    expect(describeMigrationFailure(refused, undefined, migrations.folder)).toBe(
-      'Migrations failed: connect ECONNREFUSED 127.0.0.1:9 (code ECONNREFUSED)',
-    );
-  });
 });
 
 /** Runs the migrate entry as the deploy does, in its own process, with the tests' environment. */
