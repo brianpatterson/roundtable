@@ -74,6 +74,8 @@ jobs:
         run: scripts/test-check-format.sh
       - name: Batch filing against a stand-in gh
         run: scripts/test-file-batch.sh
+      - name: Post-deploy migration script against a stand-in docker
+        run: deploy/test-post-migrate.sh
       # Every .github/factory/test-*.sh, so a new one runs without being listed here. Each
       # script's header names what it pins and the ADR behind it. All run, then the step fails if
       # any did, with one error line per failed script.
