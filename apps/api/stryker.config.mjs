@@ -13,6 +13,7 @@ export default {
     // Entry points and re-exports: wiring with nothing to assert.
     '!src/main.ts',
     '!src/migrate.ts',
+    '!src/platform/database/check-migrations.ts',
     '!src/**/index.ts',
     // Drizzle table definitions. The test database is built from the SQL migrations, not from
     // these, so a mutant here changes nothing at run time; CI's schema drift check is their test.

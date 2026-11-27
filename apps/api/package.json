@@ -14,7 +14,7 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "test:mutation": "stryker run",
-    "check:migrations": "tsx test/check-migrations.ts"
+    "check:migrations": "tsx src/platform/database/check-migrations.ts"
   },
   "devDependencies": {
     "@effect/vitest": "4.1.4",
