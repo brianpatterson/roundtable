@@ -101,6 +101,13 @@ jobs:
           }
       - name: Test
         run: pnpm test
+      # Every new migration works with the previous release's code (ADR-0073): judged against
+      # main's schema, then replayed through `pre` and `post` on this job's Postgres. It needs
+      # main, which the checkout doesn't fetch. On a push to main nothing is new, so it passes.
+      - name: Migrations are safe for the previous release
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          pnpm check:migrations
 
   # Playwright against the built web app and the real API (ADR-0065): keyboard and focus, an axe
   # scan, and screenshots at phone and desktop widths in both themes, uploaded for the reviewer.

@@ -185,6 +185,9 @@ failed run emails you.
    gh api -X POST repos/brianpatterson/roundtable/environments/backups/deployment-branch-policies \
      -f name=main -f type=branch
    gh secret set AGE_IDENTITY --env backups < backups.agekey
+   # The public half, for the deploy's snapshot before post-deploy migrations (ADR-0073).
+   # Public, so a repository variable: it can encrypt, never decrypt.
+   gh variable set BACKUP_AGE_RECIPIENT --body "$(age-keygen -y backups.agekey)"
    rm backups.agekey   # only after it's in your password manager
    gh secret set R2_ACCESS_KEY_ID --env backups
    gh secret set R2_SECRET_ACCESS_KEY --env backups

@@ -91,6 +91,9 @@ bug it describes (see above); without the file, it isn't.
    focus, a phone-sized screen) gets a browser test too (below).
 3. Follow every "Rules for every change" item in `CLAUDE.md`: ADRs for
    hard-to-reverse decisions, `docs/architecture.md`, generated migrations, cross-user tests.
+   A schema change that removes or tightens something the previous release uses goes in its own
+   `_postdeploy` migration, generated after the additions (CLAUDE.md rule 5, ADR-0073); if
+   `pnpm check:migrations` fails, follow the fix it names rather than editing the check.
 4. Run `pnpm check` and fix what it finds until it passes. Never suppress a lint rule or skip a
    test to get there. If you can't make it pass, say exactly what fails and why in the PR
    description.

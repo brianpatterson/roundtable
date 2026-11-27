@@ -139,8 +139,8 @@ jobs:
           printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/deploy_key\n  StrictHostKeyChecking yes\n' \
             "$DEPLOY_HOST" > ~/.ssh/config
 
-      - name: Copy compose file and deploy script
-        run: scp compose.prod.yml deploy/deploy.sh prod:/opt/interview-app/
+      - name: Copy compose file and deploy scripts
+        run: scp compose.prod.yml deploy/deploy.sh deploy/post-migrate.sh prod:/opt/interview-app/
 
       - name: Deploy (health-checked, rolls back on failure)
         env:
@@ -164,3 +164,51 @@ jobs:
         run: |
           curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "https://$DOMAIN/api/health" | tee /dev/stderr | grep -q '"db":"up"'
           curl -fsS -o /dev/null -w 'index.html: %{http_code}\n' "https://$DOMAIN/"
+
+      # Post-deploy migrations (ADR-0073): the ones whose folder ends in `_postdeploy` remove
+      # schema, so they run only now, once the new release has passed the health check and the
+      # smoke test. A rollback happens before this point, so the previous release never meets a
+      # dropped column. If `post` fails, the release stays up, this run goes red, and the next
+      # deploy's `post` retries it.
+      #
+      # The snapshot makes a bad drop a restore rather than a loss. It's encrypted here, to the
+      # backups' age recipient (a public key, so a repository variable), as backup.yml does: the
+      # plaintext dump only exists in the pipe, and the server never holds a key that can read it.
+      # Same pinned age as backup.yml; upgrade both together.
+      - name: Install age
+        env:
+          AGE_VERSION: v1.3.2
+          AGE_SHA256: cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
+        run: |
+          tarball="age-$AGE_VERSION-linux-amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/FiloSottile/age/releases/download/$AGE_VERSION/$tarball"
+          echo "$AGE_SHA256  $RUNNER_TEMP/$tarball" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP"
+          sudo install -m 755 "$RUNNER_TEMP/age/age" /usr/local/bin/
+          age --version
+
+      - name: Snapshot the database before post-deploy migrations
+        env:
+          RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -o pipefail
+          if [ -z "$RECIPIENT" ]; then
+            echo "::error::Set the repository variable BACKUP_AGE_RECIPIENT (age-keygen -y on the backups' key; infra/README.md)."
+            exit 1
+          fi
+          name="pre-post-$(date -u +%Y-%m-%dT%H%M%SZ)-${SHA:0:12}.dump.age"
+          echo "SNAPSHOT=/opt/interview-app/snapshots/$name" >> "$GITHUB_ENV"
+          # $name expands here, on the runner, on purpose (twice below).
+          # shellcheck disable=SC2029
+          ssh prod 'docker exec interview-app-prod-db-1 pg_dump -U app -d app --format=custom' \
+            | age --recipient "$RECIPIENT" \
+            | ssh prod "umask 077 && mkdir -p /opt/interview-app/snapshots && cat > /opt/interview-app/snapshots/$name"
+          # shellcheck disable=SC2029
+          ssh prod "ls -l /opt/interview-app/snapshots/$name"
+
+      - name: Post-deploy migrations
+        run: |
+          # $SNAPSHOT expands here, on the runner, on purpose.
+          # shellcheck disable=SC2029
+          ssh prod "/opt/interview-app/post-migrate.sh '$SNAPSHOT'"

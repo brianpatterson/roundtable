@@ -59,10 +59,13 @@ services:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
 
-  # Runs pending migrations, then exits. The API only starts if this succeeds.
+  # Runs pending migrations, then exits. The API only starts if this succeeds. Only the `pre`
+  # phase: `_postdeploy` migrations run after the deploy is healthy, from deploy/post-migrate.sh
+  # (ADR-0073). An image older than the phases ignores the argument and runs its own migrations,
+  # all of them already applied, so a rollback to one stays safe.
   migrate:
     image: ${API_IMAGE:-roundtable-api:local}
-    command: ['node', '--enable-source-maps', 'dist/migrate.js']
+    command: ['node', '--enable-source-maps', 'dist/migrate.js', 'pre']
     restart: 'no'
     environment: *api-env
     depends_on:
