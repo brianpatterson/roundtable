@@ -25,7 +25,9 @@ grounding, unless they say to leave it.
 
 ## 1. Ground
 
-Read the roadmap step, `GLOSSARY.md`, the ADRs it builds on, and the code it will touch. Facts are
+Read the roadmap step, the glossary of its context (`GLOSSARY.md` for the product,
+`docs/factory/GLOSSARY.md` for the factory; `docs/agents/domain.md`), the ADRs it builds on, and
+the code it will touch. Facts are
 your job: look them up (a subagent for a wide search), never ask the owner for one. Done when you
 can name every module, endpoint, table and route the step touches, and every glossary term it
 uses or adds.
@@ -34,9 +36,9 @@ uses or adds.
 
 Invoke the `grilling` and `domain-modeling` skills (from the `mattpocock-skills` plugin, not this
 repo; if they aren't installed, stop and say so) and run them on the step: rounds of numbered
-questions, each with your recommendation, until the frontier is empty. `GLOSSARY.md` stands in for
-`CONTEXT.md` (`docs/agents/domain.md`); update it the moment a term settles, keeping _(planned)_ on
-it. Watch for a step that promises something a later step builds (the Agenda's prep progress
+questions, each with your recommendation, until the frontier is empty. The context's glossary
+stands in for `CONTEXT.md` (`docs/agents/domain.md`); update it the moment a term settles, keeping
+_(planned)_ on it. Watch for a step that promises something a later step builds (the Agenda's prep progress
 before Prep existed): settle where it moves.
 
 Done when the owner confirms you share the design, including how it splits into tickets and which

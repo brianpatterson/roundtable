@@ -1,0 +1,9 @@
+{
+  "name": "@roundtable/conductor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc"
+  }
+}

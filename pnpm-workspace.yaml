@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+  # The factory's conductor (ADR-0075): no dependencies, run by Node as it is.
+  - tools/conductor
 allowBuilds:
   esbuild: true
 # Security fixes a direct dependency hasn't shipped (docs/dependencies.md → Overrides).
