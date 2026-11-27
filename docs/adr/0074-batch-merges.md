@@ -58,10 +58,27 @@ Option 3.
     the ruleset can require it;
   - no `needs-human` label, and the ticket's `ready` label is the owner's (the dispatcher's rule);
   - the ticket isn't a user report (`user-report` label, ADR-0041);
-  - the diff touches none of: `apps/api/src/modules/identity/`, `apps/api/src/server.ts`,
-    `apps/api/src/platform/` (config, the database and `migrate.ts`, and the observability
-    redaction), `infra/`, `.github/`, `.claude/`, `CLAUDE.md`, `compose.prod.yml`,
-    `apps/*/Dockerfile`, `apps/web/Caddyfile`, `deploy/`, any `package.json` or the lockfile.
+  - the diff touches no **owner path**. The rule: anything that configures a gate, the supply
+    chain, authentication, or what runs in production outside a module's own code. A ticket
+    could otherwise loosen a gate and pass it in the same diff, because CI runs the pull
+    request's own copy of its checks. Today that is:
+    - gates: `scripts/` (the `check:*` scripts), `tools/oxlint/`, `.oxlintrc.json`, the Vitest,
+      Playwright and Stryker configs, `apps/web/e2e/support.ts`, `.github/`, `.claude/`,
+      `CLAUDE.md`;
+    - the supply chain: any `package.json`, the lockfile, `pnpm-workspace.yaml`, an `.npmrc` if one is added;
+    - authentication: `apps/api/src/modules/identity/`;
+    - production: `apps/api/src/server.ts`, `apps/api/src/main.ts`, `apps/api/src/migrate.ts`,
+      `apps/api/src/platform/` (config, the database and `migrate.ts`, the observability
+      redaction), `apps/api/build.ts`, `apps/api/drizzle.config.ts`, `apps/web/vite.config.ts`,
+      `apps/web/index.html`, `apps/*/Dockerfile`, `apps/web/Caddyfile`, `compose.prod.yml`,
+      `deploy/`, `infra/`.
+
+    The list lives in one file under `.github/factory/`, which `batch-merge.yml` reads from
+    `main`. A file the list doesn't name at the repository's root, an app's root or in
+    `scripts/` or `tools/` counts as an owner path until the owner adds or excludes it, so a new
+    config file is never merged unseen. Deleting or weakening tests in a module is not on it: the
+    reviewer and the nightly mutation run judge that.
+
     These are the changes the owner sees one at a time, not lost in a batch's diff. Migrations
     (`apps/api/drizzle/`) are not on the list: ADR-0073's checks, its rehearsal on the latest
     backup, its timeouts and its snapshot before `post` gate them, and the batch pull request
@@ -97,8 +114,12 @@ Option 3.
     from a branch. The factory has no App of its own today (ADR-0072's merge uses the Claude App's
     token), and the job's `GITHUB_TOKEN` can't be the merger: what it pushes starts no CI. The
     bypass lets the App push the one thing that isn't a pull request, a clean merge of `main`
-    (below), whose content is already on `main`. It also merges ticket pull requests, but only
-    after the workflow's own gates pass. The owner creates the App and its ruleset bypass.
+    (below), whose content is already on `main`. It also merges ticket pull requests, and there
+    the bypass means the ruleset doesn't check them, so the workflow must: it reads every gate
+    on one head commit and merges with that commit's SHA (`sha` on the merge API), which GitHub
+    refuses if the head has moved. A push in between (Rework, Auto-fix, the conflict resolver)
+    makes the merge fail, and the next run reads the gates again on the new head. The owner
+    creates the App and its ruleset bypass.
 - **Closing tickets.** Merging into a batch branch closes nothing, so `batch-merge.yml` closes the
   ticket as completed, with a link to the merged pull request. The dispatcher counts a blocker in
   the same batch as done once it's merged into the batch branch, and a ticket as no longer in
@@ -110,7 +131,8 @@ Option 3.
   isn't on `main` or already in the batch. A conflict is resolved like any other agent-written
   change: the conflict resolver ([ADR-0058](0058-factory-resolves-conflicts.md)) resolves it on a
   `batch-update/<spec>` branch and opens a pull request into the batch, which passes the same gates
-  (CI and `review`) before `batch-merge.yml` merges it. Hotfixes go to `main` as now and reach
+  as a ticket's (CI, `review`, `migration-rehearsal`, the labels and the owner paths) before
+  `batch-merge.yml` merges it. Hotfixes go to `main` as now and reach
   batches this way.
 - **The batch pull request.** When the last sub-issue closes, `batch-merge.yml` opens
   `batch/<spec>` → `main`, whose description lists each ticket with its pull request, its minor
@@ -131,6 +153,11 @@ batch merges).
 
 - One click and one deploy per spec. The owner reads one larger diff, with the reviewer's,
   architecture and retro findings beside it, instead of six small ones as they land.
+- The reviewer's verdict becomes the only judgement on a ticket before it lands in a batch, and
+  the reviewer reads code written by an agent that read ticket text, so prompt injection aimed at
+  the reviewer becomes a way into a batch. It's bounded by the owner paths, by `post-review.sh`
+  counting the review's blocking markers itself (ADR-0053), and by the owner's review of the
+  batch pull request before anything reaches `main`.
 - The tickets of a batch build back to back, without waiting on the owner or a deploy in
   between.
 - A failed deploy rolls back the whole batch, and finding the ticket at fault is harder. Keep

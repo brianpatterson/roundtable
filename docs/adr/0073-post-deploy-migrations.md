@@ -104,11 +104,14 @@ Option 4.
   - **The data is scrubbed before any branch SQL runs.** The branch's SQL can choose what the job
     reports: an error message can echo a value, and pass or fail, or a timing, can answer a
     question about one (`CASE WHEN … THEN pg_sleep(6)`), a bit per run. So `main`'s script first
-    replaces every text, `varchar` and `jsonb` value in every table (identity's `users`,
-    `sessions`, `accounts` and `verifications` included) with a keyed hash under a random key
-    that's never written down. Hashing keeps what migrations trip over (nulls, equal values,
-    duplicates) and destroys the content, so nothing the job reports can carry it. Numbers, dates,
-    booleans and enum values are kept.
+    scrubs every column in every table (identity's `users`, `sessions`, `accounts` and
+    `verifications` included) except those whose type it knows is safe to keep: numbers, dates
+    and times, booleans, enum values and uuids. Everything else, whatever its type (`text`,
+    `varchar`, `text[]` such as `rounds.tags`, `json`, `jsonb`, `bytea`, and any type added
+    later), is replaced with a keyed hash under a random key that's never written down, element
+    by element for arrays, or set to null where a hash can't take the type's place. Hashing keeps
+    what migrations trip over (nulls, equal values, duplicates) and destroys the content, so
+    nothing the job reports can carry it. A new column type is scrubbed by default.
   - The SQL is also contained: the Postgres container has no network, and the migrations run as a
     role that isn't a superuser (no `COPY … TO PROGRAM`, no extensions). The age key is used for
     the decryption and removed before the branch's SQL runs.
