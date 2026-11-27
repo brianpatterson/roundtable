@@ -92,7 +92,9 @@ const readCode = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String 
  * and Postgres's `detail` quotes the rows that broke a constraint ("Key (email)=(…) is
  * duplicated"), so this gives only the failing migration's name, the innermost error's message
  * (values a data exception quotes removed, Drizzle's query params redacted) and its code. Never
- * `detail`, `where`, `hint`, the query or its parameters.
+ * `detail`, `where`, `hint` or the query's parameters. When Drizzle's error has no cause, its
+ * message is the innermost, so the line carries the failed statement's SQL: that's the
+ * migration's own text, already public in the repo.
  */
 export function describeMigrationFailure(
   error: Error,
