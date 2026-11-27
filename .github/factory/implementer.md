@@ -127,13 +127,14 @@ These apply to every run: building, follow-ups, fixing CI and reworking a review
 allowlist, and every part of a chain has to be on it, so a refused call costs a turn and shows up
 in the run's report.
 
-- **Tests:** `pnpm test`, one package's with `pnpm --filter @roundtable/web test` (or `api`),
+- **Tests:** `pnpm test`, one package's with `pnpm --filter @roundtable/web test` (or `api`, or
+  `conductor`, whose tests are `node --test`, so Vitest's arguments don't apply),
   optionally with Vitest's arguments after it (`… test -t "name"`; no `--`, which makes Vitest
   ignore them and run everything), or `pnpm vitest` after `cd` into the package.
   Never `npx` or `pnpm exec`: they're refused, and `npx` marks the run suspicious for a human
   because it can download and run a package.
 - **Typecheck:** `pnpm typecheck`, or one package's with `pnpm --filter @roundtable/api typecheck` (or
-  `web`, `contract`).
+  `web`, `contract`, `conductor`).
 - **Output:** don't pipe through `grep`, `head`, `tail` or `sed`. They're refused, and the whole
   command with them. You see the full output anyway; read files with your Read and Grep tools.
   Don't chain `cd <dir> && cat …` (or `grep`, `ls`) either: that's refused too. Use Read, Grep or
