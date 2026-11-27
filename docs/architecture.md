@@ -5,7 +5,7 @@
 > choice lives in [ADRs](adr/README.md). Each dependency's alternatives are in
 > [dependencies.md](dependencies.md).
 
-_Last updated: 2026-11-26_
+_Last updated: 2026-11-27_
 
 ## 1. What the system does
 
@@ -722,7 +722,9 @@ flowchart LR
   never cached), sets HSTS, CSP, frame-deny and related headers, and refuses `/api/*` request
   bodies over 256 KiB with a 413.
 - **Startup order:** `db` healthy → `migrate` exits 0 → `api` healthy → `web` starts. A failed
-  migration means the new API never starts.
+  migration means the new API never starts. It prints one line to the public deploy log: the
+  migration's name, Postgres's message and its code, never `detail` or the query's parameters,
+  which can quote row values.
 - **Factory clock:** a Cloudflare Worker whose Cron Trigger starts the factory's sweeper and
   dispatcher through `workflow_dispatch` every 20 minutes, with a fine-grained GitHub token
   limited to Actions on this repository. GitHub can't narrow it further, so it could start any
