@@ -63,18 +63,35 @@ Option 3.
   reported.
 
 - **The ruleset is the boundary.** A ruleset on `batch/**` requires a pull request, the same
-  checks and `review`, blocks force pushes and deletion, and has no bypass. The Claude App's
-  token, which agents hold, can push to any branch; the ruleset is what keeps it from writing a
-  batch branch directly. Only `batch-merge.yml` merges, with the factory App's token, in a job
-  that runs no code from the branch.
+  checks and `review`, and blocks force pushes and deletion. The Claude App's token, which agents
+  hold, can push to any branch; the ruleset is what keeps it from writing a batch branch
+  directly.
+  - **Required checks are pinned to GitHub Actions** (the `integration_id` of each required check,
+    as `main`'s ruleset already does for its four). A commit status can be written by any token
+    with `statuses: write`, so an agent holding the Claude App's token could otherwise post
+    `review: success` on its own commit. Pinned, only a workflow's `GITHUB_TOKEN` can satisfy it,
+    and agents can't change workflows ([ADR-0029](0029-software-factory-credential-hardening.md);
+    `.github/` is also on the list of paths above).
+  - **One bypass: a new GitHub App, the batch merger,** whose key only `batch-merge.yml` holds, in
+    a `batch-merge` environment that admits only `main` and in which no job runs an agent or code
+    from a branch. The factory has no App of its own today (ADR-0072's merge uses the Claude App's
+    token), and the job's `GITHUB_TOKEN` can't be the merger: what it pushes starts no CI. The
+    bypass lets the App push the one thing that isn't a pull request, a clean merge of `main`
+    (below), whose content is already on `main`. It also merges ticket pull requests, but only
+    after the workflow's own gates pass. The owner creates the App and its ruleset bypass.
 - **Closing tickets.** Merging into a batch branch closes nothing, so `batch-merge.yml` closes the
   ticket as completed, with a link to the merged pull request. The dispatcher counts a blocker in
   the same batch as done once it's merged into the batch branch, and a ticket as no longer in
   flight then; a blocker outside the batch must still be merged and deployed. One ticket at a time
   is unchanged.
 - **Keeping up with `main`.** When `main` changes, the same workflow merges it into every open
-  batch branch, and hands a conflict to the conflict resolver ([ADR-0058](0058-factory-resolves-conflicts.md)).
-  Hotfixes go to `main` as now and reach batches this way.
+  batch branch and pushes the merge commit with the batch merger's bypass, only when the merge is
+  clean: git made it, with hooks off and no code from either branch run, so it adds nothing that
+  isn't on `main` or already in the batch. A conflict is resolved like any other agent-written
+  change: the conflict resolver ([ADR-0058](0058-factory-resolves-conflicts.md)) resolves it on a
+  `batch-update/<spec>` branch and opens a pull request into the batch, which passes the same gates
+  (CI and `review`) before `batch-merge.yml` merges it. Hotfixes go to `main` as now and reach
+  batches this way.
 - **The batch pull request.** When the last sub-issue closes, `batch-merge.yml` opens
   `batch/<spec>` → `main`, whose description lists each ticket with its pull request, its minor
   findings and its screenshots, and says `Closes #<spec>`. The reviewer reviews it as a whole, CI

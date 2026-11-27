@@ -66,13 +66,24 @@ Option 4.
 - **Deploying:** the `migrate` container runs `pre`. After the smoke test passes, a last step in
   `deploy.yml` runs `post` on the server (`docker compose run --rm migrate … post`). If it fails,
   the release stays up and the Deploy run shows red; the next deploy's `post` retries it.
-- **Checking:** a CI check fails any migration added since `origin/main` that isn't post-deploy
-  and contains `DROP TABLE`, `DROP COLUMN`, `RENAME`, `SET NOT NULL` or `ALTER COLUMN … TYPE`.
-  Merged migrations are left alone.
+- **Checking:** a CI check on every migration added since `origin/main` (merged ones are left
+  alone):
+  - fails `RENAME` of a table or column in **either** phase. Neither phase is safe for one: before
+    the deploy the old code reads the old name, and after it the new code reads the new name
+    until `post` runs. A rename is the three steps below.
+  - fails `DROP TABLE`, `DROP COLUMN`, `SET NOT NULL` or `ALTER COLUMN … TYPE` in a migration
+    that isn't post-deploy.
+  - **replays the deploy on `app_test`**: `main`'s migrations in full, then `pre`, then `post`.
+    drizzle-kit generates each migration from the schema after the one before it, so a pre-deploy
+    migration generated after a pending post-deploy one can depend on it (re-creating a dropped
+    column or reusing a dropped constraint's name) and fail in `pre`. The replay catches that
+    before the merge rather than in a rolled-back deploy; the fix is to make the dependent
+    migration post-deploy too, or to stop reusing the name.
 - **Writing them:** a ticket that both adds and removes schema generates twice: the additions
   first, then the removals as `_postdeploy`. A rename is three steps in one batch: add the new
-  column and copy the data (pre), switch the code to it, drop the old column (post). CLAUDE.md's
-  schema rule and the implementer prompt say so.
+  column and copy the data (pre), switch the code to it, drop the old column (post). A
+  post-deploy type change runs while the new code is already up, so that code must work with the
+  old type and the new one. CLAUDE.md's schema rule and the implementer prompt say so.
 
 This amends ADR-0014: the deploy gains the post-deploy step after the smoke test.
 
