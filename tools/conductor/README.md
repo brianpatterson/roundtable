@@ -29,16 +29,16 @@ change to it changes nothing live. It is an Owner path (ADR-0074).
 gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state, policy)  →  {state, action, reason}  →  act (GitHub)
 ```
 
-- **`gather`** reads everything one Work item's state depends on, as GitHub returns it, trimmed
-  to the fields `observe` reads: the Ticket's labels and who added them, its timeline (labeled,
-  unlabeled, edited, closed), its Blockers, the pull request's commits and head, checks, statuses
-  and mergeability, the reviewer's comment, the factory's marker comments, the Executor runs (by
-  run name, below) and the last successful deploy.
-- **`observe(raw, at)`** builds the Work item's state **as it was at time `at`**, ignoring
-  everything later. Run with now, it is the state today; run with a past time, it is the state
-  then, which is what the history test needs. What GitHub only shows as it is now (mergeability)
-  is `unknown` at a past time, and `decide` handles `unknown` anyway: GitHub answers it for a
-  while after every push.
+- **`gather`** (`gather.ts`) reads everything one Work item's state depends on, as GitHub returns
+  it, trimmed to the fields `observe` reads (below, and `raw.ts`). A Work item GitHub fails or
+  refuses to answer about comes back unreadable, with the reason, and the rest are still read.
+- **`observe(raw, at)`** (`observe.ts`) builds the Work item's state (`state.ts`) **as it was at
+  time `at`**, ignoring everything later. Run with now, it is the state today; run with a past
+  time, it is the state then, which is what the history test needs. What GitHub only shows as it
+  is now (mergeability, the reviewer's comment, which is edited in place) is `unknown` when `at`
+  is before the Work item's latest event, and `decide` handles `unknown` anyway: GitHub answers
+  mergeability only a while after every push. It never throws: a field it can't read makes that
+  part of the state `unknown`, with what was missing.
 - **`decide(state, policy)`** is pure. It names the state, one of:
   - before the pull request: `waiting` (no Approval, a Blocker not Deployed, or another Ticket
     building), `building`, `needs-info`;
@@ -59,6 +59,38 @@ gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state,
   Ticket (edited only when the state changes), the `factory` status on the pull request's head,
   and `workflow_dispatch` of Executors. With `--dry-run` it prints each write instead.
 
+## What `gather` reads
+
+**The open Work items:** every open issue labeled `ready`, `building`, `needs-info` or
+`needs-human`, and every open pull request labeled `factory` or `autofix` or opened by Dependabot.
+A pull request that closes a listed issue belongs to that issue's Work item (the latest, if more
+than one does); any other is a Work item of its own.
+
+**For each Work item**, every connection and list followed through all its pages:
+
+| Part          | From GitHub                                                                                                                                                                    | `observe` reads it for                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `ticket`      | the issue's `number`, `createdAt`, author; its timeline's labeled, unlabeled, renamed, closed (and what closed it) and reopened events; its `userContentEdits`                 | labels, Approval, held, `building`, open or closed at `at`              |
+| `blockers`    | each issue in `blockedBy`, with the same timeline                                                                                                                              | each Blocker open, merged or closed unmerged, Deployed and held at `at` |
+| `pullRequest` | `number`, `createdAt`, author, `mergeable`, merge commit; each commit's `oid`, `committedDate` and authors' logins; its labeled, unlabeled, closed, reopened and merged events | head, labels, merged, Attempts' human commits, mergeability             |
+| `checks`      | each check run's `name`, `status`, `conclusion`, `started_at`, `completed_at`, on the head (or, for a history fixture, every commit)                                           | each check's status at `at`                                             |
+| `statuses`    | each commit status's `context`, `state`, `description`, `created_at`, on the same commits                                                                                      | statuses at `at`, and a past Review from the `factory` status           |
+| `comments`    | the workflow's (`github-actions[bot]`) comments that start with a marker (`markers.ts`), cut to their marker, heading and footer lines                                         | Attempts, and the Review                                                |
+| `deploys`     | the latest 100 successful Deploy runs' `head_sha` and `updated_at`                                                                                                             | when a deploy completed                                                 |
+| `inclusions`  | GitHub's compare of each merge commit with the deploys after it, oldest first, until one includes it                                                                           | Deployed                                                                |
+| `runs`        | every Executor run (named as below) created in the 24 hours before `at`: `display_title`, `status`, `created_at`, `run_started_at`, `updated_at`                               | runs queued or running, and the budget's counts                         |
+
+**What a past `at` can't know exactly**, because GitHub doesn't keep it:
+
+- The head at `at` is the latest commit _committed_ by then: GitHub doesn't say when a commit was
+  pushed. A rebase or a force push makes a past head approximate.
+- The list of Blockers is today's: GitHub's timeline doesn't hold when a dependency was added.
+- A past Review comes from the `factory` status after each review ("Done: ready for you", "Done:
+  changes needed") and the `factory-review-changes` comments, which a later review deletes; where
+  neither says, it is `unknown`.
+- A change merged before the oldest of the 100 deploys read counts as Deployed only from that
+  deploy on.
+
 ## Executor run names
 
 Every Executor run is named `<kind> #<item> <sha7>`: the kind (`build`, `ci-fix`, `review`,
@@ -66,7 +98,7 @@ Every Executor run is named `<kind> #<item> <sha7>`: the kind (`build`, `ci-fix`
 there's no Ticket), and the first 7 characters of the head commit it was started for (`-` before
 there's a pull request). `gather` lists recent runs and reads these names to see what is queued or
 running for each Work item. The run's name exists from the moment it's queued, so two decisions
-can't both start one.
+can't both start one. `run-name.ts` makes and parses them, one function each.
 
 ## The dispatch budget
 
