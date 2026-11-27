@@ -41,6 +41,9 @@ each module is what a future service or microfrontend would become.
   `src/client/` (`@roundtable/contract/client`) is the typed client generated from it, which the
   web app calls and `client.test.ts` runs against the real server. Everything here ships to the
   browser: no server code. It's the only code the API and web app share.
+- `tools/conductor` (`@roundtable/conductor`): the factory's Conductor ([ADR-0075](docs/adr/0075-factory-conductor.md)),
+  being built: no dependencies, run by Node as it is, tested with `node --test`. Its `README.md` has
+  the design and its rules. Its words are the factory's (`docs/factory/GLOSSARY.md`).
 - `infra/`: OpenTofu for production (DigitalOcean droplet, volume, reserved IP, firewall, Cloudflare DNS) and cloud-init. See `infra/README.md`.
 - `.github/workflows/factory.yml` and `.github/factory/implementer.md`: the software factory's
   implementer, which builds issues the owner labels `ready` ([ADR-0025](docs/adr/0025-software-factory-implementer.md)).
@@ -267,4 +270,4 @@ is `needs-human`). See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: `GLOSSARY.md` (in place of `CONTEXT.md`) and `docs/adr/`. See `docs/agents/domain.md`.
+Two contexts: the product's `GLOSSARY.md` and the factory's `docs/factory/GLOSSARY.md` (each in place of `CONTEXT.md`), and one `docs/adr/`. See `docs/agents/domain.md`.
