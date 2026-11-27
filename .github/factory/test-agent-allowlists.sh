@@ -17,6 +17,12 @@ for file in "$workflows"/*.yml; do
     done
     # The cheapest way to search tracked files, and read-only: refused 7 times in one batch (retro #241).
     [[ "$text" == *"Bash(git grep:*)"* ]] || fail "$(basename "$file"):$line lets the agent change code but not search it with \`git grep\`"
+    # Typechecking one package is the same read-only check as `pnpm typecheck`, and listing tracked
+    # files is as harmless as `git grep`: both were refused in the Personas batch (retro #265).
+    for package in api web contract; do
+      [[ "$text" == *"Bash(pnpm --filter @roundtable/$package typecheck)"* ]] || fail "$(basename "$file"):$line lets the agent run \`pnpm typecheck\` but not \`pnpm --filter @roundtable/$package typecheck\`"
+    done
+    [[ "$text" == *"Bash(git ls-files:*)"* ]] || fail "$(basename "$file"):$line lets the agent search code with \`git grep\` but not list it with \`git ls-files\`"
   done < <(grep -n -- '--allowedTools .*Bash(pnpm check:boundaries)' "$file" || true)
 done
 

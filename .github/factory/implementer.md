@@ -129,10 +129,12 @@ in the run's report.
   ignore them and run everything), or `pnpm vitest` after `cd` into the package.
   Never `npx` or `pnpm exec`: they're refused, and `npx` marks the run suspicious for a human
   because it can download and run a package.
+- **Typecheck:** `pnpm typecheck`, or one package's with `pnpm --filter @roundtable/api typecheck` (or
+  `web`, `contract`).
 - **Output:** don't pipe through `grep`, `head`, `tail` or `sed`. They're refused, and the whole
   command with them. You see the full output anyway; read files with your Read and Grep tools.
   Don't chain `cd <dir> && cat …` (or `grep`, `ls`) either: that's refused too. Use Read, Grep or
-  Glob with a path instead. To search tracked files from the shell, `git grep` is allowed.
+  Glob with a path instead. To search or list tracked files from the shell, `git grep` and `git ls-files` are allowed.
 - **Exit status:** don't append `; echo $?`, `|| true` or `&& …` to see whether a command passed:
   you're told its exit status, and the extra part gets the whole call refused. If an allowlisted
   command is refused, run it once more on its own before giving up on it (the Stryker check in
