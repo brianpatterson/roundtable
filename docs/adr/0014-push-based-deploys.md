@@ -1,6 +1,6 @@
 # 0014. Push-based deploys from GitHub Actions over SSH, with health-checked rollback
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [ADR-0073](0073-post-deploy-migrations.md) (destructive migrations run after the health check)
 - **Date:** 2026-11-05
 
 ## Context
