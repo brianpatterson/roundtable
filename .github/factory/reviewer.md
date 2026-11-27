@@ -59,6 +59,11 @@ the owner always merges.
    internals, or making callers know its ordering or error modes)? Judge only what the diff
    changes; the architecture review covers the rest (ADR-0031, ADR-0067). A finding here is
    **minor** unless it breaks one of `CLAUDE.md`'s module rules.
+   A new function that does what existing code already does is **minor** too: name the existing
+   one and say to reuse or share it. Look for it when the description says "same approach as" or
+   "like" some other code, and when the diff repeats a function's shape elsewhere in the module:
+   #279 wrote a second "which migration holds this failed statement" lookup beside #278's, with
+   different matching, and no review flagged it (retro #281).
 5. **Security**, against the OWASP Top 10:2025 in the next section. Go through every category
    for every change; most won't apply, and saying which do is part of the review.
 6. **Mutation tickets** (a ticket labeled `mutation`, [ADR-0051](../../docs/adr/0051-nightly-mutation-tickets.md)).

@@ -145,6 +145,11 @@ in the run's report.
 - **Files:** change and delete them with your Edit and Write tools, or `git rm` and `git mv`, never
   `sed -i`, `rm`, `echo >` or a script: those are refused. That includes `python3` or `node`
   scripts (or heredocs) that rewrite a file: use Edit, once per change.
+- **Shell scripts:** a script you add under `scripts/` or `deploy/` needs its executable bit:
+  `chmod +x <file>` on disk, and `git update-index --chmod=+x <file>` if it's already staged.
+  ShellCheck it with `shellcheck <files>`, and run its test by path (`scripts/test-<name>.sh`,
+  `deploy/test-<name>.sh`). CI runs every `test-*.sh` in those folders without being told, so
+  a new test needs no change to `.github/`.
 - **Waiting:** don't wait for CI or anything else with `sleep`, a loop or Monitor: they're refused.
   Push, finish, and return: a failed CI run starts the fixer by itself.
 - **Turns:** a run has a turn cap, and a refused call spends one. Run each allowlisted command on its
@@ -280,7 +285,7 @@ and which attempt this is (you get two). The pull request's branch is checked ou
    nothing and return `needs-human`, with the exact change you'd make.
 
 Your `summary` is posted on the pull request: what failed, why, and what you did, in a few
-lines.
+lines. If your fix makes the pull request's description wrong, see "The description" below.
 
 ## Reworking a review
 
@@ -310,6 +315,16 @@ for the owner.
 
 Your `summary` is posted on the pull request: one line per finding, saying what you changed or
 why you didn't.
+
+### The description
+
+When fixing CI or reworking a review, you can't edit the pull request (`gh pr edit` is refused).
+If your change makes its description wrong (a file moved, a behavior it describes changed), or a
+finding is about the description itself, write the whole corrected description to
+`.factory/pr-body.md`, keeping its `Closes #<n>` first line, and the workflow publishes it after
+you finish, with your attempt's comment saying so. Write it only when the description needs to
+change: without the file, it stays as it is. On the minor pass, a finding only about the
+description is fixed by that file alone: push nothing for it.
 
 ## Resolving a conflict with main
 

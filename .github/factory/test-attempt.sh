@@ -11,6 +11,8 @@ fake_gh <<'ROUTES'
   "api repos/o/r/compare/"*) answer compare.json ;;
   "api repos/o/r/issues/7/comments"*) answer comments.json ;;
   "pr comment"*) printf '%s\n' "$*" >>"$GH_FIXTURES/comments" ;;
+  "pr view 7 -R o/r --json body"*) answer body.json ;;
+  "pr edit 7 -R o/r --body-file "*) record; cp "${@: -1}" "$GH_FIXTURES/published" ;;
   "pr view 7 -R o/r --json state"*) answer pr.json ;;
   "pr view"*) [ "${HEAD_NOW:-abc}" != unreadable ] || refuse; echo "${HEAD_NOW:-abc}" ;;
 ROUTES
@@ -269,6 +271,45 @@ jq -n '{ahead_by: 1, behind_by: 0, files: [range(300) | {filename: "f\(.).md"}]}
 report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
 labeled && said "### Rework, attempt 1 of 2: over to you" && said "wasn't checked for changes to the factory's own rules" &&
   grep -qx "outcome=unchecked" "$work/output" || fail "a rework that can't be checked goes to a human, as unchecked"
+
+# A corrected description the agent left at BODY is published in its place (retro #281).
+jq -n '{body: "Closes #5\n\nThe old description."}' >"$work/body.json"
+newbody() { printf '%b' "$1" >"$work/pr-body.md"; rm -f "$work/published"; }
+published() { [ -f "$work/published" ]; }
+compare 0 "$(file apps/web/a.ts)"
+newbody 'Closes #5\n\nThe new description.'
+BODY=$work/pr-body.md report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
+published && said "Updated the pull request's description." || fail "a rework's new description is published, saying so"
+expect "the published description is the agent's" $'Closes #5\n\nThe new description.' "$(cat "$work/published")"
+newbody 'The new description, without its first line.'
+BODY=$work/pr-body.md report ci-fix 1 '{"outcome":"fixed","summary":"Fixed CI."}'
+expect "the old Closes line is kept when the new description drops it" $'Closes #5\nThe new description, without its first line.' "$(cat "$work/published")"
+newbody 'Closes #99\nAnother issue.'
+BODY=$work/pr-body.md report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
+expect "and replaces a Closes line naming another issue" $'Closes #5\nAnother issue.' "$(cat "$work/published")"
+newbody 'Fixed the copy.'
+PASS=minor BODY=$work/pr-body.md report rework '' '{"outcome":"needs-human","summary":"Only the description was stale."}'
+published || fail "a minor pass that only corrects the description publishes it"
+rm -f "$work/pr-body.md" "$work/published"
+BODY=$work/pr-body.md report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
+! published && ! said "description" || fail "no file at BODY leaves the description alone"
+newbody "key ghp_$(printf 'a%.0s' {1..36})"
+BODY=$work/pr-body.md report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
+! published && said "withheld because it matched a credential pattern" || fail "a description with a credential isn't published"
+rm -f "$work/published" "$work/pr-body.md"
+echo secret >"$work/elsewhere"
+ln -s "$work/elsewhere" "$work/pr-body.md"
+BODY=$work/pr-body.md report rework 1 '{"outcome":"fixed","summary":"Renamed it."}'
+! published && said "isn't a plain file" || fail "a link to another file isn't followed"
+rm -f "$work/pr-body.md"
+newbody 'Closes #5\nTidied.'
+compare 0 "$(file .github/workflows/ci.yml)"
+BODY=$work/pr-body.md report ci-fix 1 '{"outcome":"fixed","summary":"Fixed CI."}'
+! published || fail "a push that changes the factory's files publishes no description"
+compare 0 "$(file docs/a.md)"
+BODY=$work/pr-body.md run 1 "$resolved"
+! published || fail "the conflict resolver's description is renumber-adr-refs.sh's job, not this"
+rm -f "$work/pr-body.md"
 
 # An answer explain-failure.sh recovered skips the action's schema check: an outcome the kind's
 # agent can't give counts as no answer, and never skips a check or keeps the pull request from a
