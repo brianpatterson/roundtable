@@ -71,17 +71,30 @@ Option 4.
   - fails `RENAME` of a table or column in **either** phase. Neither phase is safe for one: before
     the deploy the old code reads the old name, and after it the new code reads the new name
     until `post` runs. A rename is the three steps below.
-  - fails `DROP TABLE`, `DROP COLUMN`, `SET NOT NULL` or `ALTER COLUMN … TYPE` in a migration
-    that isn't post-deploy.
+  - fails, in a migration that isn't post-deploy, anything the previous release's code can't
+    live with: `DROP TABLE`, `DROP COLUMN`, `SET NOT NULL`, `ALTER COLUMN … TYPE`, a new `UNIQUE`
+    or `CHECK` constraint or unique index (old writes can violate it), and removing an enum value.
+  - fails `ADD COLUMN … NOT NULL` without a default in either phase: before `post` the old code's
+    inserts violate it. Add it with a default, or nullable now and `SET NOT NULL` post-deploy.
   - **replays the deploy on `app_test`**: `main`'s migrations in full, then `pre`, then `post`.
     drizzle-kit generates each migration from the schema after the one before it, so a pre-deploy
     migration generated after a pending post-deploy one can depend on it (re-creating a dropped
     column or reusing a dropped constraint's name) and fail in `pre`. The replay catches that
     before the merge rather than in a rolled-back deploy; the fix is to make the dependent
-    migration post-deploy too, or to stop reusing the name.
+    migration post-deploy too, or to stop reusing the name. After `pre`, the replay also fails
+    when a column that a pending post-deploy migration drops is still `NOT NULL` without a
+    default: between `pre` and `post` the new code no longer writes it, so every insert would
+    fail, and neither the health check nor the tests (which run on the fully migrated schema)
+    would notice.
+
+  The check enforces only what it lists. Anything else that the previous release's code can't
+  live with is left to the reviewer, and the list grows when one is found.
+
 - **Writing them:** a ticket that both adds and removes schema generates twice: the additions
-  first, then the removals as `_postdeploy`. A rename is three steps in one batch: add the new
-  column and copy the data (pre), switch the code to it, drop the old column (post). A
+  first, then the removals as `_postdeploy`. A column dropped post-deploy is first made nullable
+  or given a default in a pre-deploy migration, because the new code stops writing it before
+  `post` runs. A rename is three steps in one batch: add the new column, copy the data and make
+  the old one nullable (pre), switch the code to it, drop the old column (post). A
   post-deploy type change runs while the new code is already up, so that code must work with the
   old type and the new one. CLAUDE.md's schema rule and the implementer prompt say so.
 

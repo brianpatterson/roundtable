@@ -54,9 +54,13 @@ Option 3.
     ready ([ADR-0053](0053-review-verdict-from-blocking-findings.md));
   - no `needs-human` label, and the ticket's `ready` label is the owner's (the dispatcher's rule);
   - the ticket isn't a user report (`user-report` label, ADR-0041);
-  - the diff touches none of: `apps/api/src/modules/identity/`, `apps/api/src/platform/config/`,
-    `infra/`, `.github/`, `.claude/`, `CLAUDE.md`, `compose.prod.yml`, `apps/*/Dockerfile`,
-    `apps/web/Caddyfile`, `deploy/`, any `package.json` or the lockfile.
+  - the diff touches none of: `apps/api/src/modules/identity/`, `apps/api/src/server.ts`,
+    `apps/api/src/platform/` (config, the database and `migrate.ts`, and the observability
+    redaction), `apps/api/drizzle/`, `infra/`, `.github/`, `.claude/`, `CLAUDE.md`,
+    `compose.prod.yml`, `apps/*/Dockerfile`, `apps/web/Caddyfile`, `deploy/`, any `package.json`
+    or the lockfile. These are the changes the owner sees one at a time, not lost in a batch's
+    diff. A ticket that adds a migration therefore always waits for the owner's merge into the
+    batch.
 
   A pull request that fails only the last two is labeled `needs-human`, saying which; the owner
   merges it into the batch by hand. Each gate is read from GitHub, never from what an agent
@@ -71,7 +75,11 @@ Option 3.
     with `statuses: write`, so an agent holding the Claude App's token could otherwise post
     `review: success` on its own commit. Pinned, only a workflow's `GITHUB_TOKEN` can satisfy it,
     and agents can't change workflows ([ADR-0029](0029-software-factory-credential-hardening.md);
-    `.github/` is also on the list of paths above).
+    `.github/` is also on the list of paths above). That holds only while **no job that runs a
+    branch's code holds `statuses: write`**: a `pull_request` run uses the branch's code with its
+    own `GITHUB_TOKEN`. Today `ci.yml` and `codeql.yml` hold `contents: read` only. The
+    implementation adds a check of every workflow for this invariant, beside
+    `test-checkout-before-agent.sh`.
   - **One bypass: a new GitHub App, the batch merger,** whose key only `batch-merge.yml` holds, in
     a `batch-merge` environment that admits only `main` and in which no job runs an agent or code
     from a branch. The factory has no App of its own today (ADR-0072's merge uses the Claude App's
