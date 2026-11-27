@@ -96,17 +96,28 @@ Option 4.
   rehearsed on the latest nightly backup ([ADR-0015](0015-backups.md)), the way `backup.yml`
   already restores it into a throwaway Postgres to verify it:
   - On the restored database: whatever of the base branch's migrations the backup lacks, then the
-    pull request's through `pre` and `post`, each migration timed. It fails on an error or on any migration over **5 seconds**, which flags a
-    table rewrite or a long lock.
+    pull request's through `pre` and `post`, each migration timed. It fails on an error or on any
+    migration over **5 seconds**, which flags a table rewrite or a long lock.
   - It runs from `main`'s workflow (after CI, as Review does), in the `backups` environment, with
     no agent in the job. The pull request's SQL files are read as data (`git show`), and a script
     from `main` applies them with `psql`. The branch's `migrate.ts` and code never run.
-  - The SQL comes from a branch, so it's contained: the Postgres container has no network, and
-    the migrations run as a role that isn't a superuser (no `COPY … TO PROGRAM`, no extensions).
-    The age key is used for the decryption and removed before any of the branch's SQL runs.
-  - The job reports pass or fail and the timings only: no rows, no values, nothing from the data
-    in its logs or output. It sets a `migration-rehearsal` commit status, which a merge into a
-    batch requires when the diff adds a migration ([ADR-0074](0074-batch-merges.md)).
+  - **The data is scrubbed before any branch SQL runs.** The branch's SQL can choose what the job
+    reports: an error message can echo a value, and pass or fail, or a timing, can answer a
+    question about one (`CASE WHEN … THEN pg_sleep(6)`), a bit per run. So `main`'s script first
+    replaces every text, `varchar` and `jsonb` value in every table (identity's `users`,
+    `sessions`, `accounts` and `verifications` included) with a keyed hash under a random key
+    that's never written down. Hashing keeps what migrations trip over (nulls, equal values,
+    duplicates) and destroys the content, so nothing the job reports can carry it. Numbers, dates,
+    booleans and enum values are kept.
+  - The SQL is also contained: the Postgres container has no network, and the migrations run as a
+    role that isn't a superuser (no `COPY … TO PROGRAM`, no extensions). The age key is used for
+    the decryption and removed before the branch's SQL runs.
+  - **The job reports in its own words only:** which migration failed and whether it was an error
+    or over the time limit, never psql's message, and each migration as within or over the limit,
+    never its time. It writes nothing else to its log. It sets a `migration-rehearsal` status,
+    which a merge into a batch requires ([ADR-0074](0074-batch-merges.md)).
+  - Pull requests for `user-report` tickets aren't rehearsed: their text came from outside, and
+    they go to the owner anyway. Their status says so, and the owner rehearses by hand if needed.
 - **Guarding production:** `migrate.ts` sets `lock_timeout` (5 seconds) and `statement_timeout`
   (60 seconds, inside the health check's 90) on its connection in both phases. A migration that
   waits on a busy table fails fast and the deploy rolls back, instead of queueing every request
@@ -116,7 +127,13 @@ Option 4.
   only ones that destroy data, so a bad drop is a restore, not a loss. If the dump fails, `post`
   doesn't run.
 - **Showing them:** the batch pull request lists every migration in the batch with its SQL, its
-  phase and its rehearsal timings, which is where the owner reviews them.
+  phase and its rehearsal result, which is where the owner reviews them.
+- **Only what drizzle-kit writes merges on its own:** migration SQL must consist of the
+  statements `drizzle-kit generate` produces (creating, altering and dropping tables, columns,
+  indexes, constraints, types and sequences). A migration with anything else (`INSERT`, `UPDATE`,
+  `DELETE`, `GRANT`, `REVOKE`, functions, triggers, extensions, `DO` blocks, `COPY`), or one that
+  touches identity's tables, is labeled `needs-human` and waits for the owner's merge into the
+  batch. A data backfill, such as a rename's copy, therefore always goes to the owner.
 
 - **Writing them:** a ticket that both adds and removes schema generates twice: the additions
   first, then the removals as `_postdeploy`. A column dropped post-deploy is first made nullable

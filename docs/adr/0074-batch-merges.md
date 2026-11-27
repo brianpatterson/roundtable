@@ -66,6 +66,9 @@ Option 3.
     (`apps/api/drizzle/`) are not on the list: ADR-0073's checks, its rehearsal on the latest
     backup, its timeouts and its snapshot before `post` gate them, and the batch pull request
     lists every one for the owner. The code that runs them, `platform/database/`, stays on it.
+    A migration with anything `drizzle-kit generate` doesn't write (data changes, grants,
+    functions, triggers), or one that touches identity's tables, goes to the owner like the paths
+    above (ADR-0073).
 
   A pull request that fails only the last two is labeled `needs-human`, saying which; the owner
   merges it into the batch by hand. Each gate is read from GitHub, never from what an agent
@@ -84,7 +87,9 @@ Option 3.
     branch's code holds `statuses: write`**: a `pull_request` run uses the branch's code with its
     own `GITHUB_TOKEN`. Today `ci.yml` and `codeql.yml` hold `contents: read` only. The
     implementation adds a check of every workflow for this invariant, beside
-    `test-checkout-before-agent.sh`.
+    `test-checkout-before-agent.sh`. If a ruleset turns out not to pin a commit status's source
+    (it does for check runs), `review` and `migration-rehearsal` are published as check runs
+    (`checks: write`) instead, under the same invariant.
   - **One bypass: a new GitHub App, the batch merger,** whose key only `batch-merge.yml` holds, in
     a `batch-merge` environment that admits only `main` and in which no job runs an agent or code
     from a branch. The factory has no App of its own today (ADR-0072's merge uses the Claude App's
