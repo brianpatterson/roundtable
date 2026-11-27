@@ -1,6 +1,7 @@
 # Conductor
 
-The factory's Conductor ([ADR-0075](../../docs/adr/0075-factory-conductor.md)): it reads what
+The factory's Conductor ([ADR-0075](../../docs/adr/0075-factory-conductor.md), amended by
+[ADR-0076](../../docs/adr/0076-conductor-budget-in-executors-and-its-parts.md)): it reads what
 GitHub shows about every open Work item, decides each one's next step, and starts an Executor to
 take it. The words are the factory's ([`docs/factory/GLOSSARY.md`](../../docs/factory/GLOSSARY.md)).
 
@@ -19,16 +20,16 @@ change to it changes nothing live. It is an Owner path (ADR-0074).
 - **GitHub through `fetch`**, Node's own, against GitHub's GraphQL and REST APIs with the token in
   `GH_TOKEN`. Every function that calls GitHub takes the `fetch` to use, so tests pass a stand-in
   (as `infra/factory-clock/worker.test.js` does).
-- **Only `fetch.ts` reads GitHub and only `act.ts` writes to it.** Everything between is pure:
+- **Only `gather.ts` reads GitHub and only `act.ts` writes to it.** Everything between is pure:
   the time is an argument, never `Date.now()`.
 
 ## How it decides
 
 ```
-fetch (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state, policy)  →  {state, action, reason}  →  act (GitHub)
+gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state, policy)  →  {state, action, reason}  →  act (GitHub)
 ```
 
-- **`fetch`** gathers everything one Work item's state depends on, as GitHub returns it, trimmed
+- **`gather`** reads everything one Work item's state depends on, as GitHub returns it, trimmed
   to the fields `observe` reads: the Ticket's labels and who added them, its timeline (labeled,
   unlabeled, edited, closed), its Blockers, the pull request's commits and head, checks, statuses
   and mergeability, the reviewer's comment, the factory's marker comments, the Executor runs (by
@@ -42,7 +43,7 @@ fetch (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state, 
   - before the pull request: `waiting` (no Approval, a Blocker not Deployed, or another Ticket
     building), `building`, `needs-info`;
   - on the pull request: `checking`, `fixing`, `reviewing`, `reworking`, `resolving`, `reviewed`
-    (a ready Review on the head: the Owner's turn. ADR-0075 lists it as `approved`, but Approval
+    (a ready Review on the head: the Owner's turn. ADR-0075 called it `approved`; ADR-0076 renamed it, since Approval
     is the Owner's `ready`; see the glossary);
   - after: `merged`, then `deployed`;
   - anywhere: `needs-human`, a Hand-over, with the reason.
@@ -63,7 +64,7 @@ fetch (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state, 
 Every Executor run is named `<kind> #<item> <sha7>`: the kind (`build`, `ci-fix`, `review`,
 `rework`, `conflict`, `mention`), the Work item's number (the Ticket's, or the pull request's when
 there's no Ticket), and the first 7 characters of the head commit it was started for (`-` before
-there's a pull request). `fetch` lists recent runs and reads these names to see what is queued or
+there's a pull request). `gather` lists recent runs and reads these names to see what is queued or
 running for each Work item. The run's name exists from the moment it's queued, so two decisions
 can't both start one.
 
@@ -78,7 +79,7 @@ are counted from the same evidence.
 
 It is a refusal, so the Executors enforce it, in their guards under `.github/` (the Owner's
 wiring), not this package: the factory writes the Conductor, and an agent may change what
-decides but not what refuses harm (ADR-0075). Before it acts, each Executor counts the runs
+decides but not what refuses harm (ADR-0075, ADR-0076). Before it acts, each Executor counts the runs
 named for its Work item, and all Executor runs, in the last 24 hours; past either limit it does
 nothing, hands the Work item over with the reason, and fails, so the Owner is emailed. The
 numbers live in one file there. `decide` reads the same count to stop asking, and to show how
@@ -87,7 +88,7 @@ close a Work item is in `why`.
 ## The history test
 
 `decide` is tested on the factory's real past, not only on cases written by hand. `record.ts`
-saves `fetch`'s raw responses for a list of past Work items, chosen to cover every state at least
+saves `gather`'s raw responses for a list of past Work items, chosen to cover every state at least
 once, as fixtures in `history/`, and derives what the factory did next after each event in their
 lives (the next marker comment, label, push or merge). The history test runs
 `decide(observe(raw, at))` at every one of those moments and expects the state and action the

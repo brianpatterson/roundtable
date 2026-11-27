@@ -1,6 +1,6 @@
 # 0075. Decide every factory step in one conductor, from state derived from GitHub each time
 
-- **Status:** Accepted
+- **Status:** Accepted; who enforces the dispatch budget, the `reviewed` state, `gather`/`observe`/`act`, Executor run names and the package are amended by [ADR-0076](0076-conductor-budget-in-executors-and-its-parts.md)
 - **Date:** 2026-11-27
 
 ## Context
