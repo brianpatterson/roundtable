@@ -100,11 +100,12 @@ pnpm db:generate    # after editing schema.ts: writes a SQL migration to apps/ap
 pnpm db:migrate     # apply migrations to the dev db
 pnpm check:boundaries # imports respect module boundaries (ADR-0023)
 pnpm check:adrs     # every ADR has its own number and one row in docs/adr/README.md (ADR-0058)
+pnpm check:migrations # new migrations work with the previous release, replayed pre then post (ADR-0073); needs `pnpm db:up` and origin/main
 pnpm check:effect   # Effect diagnostics (mistakes tsc can't see, e.g. an Effect that is never run)
 pnpm --filter @roundtable/web test:browser # Playwright (ADR-0065); needs `pnpm db:up` and, once, `pnpm --filter @roundtable/web exec playwright install chromium`
 pnpm --filter @roundtable/web test:mutation # Stryker: which web code no test really checks (ADR-0027)
 pnpm --filter @roundtable/api test:mutation # the same for the API: minutes, a test database per worker
-pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + ADRs + boundaries + tests: run before every commit
+pnpm check          # lint + format + typecheck + Effect diagnostics + dependency register + ADRs + boundaries + tests + migrations: run before every commit
 ```
 
 ## Rules for every change
@@ -135,10 +136,17 @@ pnpm check          # lint + format + typecheck + Effect diagnostics + dependenc
    "Last updated" date.
 5. **Schema changes:** edit the module's `schema.ts`, run `pnpm db:generate --name <what_changed>`, and commit
    the generated folder (`apps/api/drizzle/<timestamp>_<name>/`). Never edit a migration that has been merged. CI fails if the schema and migrations
-   drift. Every migration must be **backward-compatible with the previous release**, because a
-   failed deploy rolls back the code but not the database (ADR-0014). Expand/contract: add
-   (nullable or defaulted) first, start using it in a later release, remove only after nothing
-   reads it.
+   drift. Every migration must work with the **previous release's code**, because a failed deploy
+   rolls back the code but not the database (ADR-0014). A migration that removes or tightens
+   schema the previous release uses (a drop, `SET NOT NULL`, a type change, a new unique or check
+   constraint, an enum value removed) is **post-deploy**: generate it on its own with a name
+   ending in `_postdeploy` (`pnpm db:generate --name drop_job_url_postdeploy`), and it runs only
+   after the deploy is healthy ([ADR-0073](docs/adr/0073-post-deploy-migrations.md)). So a change
+   that both adds and removes generates twice, the additions first. A column dropped post-deploy
+   is made nullable or given a default first; a rename is add, copy and make the old one
+   nullable, switch the code, then drop the old column post-deploy; never `RENAME`. New tables
+   are free: their indexes and constraints stay in the same migration. `pnpm check:migrations`
+   checks all of this against `main` and replays the deploy.
 6. **API contract:** request and response shapes live in `packages/contract`, in the module's file. Validate every
    request body and param with them (the `HttpApi` does this before handlers run). The client
    encodes request bodies with the same schemas before sending them, so a transformation must

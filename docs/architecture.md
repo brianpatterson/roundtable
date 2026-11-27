@@ -724,7 +724,11 @@ flowchart LR
 - **Startup order:** `db` healthy → `migrate` exits 0 → `api` healthy → `web` starts. A failed
   migration means the new API never starts. It prints one line to the public deploy log: the
   migration's name, Postgres's message and its code, never `detail` or the query's parameters,
-  which can quote row values.
+  which can quote row values. `migrate` runs only the `pre` phase: migrations whose folder ends
+  in `_postdeploy` remove schema, so they run after the deploy is healthy, once an encrypted
+  snapshot of the database is on the volume (`deploy/post-migrate.sh`, kept 7 days). A rollback
+  happens before them, so the previous release never meets a dropped column
+  ([ADR-0073](adr/0073-post-deploy-migrations.md)).
 - **Factory clock:** a Cloudflare Worker whose Cron Trigger starts the factory's sweeper and
   dispatcher through `workflow_dispatch` every 20 minutes, with a fine-grained GitHub token
   limited to Actions on this repository. GitHub can't narrow it further, so it could start any
@@ -783,9 +787,9 @@ sequenceDiagram
   GH->>D: CI green on push to main (workflow_run)
   D->>D: diff against the last deployed commit: only docs/Markdown/infra? stop
   D->>R: build + push api/web images tagged <git SHA>
-  D->>S: SSH as deploy (pinned host key), copy compose + deploy.sh
+  D->>S: SSH as deploy (pinned host key), copy compose + deploy.sh + post-migrate.sh
   D->>S: docker login with this run's token (throwaway config)
-  S->>S: migrate → api → web, wait for /api/health db=up
+  S->>S: migrate (pre) → api → web, wait for /api/health db=up
   alt healthy within 90s
     S-->>D: ✓ record SHA in .deployed
   else migrations fail or unhealthy
@@ -793,6 +797,8 @@ sequenceDiagram
     S-->>D: ✗ deploy failed (production on previous version)
   end
   D->>D: smoke test https://<domain>/api/health from outside
+  D->>S: pg_dump, encrypted on the runner to the backups' age key, into snapshots/
+  D->>S: post-migrate.sh: post-deploy migrations, prune snapshots over 7 days
 ```
 
 Each deploy recreates the API and Caddy containers, so the site is down for about 10 seconds
