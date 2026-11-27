@@ -274,6 +274,23 @@ Building blocks, in order:
      read them. The environment admits only `main`, the factory's agents run in the `factory`
      environment and never see them, and changes to `.github/` need the owner's merge.
 
+10. **One merge per spec** (2026-11-26): the owner merges each step of a spec by hand today, and
+    each merge deploys. Instead, a spec's tickets merge into a `batch/<spec>` branch on their own
+    once CI, the browser tests and the reviewer pass, and the owner merges the batch into `main`
+    once, after the architecture review and retro have run on it ([ADR-0074](adr/0074-batch-merges.md)).
+    Fewer, larger deploys, made safe by running destructive migrations only after the health
+    check ([ADR-0073](adr/0073-post-deploy-migrations.md)). In order:
+    - **Post-deploy migrations**: `migrate.ts` phases, the deploy's last step, the CI check on
+      new migrations, a test of both phases against `app_test`, the lock and statement timeouts,
+      the snapshot before `post`, and the schema rule in CLAUDE.md and the implementer prompt.
+    - **Migration rehearsal**: each pull request's migrations on the latest backup, contained and
+      timed, setting the `migration-rehearsal` status.
+    - **The `review` status**: Review's status job sets it from the verdict.
+    - **Batch branches**: the dispatcher creates them and the build targets them;
+      `batch-merge.yml` merges, closes tickets, keeps batches up to date with `main` and opens the
+      batch pull request; the `batch/**` ruleset; retro and the architecture review move onto the
+      batch branch.
+
 ## Phase 4: The job-search workflow
 
 The product itself: from a posting you're considering, through each interview, to knowing what to

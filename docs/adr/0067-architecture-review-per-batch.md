@@ -1,6 +1,6 @@
 # 0067. Review the architecture when a spec's batch closes, with Monday as a backstop
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [ADR-0074](0074-batch-merges.md) (the review runs on the batch branch, before it merges)
 - **Date:** 2026-11-24
 
 ## Context

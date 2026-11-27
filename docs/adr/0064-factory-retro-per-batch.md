@@ -1,6 +1,6 @@
 # 0064. Run a retrospective on each batch of factory tickets, from the trail its agents leave
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [ADR-0074](0074-batch-merges.md) (merging the batch closes the spec, not the retro)
 - **Date:** 2026-11-23
 
 ## Context
