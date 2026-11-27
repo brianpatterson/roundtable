@@ -11,6 +11,7 @@ import pg from 'pg';
 import {
   checkMigrations,
   classifyMigration,
+  closePool,
   judgeMigrations,
   readSchema,
   scratchDatabaseName,
@@ -287,6 +288,33 @@ describe('withScratchDatabase', () => {
   });
 });
 
+describe('closePool', () => {
+  it('resolves only once every connection has closed', async () => {
+    const applicationName = `roundtable-close-pool-${process.pid}`;
+    const { pool } = createDb(Redacted.make(sharedTestDatabase), applicationName);
+    const held = await Promise.all([pool.connect(), pool.connect()]);
+
+    for (const client of held) client.release();
+
+    await closePool(pool);
+
+    const admin = new pg.Client({ connectionString: sharedTestDatabase });
+
+    await admin.connect();
+
+    try {
+      const { rowCount } = await admin.query(
+        'select 1 from pg_stat_activity where application_name = $1',
+        [applicationName],
+      );
+
+      expect(rowCount).toBe(0);
+    } finally {
+      await admin.end();
+    }
+  });
+});
+
 describe('the real migrations, each judged as new against the ones before it', () => {
   const real = readdirSync(migrationsFolder).toSorted();
 
@@ -314,7 +342,7 @@ describe('the real migrations, each judged as new against the ones before it', (
 
         return await readSchema(pool);
       } finally {
-        await pool.end();
+        await closePool(pool);
       }
     });
   }

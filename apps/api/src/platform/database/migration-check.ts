@@ -369,6 +369,28 @@ export function scratchDatabaseName(testDatabaseUrl: string) {
 }
 
 /**
+ * Ends `pool` and waits until every connection has closed. pg's `pool.end()` resolves before its
+ * connections close, so dropping the scratch database `with (force)` right after it can terminate
+ * one still open, and that connection's error then goes unhandled.
+ */
+export async function closePool(pool: pg.Pool): Promise<void> {
+  let open = pool.totalCount;
+
+  const closed = new Promise<void>((resolve) => {
+    if (open === 0) resolve();
+
+    pool.on('remove', () => {
+      open -= 1;
+
+      if (open === 0) resolve();
+    });
+  });
+
+  await pool.end();
+  await closed;
+}
+
+/**
  * Creates the scratch database next to the test database, calls `use` with its URL, and drops it
  * afterwards, whether `use` succeeds or not.
  */
@@ -517,7 +539,7 @@ export async function checkMigrations(options: {
 
           return await replayDeploy(db, allFolder, added);
         } finally {
-          await pool.end();
+          await closePool(pool);
         }
       }),
     ),
