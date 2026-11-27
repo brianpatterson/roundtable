@@ -287,10 +287,10 @@ Building blocks, in order:
       timed, setting the `migration-rehearsal` status.
     - **The `review` status**: Review's status job sets it from the verdict.
     - **The conductor**: one workflow that decides every factory step from state derived from
-      GitHub, starting executors that only act; built in shadow first, then the dispatcher,
-      sweeper, Review, Rework, the CI fixer and the conflict resolver move over one at a time
-      ([ADR-0075](adr/0075-factory-conductor.md)). Batch branches come after, as one more
-      executor.
+      GitHub, starting executors that only act and keep their own guards; tested on recorded
+      history of the factory's past tickets, bounded by a dispatch budget, and turned on with
+      one repository variable that also turns it off ([ADR-0075](adr/0075-factory-conductor.md)).
+      Batch branches come after, as one more executor.
     - **Batch branches**: the dispatcher creates them and the build targets them;
       `batch-merge.yml` merges, closes tickets, keeps batches up to date with `main` and opens the
       batch pull request; the `batch/**` ruleset; retro and the architecture review move onto the
