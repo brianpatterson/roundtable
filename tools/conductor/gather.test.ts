@@ -193,6 +193,15 @@ function answerRest(path: string, search: URLSearchParams): Answer {
     };
   }
 
+  if (path === '/repos/o/r/commits' && search.get('sha') === 'main') {
+    return {
+      body: [
+        { sha: 'main2', commit: { committer: { date: time(-5) }, message: 'x' } },
+        { sha: 'main1', commit: { committer: { date: time(-90) }, message: 'x' } },
+      ],
+    };
+  }
+
   if (path === '/repos/o/r/compare/m3...d1') return { body: { status: 'ahead', files: [] } };
 
   if (/^\/repos\/o\/r\/commits\/[gh]\d+\/check-runs$/.test(path)) {
@@ -263,6 +272,24 @@ function answerRest(path: string, search: URLSearchParams): Answer {
           created_at: time(7),
           updated_at: time(7),
           body: 'The sweeper reran CI once.',
+        },
+        {
+          user: { login: 'github-actions[bot]' },
+          created_at: time(8),
+          updated_at: time(9),
+          body: '<!-- factory-review -->\n### Factory review: ✅ Ready for you\n\n1. **minor**: the private detail.\n\n<sub>Commit abc1234, reviewed.</sub>',
+        },
+        {
+          user: { login: 'o' },
+          created_at: time(9),
+          updated_at: time(9),
+          body: '@claude what the Owner asked',
+        },
+        {
+          user: { login: 'stranger' },
+          created_at: time(9),
+          updated_at: time(9),
+          body: '@claude a stranger asks',
         },
       ],
     };
@@ -372,6 +399,18 @@ test('one Work item is read whole, following every page, and trimmed to what obs
       updated_at: time(8),
       body: '<!-- factory-ci-fix -->\n### CI fix, attempt 1 of 2: pushed a fix\n<sub>[Run](x), for commit h11. ADR-0028.</sub>',
     },
+    {
+      user: { login: 'github-actions[bot]' },
+      created_at: time(8),
+      updated_at: time(9),
+      body: '<!-- factory-review -->\n### Factory review: ✅ Ready for you\n1. **minor**\n<sub>Commit abc1234, reviewed.</sub>',
+    },
+  ]);
+  // The Owner's @claude, without what it says; nobody else's.
+  assert.deepEqual(raw.field('mentions').json(), [{ user: { login: 'o' }, created_at: time(9) }]);
+  assert.deepEqual(raw.field('main').json(), [
+    { sha: 'main2', committed_at: time(-5) },
+    { sha: 'main1', committed_at: time(-90) },
   ]);
   assert.deepEqual(raw.field('inclusions').json(), [
     { commit: 'm3', deploy: 'd1', status: 'ahead' },
@@ -389,6 +428,8 @@ test('one Work item is read whole, following every page, and trimmed to what obs
   assert.equal(JSON.stringify(item).includes('"app"'), false);
   assert.equal(JSON.stringify(item).includes('"url"'), false);
   assert.equal(JSON.stringify(item).includes('secret plan'), false);
+  assert.equal(JSON.stringify(item).includes('private detail'), false);
+  assert.equal(JSON.stringify(item).includes('what the Owner asked'), false);
 });
 
 test('what gather reads, observe reads', async () => {
@@ -418,8 +459,17 @@ test('what gather reads, observe reads', async () => {
   });
   assert.deepEqual(state.runs, {
     known: true,
-    value: { active: [], startedLastDay: { item: 1, all: 1 } },
+    value: {
+      active: [],
+      finished: [{ name: 'build #10 -', kind: 'build', sha: null, createdAt: time(-60) }],
+      startedLastDay: { item: 1, all: 1 },
+    },
   });
+  assert.deepEqual(state.main, { known: true, value: 'main2' });
+  assert.ok(state.pullRequest.known);
+  assert.deepEqual(state.pullRequest.value?.mention, { known: true, value: time(9) });
+  assert.ok(state.pullRequest.value?.review.known);
+  assert.equal(state.pullRequest.value.review.value?.minor, 1);
 });
 
 test('a Work item GitHub refuses is unreadable, with the reason, and the rest are still gathered', async () => {

@@ -25,6 +25,9 @@ export const DISPATCH = '<!-- factory-dispatch -->';
 
 export const MARKERS = [CI_FIX, REWORK, REWORK_MINOR, CONFLICT, REVIEW, REVIEW_CHANGES, DISPATCH];
 
+/** A minor finding's line in the reviewer's comment, as `post-review.sh` counts them (`1. **minor**:`). */
+export const MINOR_FINDING = /^\s*([0-9]+\.|[-*]) \*\*minor\*\*/;
+
 /** Whether a comment body begins with one of the markers. */
 export const isMarked = (body: string): boolean =>
   MARKERS.some((marker) => body.startsWith(marker));

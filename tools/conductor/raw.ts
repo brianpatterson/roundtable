@@ -55,6 +55,13 @@ export interface RawWorkItem {
   readonly statuses: Json;
   /** The factory's marker comments on the pull request: `[{user, created_at, updated_at, body}]`. */
   readonly comments: Json;
+  /**
+   * The Owner's comments on the pull request that mention `@claude`: `[{user, created_at}]`,
+   * without their text.
+   */
+  readonly mentions: Json;
+  /** The latest commits of `main`: `[{sha, committed_at}]`. */
+  readonly main: Json;
   /** Successful deploys: `[{head_sha, updated_at}]`. */
   readonly deploys: Json;
   /** Whether a deploy includes a commit: `[{commit, deploy, status}]`, GitHub's compare status. */

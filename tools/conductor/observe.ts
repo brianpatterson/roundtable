@@ -3,7 +3,15 @@
 // throws: a part it can't read is `unknown`, with what was missing.
 
 import { type Json, Missing, Read } from './json.ts';
-import { REVIEW, REVIEW_CHANGES, CI_FIX, CONFLICT, REWORK, REWORK_MINOR } from './markers.ts';
+import {
+  REVIEW,
+  REVIEW_CHANGES,
+  CI_FIX,
+  CONFLICT,
+  MINOR_FINDING,
+  REWORK,
+  REWORK_MINOR,
+} from './markers.ts';
 import { type RawWorkItem, closerCommit, isExecutorRun } from './raw.ts';
 import { parseRunName } from './run-name.ts';
 import type {
@@ -14,6 +22,7 @@ import type {
   Closure,
   CommitStatus,
   Fact,
+  FinishedRun,
   Held,
   PullRequestState,
   Ready,
@@ -140,16 +149,23 @@ function closureOf(events: readonly Event[], deploys: Fact<Deploys>, when: numbe
   const closed = events.filter((event) => event.type === 'ClosedEvent').at(-1);
   const closer = closed?.read.field('closer');
 
-  if (closer === undefined || closer.absent()) {
-    return { merged: false, commit: null, deployed: { known: true, value: false } };
+  if (closed === undefined || closer === undefined || closer.absent()) {
+    return {
+      merged: false,
+      commit: null,
+      at: iso(closed?.at ?? when),
+      deployed: { known: true, value: false },
+    };
   }
 
   const commit = closerCommit(closer);
 
-  if (commit === null)
-    return { merged: false, commit: null, deployed: { known: true, value: false } };
+  const at = iso(closed.at);
 
-  return { merged: true, commit, deployed: deployedAt(deploys, commit, when) };
+  if (commit === null)
+    return { merged: false, commit: null, at, deployed: { known: true, value: false } };
+
+  return { merged: true, commit, at, deployed: deployedAt(deploys, commit, when) };
 }
 
 function blockerAt(blocker: Read, deploys: Fact<Deploys>, when: number): BlockerState | null {
@@ -272,6 +288,8 @@ interface Commit {
   readonly sha: string;
   readonly at: number;
   readonly human: boolean;
+  /** Its authors' logins; `null` for an author without one. */
+  readonly authors: readonly (string | null)[];
 }
 
 /**
@@ -286,27 +304,30 @@ function commitsUntil(pr: Read, when: number): Commit[] {
     .field('commits')
     .items()
     .map((node) => node.field('commit'))
-    .map((commit) => ({
-      sha: commit.field('oid').text(),
-      at: commit.field('committedDate').time(),
-      human: commit
+    .map((commit) => {
+      const authors = commit
         .field('authors')
         .field('nodes')
         .items()
-        .some((author) =>
-          isHuman(
-            author.field('user').absent()
-              ? null
-              : author.field('user').field('login').optionalText(),
-          ),
-        ),
-    }))
+        .map((author) =>
+          author.field('user').absent() ? null : author.field('user').field('login').optionalText(),
+        );
+
+      return {
+        sha: commit.field('oid').text(),
+        at: commit.field('committedDate').time(),
+        human: authors.some(isHuman),
+        authors,
+      };
+    })
     .filter((commit) => commit.at <= when);
 }
 
 /** One of the factory's marker comments. */
 interface Comment {
   readonly at: number;
+  /** When it was last edited: the reviewer's comment is edited in place on every re-review. */
+  readonly updated: number;
   readonly body: string;
 }
 
@@ -318,8 +339,9 @@ function commentsUntil(raw: RawWorkItem, when: number): Comment[] {
       if (comment.field('user').field('login').optionalText() !== 'github-actions[bot]') return [];
 
       const at = comment.field('created_at').time();
+      const updated = comment.field('updated_at').optionalTime() ?? at;
 
-      return at <= when ? [{ at, body: comment.field('body').text() }] : [];
+      return at <= when ? [{ at, updated, body: comment.field('body').text() }] : [];
     })
     .sort((a, b) => a.at - b.at);
 }
@@ -335,6 +357,7 @@ function forCommit(list: Json, name: string, sha: string): Read {
 
 function checksAt(raw: RawWorkItem, head: string, when: number): CheckState[] {
   const latest = new Map<string, { started: number; check: CheckState }>();
+  const counts = new Map<string, number>();
 
   for (const run of forCommit(raw.checks, 'checks', head).field('checkRuns').items()) {
     const started = run.field('started_at').optionalTime();
@@ -344,13 +367,25 @@ function checksAt(raw: RawWorkItem, head: string, when: number): CheckState[] {
     const completed = run.field('completed_at').optionalTime();
     const name = run.field('name').text();
 
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+
     const check: CheckState =
       completed !== null && completed <= when
-        ? { name, status: 'completed', conclusion: run.field('conclusion').optionalText() }
+        ? {
+            name,
+            status: 'completed',
+            conclusion: run.field('conclusion').optionalText(),
+            startedAt: iso(started),
+            completedAt: iso(completed),
+            runs: 0,
+          }
         : {
             name,
             status: run.field('status').text() === 'queued' ? 'queued' : 'in_progress',
             conclusion: null,
+            startedAt: iso(started),
+            completedAt: null,
+            runs: 0,
           };
 
     const previous = latest.get(name);
@@ -358,7 +393,10 @@ function checksAt(raw: RawWorkItem, head: string, when: number): CheckState[] {
     if (previous === undefined || previous.started <= started) latest.set(name, { started, check });
   }
 
-  return [...latest.values()].map((entry) => entry.check);
+  return [...latest.values()].map((entry) => ({
+    ...entry.check,
+    runs: counts.get(entry.check.name) ?? 1,
+  }));
 }
 
 const STATUS_STATES = ['error', 'failure', 'pending', 'success'] as const;
@@ -441,11 +479,15 @@ function reviewNow(comments: readonly Comment[]): Review | null {
 
   if (commit === undefined) throw new Missing("the reviewer's comment names no commit");
 
+  // Its minor findings, as `post-review.sh` counts them (`1. **minor**:`).
+  const minor = lines.filter((line) => MINOR_FINDING.test(line)).length;
+  const at = iso(comment.updated);
+
   if (heading.startsWith('### Factory review: ✅ Ready for you'))
-    return { verdict: 'ready', commit };
+    return { verdict: 'ready', commit, at, minor };
 
   if (heading.startsWith('### Factory review: ✋ Changes needed'))
-    return { verdict: 'changes', commit };
+    return { verdict: 'changes', commit, at, minor };
 
   throw new Missing("the reviewer's comment has no verdict heading");
 }
@@ -489,7 +531,41 @@ function reviewThen(
     );
   }
 
-  return { verdict: latest.verdict, commit: head };
+  // The minor findings were in the comment's text then, which only shows today's.
+  return { verdict: latest.verdict, commit: head, at: iso(latest.at), minor: null };
+}
+
+/**
+ * The Owner's latest `@claude` on the pull request in the 24 hours before `when`: older ones are
+ * past the Executor runs `gather` reads, so whether they were answered can't be told.
+ */
+function mentionAt(raw: RawWorkItem, when: number): string | null {
+  const times = new Read(raw.mentions, 'mentions')
+    .items()
+    // Only the Owner's: anyone can comment on a public pull request.
+    .filter((comment) => comment.field('user').field('login').optionalText() === raw.owner)
+    .map((comment) => comment.field('created_at').time())
+    .filter((at) => at <= when && at > when - DAY);
+
+  return times.length === 0 ? null : iso(Math.max(...times));
+}
+
+/** The head of `main` at `when`: its latest commit committed by then. */
+function mainAt(raw: RawWorkItem, when: number): string {
+  const commits = new Read(raw.main, 'main')
+    .items()
+    .map((commit) => ({
+      sha: commit.field('sha').text(),
+      at: commit.field('committed_at').time(),
+    }))
+    .filter((commit) => commit.at <= when)
+    .sort((a, b) => a.at - b.at);
+
+  const latest = commits.at(-1);
+
+  if (latest === undefined) throw new Missing('no commit of main was committed by then');
+
+  return latest.sha;
 }
 
 const MERGEABLE = ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'] as const;
@@ -512,14 +588,28 @@ function pullRequestAt(
       ? null
       : fact(() => mergedEvent.read.field('commit').field('oid').text());
 
-  const head = fact(() => {
-    const last = commitsUntil(pr, when).at(-1);
+  const last = fact(() => {
+    const commit = commitsUntil(pr, when).at(-1);
 
-    if (last === undefined)
+    if (commit === undefined)
       throw new Missing('no commit of the pull request was committed by then');
 
-    return last.sha;
+    return commit;
   });
+
+  const head: Fact<string> = last.known ? { known: true, value: last.value.sha } : last;
+  const headAt: Fact<string> = last.known ? { known: true, value: iso(last.value.at) } : last;
+  const author = pr.field('author').field('login').optionalText() ?? '';
+
+  // As `review.yml` tells: Dependabot opened it, and nobody else wrote any of its commits. One whose
+  // commits can't be read isn't, so the reviewer still reads it.
+  const dependabotOnly = fact(
+    () =>
+      author.startsWith('dependabot') &&
+      commitsUntil(pr, when).every((commit) =>
+        commit.authors.every((login) => login !== null && login.startsWith('dependabot')),
+      ),
+  );
 
   const comments = fact(() => commentsUntil(raw, when));
 
@@ -528,7 +618,7 @@ function pullRequestAt(
 
   return {
     number: pr.field('number').number(),
-    author: pr.field('author').field('login').optionalText() ?? '',
+    author,
     status: mergedEvent !== undefined ? 'merged' : openAfter(events) ? 'open' : 'closed',
     merged:
       mergedEvent === undefined || merged === null
@@ -540,6 +630,9 @@ function pullRequestAt(
           },
     labels: labelsAfter(events),
     head,
+    headAt,
+    dependabotOnly: dependabotOnly.known && dependabotOnly.value,
+    mention: fact(() => mentionAt(raw, when)),
     mergeable: fact(() => {
       if (!now) throw new Missing('GitHub shows mergeability only as it is now');
 
@@ -565,6 +658,7 @@ function pullRequestAt(
 
 function runsAt(raw: RawWorkItem, when: number): RunsState {
   const active: ActiveRun[] = [];
+  const finishedRuns: FinishedRun[] = [];
   let item = 0;
   let all = 0;
 
@@ -609,9 +703,13 @@ function runsAt(raw: RawWorkItem, when: number): RunsState {
         status: queued ? 'queued' : 'in_progress',
       });
     }
+
+    if (mine && finished && created > when - DAY) {
+      finishedRuns.push({ name, kind: parsed.kind, sha: parsed.sha, createdAt: iso(created) });
+    }
   }
 
-  return { active, startedLastDay: { item, all } };
+  return { active, finished: finishedRuns, startedLastDay: { item, all } };
 }
 
 const TIME_KEYS = [
@@ -673,6 +771,7 @@ export function observe(raw: RawWorkItem, at: Date): WorkItemState {
       ticket: missing,
       pullRequest: missing,
       runs: missing,
+      main: missing,
     };
   }
 
@@ -685,5 +784,6 @@ export function observe(raw: RawWorkItem, at: Date): WorkItemState {
     ticket: fact(() => ticketAt(raw, deploys, when)),
     pullRequest: fact(() => pullRequestAt(raw, deploys, when, now)),
     runs: fact(() => runsAt(raw, when)),
+    main: fact(() => mainAt(raw, when)),
   };
 }

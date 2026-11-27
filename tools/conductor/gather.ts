@@ -3,7 +3,7 @@
 // GitHub (README.md); it decides nothing and reads no clock.
 
 import { type Json, type JsonObject, Missing, Read, parseJson } from './json.ts';
-import { isMarked } from './markers.ts';
+import { MINOR_FINDING, isMarked } from './markers.ts';
 import {
   type GatheredWorkItem,
   type RawWorkItem,
@@ -332,13 +332,22 @@ async function readIssue(github: GitHub, number: number): Promise<JsonObject> {
   };
 }
 
-/** The lines `observe` reads of a marker comment: its markers, heading and footer. */
+/**
+ * The lines `observe` reads of a marker comment: its markers, heading and footer, and each minor
+ * finding's mark without its text.
+ */
 function trimBody(body: string): string {
   return body
     .split('\n')
-    .filter((line) =>
-      ['<!-- factory-', '### ', '<sub>', 'Re-reviewed '].some((start) => line.startsWith(start)),
-    )
+    .flatMap((line) => {
+      if (MINOR_FINDING.test(line)) return ['1. **minor**'];
+
+      return ['<!-- factory-', '### ', '<sub>', 'Re-reviewed '].some((start) =>
+        line.startsWith(start),
+      )
+        ? [line]
+        : [];
+    })
     .join('\n');
 }
 
@@ -364,6 +373,7 @@ function closingCommit(issue: Read): { commit: string; at: number } | null {
 
 /** What a run of `gather` reads once, for every Work item. */
 interface Shared {
+  readonly main: Json[];
   readonly deploys: Json[];
   readonly runs: Json[];
   /** Compare results already read, by `commit...deploy`. */
@@ -449,6 +459,7 @@ async function readWorkItem(
   const checks: Json[] = [];
   const statuses: Json[] = [];
   let comments: Json[] = [];
+  let mentions: Json[] = [];
 
   if (ref.pullRequest !== null) {
     const number = ref.pullRequest;
@@ -532,8 +543,20 @@ async function readWorkItem(
       });
     }
 
+    const all = await rest(github, `/repos/${repo}/issues/${number}/comments?per_page=100`, null);
+    const owner = repo.split('/')[0] ?? '';
+
+    // The Owner's `@claude`, when it was asked: not what it says, which the mention Executor reads.
+    mentions = all
+      .filter((comment) => comment.field('user').field('login').optionalText() === owner)
+      .filter((comment) => comment.field('body').text().includes('@claude'))
+      .map((comment) => ({
+        user: { login: owner },
+        created_at: comment.field('created_at').text(),
+      }));
+
     // Only the workflow's own marker comments: anyone can comment on a public pull request.
-    comments = (await rest(github, `/repos/${repo}/issues/${number}/comments?per_page=100`, null))
+    comments = all
       .filter(
         (comment) => comment.field('user').field('login').optionalText() === 'github-actions[bot]',
       )
@@ -555,6 +578,8 @@ async function readWorkItem(
     checks,
     statuses,
     comments,
+    mentions,
+    main: shared.main,
     deploys: shared.deploys,
     inclusions: await readInclusions(github, shared, merges),
     runs: shared.runs,
@@ -597,7 +622,15 @@ async function readShared(github: GitHub, options: GatherOptions): Promise<Share
       updated_at: run.field('updated_at').text(),
     }));
 
-  return { deploys, runs, compared: new Map() };
+  // The latest 100 commits of main: conflict Attempts count per commit of it.
+  const main = (await restOne(github, `/repos/${repo}/commits?sha=main&per_page=100`))
+    .items()
+    .map((commit) => ({
+      sha: commit.field('sha').text(),
+      committed_at: commit.field('commit').field('committer').field('date').text(),
+    }));
+
+  return { main, deploys, runs, compared: new Map() };
 }
 
 /** Why a Work item couldn't be read: GitHub's answer, or what it lacked. */

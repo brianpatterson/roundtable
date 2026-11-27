@@ -79,6 +79,8 @@ const base: RawWorkItem = {
   checks: [],
   statuses: [],
   comments: [],
+  mentions: [],
+  main: [],
   deploys: [],
   inclusions: [],
   runs: [],
@@ -306,6 +308,7 @@ describe('Blockers', () => {
     assert.deepEqual(ticketAt(raw, 30).closed, {
       merged: true,
       commit: 'm1',
+      at: time(5),
       deployed: { known: true, value: true },
     });
   });
@@ -370,11 +373,104 @@ describe('the pull request', () => {
 
   test('a check that completed after `at` was running then', () => {
     assert.deepEqual(known(pullRequestAt(raw, 25).checks), [
-      { name: 'check', status: 'in_progress', conclusion: null },
+      {
+        name: 'check',
+        status: 'in_progress',
+        conclusion: null,
+        startedAt: time(21),
+        completedAt: null,
+        runs: 1,
+      },
     ]);
     assert.deepEqual(known(pullRequestAt(raw, 35).checks), [
-      { name: 'check', status: 'completed', conclusion: 'success' },
+      {
+        name: 'check',
+        status: 'completed',
+        conclusion: 'success',
+        startedAt: time(21),
+        completedAt: time(30),
+        runs: 1,
+      },
     ]);
+  });
+
+  test('a check rerun on the head counts its runs, and the latest is the one that counts', () => {
+    const rerun = {
+      ...raw,
+      checks: [
+        {
+          sha: sha(2),
+          checkRuns: [
+            {
+              name: 'check',
+              status: 'completed',
+              conclusion: 'cancelled',
+              started_at: time(21),
+              completed_at: time(25),
+            },
+            {
+              name: 'check',
+              status: 'completed',
+              conclusion: 'success',
+              started_at: time(26),
+              completed_at: time(30),
+            },
+          ],
+        },
+      ],
+    };
+
+    const [check] = known(pullRequestAt(rerun, 35).checks);
+
+    assert.equal(check?.conclusion, 'success');
+    assert.equal(check?.runs, 2);
+    assert.equal(known(pullRequestAt(rerun, 23).checks)[0]?.runs, 1, 'the rerun came later');
+  });
+
+  test('the head says when it was committed', () => {
+    assert.deepEqual(pullRequestAt(raw, 25).headAt, { known: true, value: time(20) });
+  });
+
+  test("only Dependabot's commits on Dependabot's pull request: the reviewer skips it", () => {
+    const bump = (commits: Json[]) =>
+      pullRequestAt(
+        {
+          ...raw,
+          pullRequest: {
+            number: 11,
+            createdAt: time(10),
+            author: { login: 'dependabot' },
+            mergeable: 'MERGEABLE',
+            mergeCommit: null,
+            commits,
+            timeline: [],
+          },
+        },
+        60,
+      ).dependabotOnly;
+
+    assert.equal(bump([commit(1, 10, 'dependabot[bot]')]), true);
+    assert.equal(bump([commit(1, 10, 'dependabot[bot]'), commit(2, 20, 'claude')]), false);
+    assert.equal(pullRequestAt(raw, 60).dependabotOnly, false, 'not opened by Dependabot');
+  });
+
+  test("the Owner's latest @claude in the last 24 hours, by `at`, and nobody else's", () => {
+    const mentions = [
+      { user: { login: 'o' }, created_at: time(-2000) },
+      { user: { login: 'o' }, created_at: time(30) },
+      { user: { login: 'stranger' }, created_at: time(40) },
+      { user: { login: 'o' }, created_at: time(50) },
+    ];
+
+    assert.deepEqual(pullRequestAt({ ...raw, mentions }, 45).mention, {
+      known: true,
+      value: time(30),
+    });
+    assert.deepEqual(pullRequestAt({ ...raw, mentions }, 60).mention, {
+      known: true,
+      value: time(50),
+    });
+    assert.deepEqual(pullRequestAt({ ...raw, mentions }, 20).mention, { known: true, value: null });
   });
 
   test("checks gather didn't read are unknown, with which commit", () => {
@@ -487,6 +583,8 @@ describe('the pull request', () => {
       {
         verdict: 'ready',
         commit: sha(3),
+        at: time(31),
+        minor: 0,
       },
     );
     assert.deepEqual(
@@ -494,9 +592,27 @@ describe('the pull request', () => {
       {
         verdict: 'changes',
         commit: sha(3),
+        at: time(31),
+        minor: 0,
       },
     );
     assert.equal(known(pullRequestAt(raw, 60).review), null);
+  });
+
+  test("the Review counts its minor findings, and is as of the comment's last edit", () => {
+    const withMinor: Json = {
+      user: { login: 'github-actions[bot]' },
+      created_at: time(31),
+      updated_at: time(45),
+      body: `<!-- factory-review -->\n### Factory review: ✅ Ready for you\n1. **minor**\n1. **minor**\n<sub>Commit ${sha(3)}, reviewed by the factory's reviewer agent (ADR-0026).</sub>`,
+    };
+
+    assert.deepEqual(known(pullRequestAt({ ...raw, comments: [withMinor] }, 60).review), {
+      verdict: 'ready',
+      commit: sha(3),
+      at: time(45),
+      minor: 2,
+    });
   });
 
   test("a heading or footer inside the review's own text never decides the Review", () => {
@@ -515,6 +631,8 @@ describe('the pull request', () => {
     assert.deepEqual(known(pullRequestAt({ ...raw, comments: [decoy] }, 60).review), {
       verdict: 'changes',
       commit: sha(3),
+      at: time(31),
+      minor: 0,
     });
   });
 
@@ -542,6 +660,8 @@ describe('the pull request', () => {
     assert.deepEqual(known(pullRequestAt(withStatus, 35).review), {
       verdict: 'changes',
       commit: sha(2),
+      at: time(32),
+      minor: null,
     });
 
     const nudged = {
@@ -558,6 +678,8 @@ describe('the pull request', () => {
     assert.deepEqual(known(pullRequestAt(nudged, 35).review), {
       verdict: 'changes',
       commit: sha(2),
+      at: time(33),
+      minor: null,
     });
   });
 
@@ -642,6 +764,13 @@ describe('Executor runs', () => {
     assert.deepEqual(runsAt(50).startedLastDay, { item: 2, all: 3 });
   });
 
+  test("those finished by `at` are this Work item's, of the last 24 hours, with when each was asked for", () => {
+    assert.deepEqual(runsAt(45).finished, [
+      { name: 'build #10 -', kind: 'build', sha: null, createdAt: time(0) },
+    ]);
+    assert.deepEqual(runsAt(20).finished, [], 'the build was still running');
+  });
+
   test('a run created by `at` that started after it was queued then', () => {
     const late = with_({
       runs: [
@@ -664,6 +793,21 @@ describe('Executor runs', () => {
       ['rework', 'in_progress'],
       ['review', 'queued'],
     ]);
+  });
+});
+
+describe('main', () => {
+  test('its head at `at` is its latest commit committed by then', () => {
+    const raw = with_({
+      main: [
+        { sha: 'm2', committed_at: time(20) },
+        { sha: 'm1', committed_at: time(10) },
+      ],
+    });
+
+    assert.deepEqual(observe(raw, at(15)).main, { known: true, value: 'm1' });
+    assert.deepEqual(observe(raw, at(25)).main, { known: true, value: 'm2' });
+    assert.equal(observe(raw, at(5)).main.known, false);
   });
 });
 
