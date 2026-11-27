@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import pg from 'pg';
 import { isPostDeploy, runMigrations, type MigrationDb, type Phase } from './migrate.js';
@@ -391,8 +392,29 @@ export async function closePool(pool: pg.Pool): Promise<void> {
 }
 
 /**
+ * Waits, for at most `timeoutMs`, until no connection to database `name` is open. A pool's client
+ * released with `release(true)` (as `runMigrations` does) leaves the pool's count before its
+ * connection closes, so `closePool` can't wait for it: only the server knows it's still open.
+ */
+async function connectionsClosed(admin: pg.Client, name: string, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const { rowCount } = await admin.query('select 1 from pg_stat_activity where datname = $1', [
+      name,
+    ]);
+
+    if (rowCount === 0 || Date.now() >= deadline) return;
+
+    await sleep(20);
+  }
+}
+
+/**
  * Creates the scratch database next to the test database, calls `use` with its URL, and drops it
- * afterwards, whether `use` succeeds or not.
+ * afterwards, whether `use` succeeds or not. The drop waits for connections still closing, so
+ * forcing it doesn't terminate one (an unhandled error in its client); it forces any left after
+ * a few seconds.
  */
 export async function withScratchDatabase<A>(
   testDatabaseUrl: string,
@@ -412,6 +434,7 @@ export async function withScratchDatabase<A>(
     try {
       return await use(url.href);
     } finally {
+      await connectionsClosed(admin, name);
       await admin.query(`drop database if exists ${admin.escapeIdentifier(name)} with (force)`);
     }
   } finally {

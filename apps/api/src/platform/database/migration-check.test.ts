@@ -286,6 +286,24 @@ describe('withScratchDatabase', () => {
     ).rejects.toThrow('check failed');
     expect(await databaseExists(name)).toBe(false);
   });
+
+  it('waits for a connection still closing before it drops the database', async () => {
+    const errors: Error[] = [];
+    let ended: Promise<void> = Promise.resolve();
+
+    await withScratchDatabase(sharedTestDatabase, async (url) => {
+      const client = new pg.Client({ connectionString: url });
+
+      client.on('error', (error) => errors.push(error));
+      await client.connect();
+      // Closes a moment after the run returns, as a client a pool destroyed can.
+      ended = new Promise((resolve) => setTimeout(resolve, 300)).then(() => client.end());
+    });
+
+    await ended;
+    expect(errors).toEqual([]);
+    expect(await databaseExists(name)).toBe(false);
+  });
 });
 
 describe('closePool', () => {
