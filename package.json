@@ -19,7 +19,7 @@
     "check:boundaries": "node scripts/check-boundaries.ts",
     "check:adrs": "node scripts/check-adrs.ts",
     "check:format": "scripts/check-format.sh",
-    "check:migrations": "bash scripts/check-migrations.sh",
+    "check:migrations": "scripts/check-migrations.sh",
     "check": "pnpm lint && pnpm check:format && pnpm typecheck && pnpm check:effect && pnpm check:deps && pnpm check:adrs && pnpm check:boundaries && pnpm test && pnpm check:migrations"
   },
   "devDependencies": {

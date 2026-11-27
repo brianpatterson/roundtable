@@ -26,7 +26,9 @@
 #
 # next reads EXPECT_SHA (the head the run was for; optional), MAIN (conflict) and PASS (rework).
 # report reads RESULT (the agent's JSON answer, or empty), REASON (why it failed, if it did), PR,
-# SHA (the head it started from), BRANCH, ATTEMPT, MAIN (conflict), PASS (rework). Both need
+# SHA (the head it started from), BRANCH, ATTEMPT, MAIN (conflict), PASS (rework), and BODY (ci-fix,
+# rework; optional): where the agent leaves a corrected pull request description, which report
+# publishes, since the agent may not edit the pull request itself (retro #281). Both need
 # GITHUB_REPOSITORY; report also uses GITHUB_SERVER_URL and GITHUB_RUN_ID for the run's link.
 # GH overrides the gh binary and GUARD the secret guard (tests).
 set -euo pipefail
@@ -207,6 +209,7 @@ report() {
     *) head="over to you" ;;
   esac
   [ "$to_human" = false ] || hand_to_human
+  publish_body
 
   # Never publish what looks like a credential (ADR-0029).
   if ! "$GUARD" <<<"$summary"; then
@@ -232,6 +235,50 @@ report() {
 }
 
 hand_to_human() { "$GH" pr edit "$PR" -R "$repo" --add-label needs-human; }
+
+# The description the CI fixer or Rework left at BODY, when its change made the old one wrong:
+# published in its place, after the secret guard, keeping the old `Closes #N` line, so the
+# reviewer's next pass reads it. Nothing at BODY leaves the description as it is. The file is the
+# agent's, so only a plain file of at most 64 KB is read (never a link to something else on the
+# runner), and never from a push that changed the factory's own files. A user's report needs no
+# guard here: only the build fetches it (ADR-0041), so these agents never saw it.
+publish_body() {
+  local file=${BODY:-} body current closes edited
+  [ -n "$file" ] && { [ -e "$file" ] || [ -L "$file" ]; } || return 0
+  case "$kind" in ci-fix | rework) ;; *) return 0 ;; esac
+  [ "$outcome" != protected ] || return 0
+  if [ -L "$file" ] || [ ! -f "$file" ]; then
+    note "The agent's new description isn't a plain file, so it wasn't published."
+    return
+  fi
+  if [ "$(wc -c <"$file")" -gt 65536 ]; then
+    note "The agent's new description is over 64 KB, so it wasn't published."
+    return
+  fi
+  body=$(cat "$file")
+  [ -n "$body" ] || return 0
+  if ! "$GUARD" <<<"$body" >/dev/null; then
+    note "The agent's new description was withheld because it matched a credential pattern. See the run, and rotate the credential."
+    return
+  fi
+  if ! current=$("$GH" pr view "$PR" -R "$repo" --json body --jq .body 2>/dev/null); then
+    note "GitHub couldn't read the description, so the agent's new one wasn't published."
+    return
+  fi
+  closes=$(head -n 1 <<<"$current")
+  if [[ "$closes" =~ ^Closes\ \#[0-9]+ ]]; then
+    [[ ! "$(head -n 1 <<<"$body")" =~ ^Closes\ \# ]] || body=$(tail -n +2 <<<"$body")
+    body=$(printf '%s\n%s' "$closes" "$body")
+  fi
+  edited=$(mktemp)
+  printf '%s\n' "$body" >"$edited"
+  if "$GH" pr edit "$PR" -R "$repo" --body-file "$edited" >/dev/null; then
+    note "Updated the pull request's description."
+  else
+    note "GitHub refused the agent's new description, so it wasn't published."
+  fi
+  rm -f "$edited"
+}
 
 # The resolver's own checks (ADR-0058): the pull request's changes against the main it merged;
 # nothing behind means main is in the branch. What was pushed is checked whether or not the agent

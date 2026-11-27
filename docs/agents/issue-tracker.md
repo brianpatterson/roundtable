@@ -85,6 +85,12 @@ For example, Round order (`GLOSSARY.md`) lives in one function in `packages/cont
 `inRoundOrder` in `src/applications.ts`, which the web app and the API both use. In the Rounds
 batch it was written three times before it got that home (#166), and the copies disagreed.
 
+A follow-up ticket filed into a running batch (a bug a review turned up, say) names the existing
+code it should build on, by file and function, even when its form (the bug form) has no Shared
+rules heading: put it under Modules touched. Otherwise the factory writes it again: #275, filed
+from #274's review, said nothing of #278's failed-statement lookup, and #279 wrote a second one
+(retro #281).
+
 A ticket that builds something a later ticket in the batch uses (a design-system component, an
 endpoint, a helper) spells out the consumer's exact shape in its acceptance criteria: the full
 list of options the picker will show, ungrouped items included, or the fields the page will read.
