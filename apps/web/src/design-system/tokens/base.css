@@ -19,3 +19,9 @@ h2 {
 a {
   color: var(--ds-color-primary);
 }
+
+/* Hidden means hidden. The browser's own `[hidden]` rule loses to any class that sets `display`
+   (a list with `display: flex`), so a collapsed section would show. */
+[hidden] {
+  display: none !important;
+}

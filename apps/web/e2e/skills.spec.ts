@@ -73,12 +73,16 @@ test('adds, renames, archives and restores a Skill on the Skills page', async ({
 
   const toggle = page.getByRole('button', { name: /^Archived \(\d+\)$/ });
 
+  // Collapsed, the Archived list is hidden in the browser, not only in the accessibility tree:
+  // a class that sets `display` would otherwise override `[hidden]` (base.css).
+  const archived = page.getByRole('list', { name: 'Archived', includeHidden: true });
+
   await expect(toggle).toBeFocused();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(archived).toBeHidden();
   await page.keyboard.press('Enter');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-  const archived = page.getByRole('list', { name: 'Archived' });
+  await expect(archived).toBeVisible();
 
   await expect(archived.getByRole('listitem').filter({ hasText: renamed })).toBeVisible();
   await expectAccessible(page);
