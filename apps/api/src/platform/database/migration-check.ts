@@ -397,21 +397,6 @@ export async function withScratchDatabase<A>(
   }
 }
 
-/** Applies the migrations in `folder` to a scratch database and reads the schema they build. */
-export async function schemaOf(folder: string, testDatabaseUrl: string): Promise<Schema> {
-  return withScratchDatabase(testDatabaseUrl, async (url) => {
-    const { db, pool } = createDb(Redacted.make(url), 'roundtable-migration-check');
-
-    try {
-      await runMigrations(db, undefined, folder);
-
-      return await readSchema(pool);
-    } finally {
-      await pool.end();
-    }
-  });
-}
-
 /** Raised when `ref` can't be read: the check can't tell which migrations are new. */
 export class UnreadableRef extends Error {
   constructor(readonly ref: string) {
@@ -546,7 +531,7 @@ export async function checkMigrations(options: {
  * (ADR-0073): phase `pre`, then the post-deploy drops the new release would insert without, then
  * phase `post`. A failing statement is named by the new migration it belongs to and the phase.
  */
-export async function replayDeploy(
+async function replayDeploy(
   db: MigrationDb,
   folder: string,
   added: readonly Migration[],
@@ -590,18 +575,31 @@ async function replayPhase(
     const [failed] = classifyMigration(error.query);
     const statement = failed?.sql ?? error.query.trim();
 
-    const migration = pending.find((candidate) =>
-      classifyMigration(candidate.sql).some((each) => each.sql === statement),
+    // The same statement can be in more than one pending migration (add, drop, add again), and
+    // only the SQL says which failed: name every one that has it rather than guess.
+    const candidates = pending.flatMap((candidate) =>
+      classifyMigration(candidate.sql).some((each) => each.sql === statement)
+        ? [candidate.name]
+        : [],
     );
 
     const cause = error.cause instanceof Error ? error.cause.message : error.message;
 
     return {
-      migration: migration?.name ?? `a new ${phase}-deploy migration`,
+      migration: migrationNamed(candidates, phase),
       statement,
       reason: `Fails in the ${phase} phase of the deploy's replay: ${cause}. ${phaseAdvice[phase]}`,
     };
   }
+}
+
+/** The migration a failed statement belongs to, or each that could be it. */
+function migrationNamed(candidates: readonly string[], phase: Phase): string {
+  const [only, ...others] = candidates;
+
+  if (only === undefined) return `a new ${phase}-deploy migration`;
+
+  return others.length === 0 ? only : `one of ${candidates.join(', ')}`;
 }
 
 /**

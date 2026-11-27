@@ -12,13 +12,15 @@ import {
   checkMigrations,
   classifyMigration,
   judgeMigrations,
-  schemaOf,
+  readSchema,
   scratchDatabaseName,
   UnreadableRef,
   withScratchDatabase,
   type Schema,
 } from './migration-check.js';
-import { migrationsFolder } from './migrate.js';
+import { Redacted } from 'effect';
+import { migrationsFolder, runMigrations } from './migrate.js';
+import { createDb } from './promise.js';
 import { sharedTestDatabase } from '#test/test-database';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'roundtable-migration-check-test-'));
@@ -302,8 +304,23 @@ describe('the real migrations, each judged as new against the ones before it', (
     return folder;
   }
 
+  /** Applies the migrations in `folder` to a scratch database and reads the schema they build. */
+  function schemaOf(folder: string) {
+    return withScratchDatabase(sharedTestDatabase, async (url) => {
+      const { db, pool } = createDb(Redacted.make(url), 'roundtable-migration-check-test');
+
+      try {
+        await runMigrations(db, undefined, folder);
+
+        return await readSchema(pool);
+      } finally {
+        await pool.end();
+      }
+    });
+  }
+
   async function judgeReal(name: string, as = name) {
-    const schema = await schemaOf(before(name), sharedTestDatabase);
+    const schema = await schemaOf(before(name));
     const sql = readFileSync(join(migrationsFolder, name, 'migration.sql'), 'utf8');
 
     return judgeMigrations([{ name: as, sql }], schema);
@@ -454,6 +471,28 @@ describe('checkMigrations', () => {
       );
       expect(result.output).toContain('make it post-deploy too');
       expect(result.output).toContain('stop reusing a name a post-deploy migration drops');
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('names every pending migration with the failed statement, not just the first', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+      const addNotes = 'ALTER TABLE "rounds" ADD COLUMN "notes" integer;';
+
+      // Pre runs add_notes, then notes_again, which fails: the same statement is in both.
+      add('20270102000000_add_notes', addNotes);
+      add('20270103000000_drop_notes_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "notes";');
+      add('20270104000000_notes_again', addNotes);
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          'one of 20270102000000_add_notes, 20270104000000_notes_again:',
+          '  ALTER TABLE "rounds" ADD COLUMN "notes" integer',
+          '  Fails in the pre phase of the deploy\'s replay: column "notes" of relation "rounds" already exists.',
+        ].join('\n'),
+      );
       expect(await databaseExists(scratch)).toBe(false);
     });
 
