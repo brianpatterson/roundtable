@@ -11,14 +11,17 @@ import pg from 'pg';
 import {
   checkMigrations,
   classifyMigration,
+  closePool,
   judgeMigrations,
-  schemaOf,
+  readSchema,
   scratchDatabaseName,
   UnreadableRef,
   withScratchDatabase,
   type Schema,
 } from './migration-check.js';
-import { migrationsFolder } from './migrate.js';
+import { Redacted } from 'effect';
+import { migrationsFolder, runMigrations } from './migrate.js';
+import { createDb } from './promise.js';
 import { sharedTestDatabase } from '#test/test-database';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'roundtable-migration-check-test-'));
@@ -283,6 +286,51 @@ describe('withScratchDatabase', () => {
     ).rejects.toThrow('check failed');
     expect(await databaseExists(name)).toBe(false);
   });
+
+  it('waits for a connection still closing before it drops the database', async () => {
+    const errors: Error[] = [];
+    let ended: Promise<void> = Promise.resolve();
+
+    await withScratchDatabase(sharedTestDatabase, async (url) => {
+      const client = new pg.Client({ connectionString: url });
+
+      client.on('error', (error) => errors.push(error));
+      await client.connect();
+      // Closes a moment after the run returns, as a client a pool destroyed can.
+      ended = new Promise((resolve) => setTimeout(resolve, 300)).then(() => client.end());
+    });
+
+    await ended;
+    expect(errors).toEqual([]);
+    expect(await databaseExists(name)).toBe(false);
+  });
+});
+
+describe('closePool', () => {
+  it('resolves only once every connection has closed', async () => {
+    const applicationName = `roundtable-close-pool-${process.pid}`;
+    const { pool } = createDb(Redacted.make(sharedTestDatabase), applicationName);
+    const held = await Promise.all([pool.connect(), pool.connect()]);
+
+    for (const client of held) client.release();
+
+    await closePool(pool);
+
+    const admin = new pg.Client({ connectionString: sharedTestDatabase });
+
+    await admin.connect();
+
+    try {
+      const { rowCount } = await admin.query(
+        'select 1 from pg_stat_activity where application_name = $1',
+        [applicationName],
+      );
+
+      expect(rowCount).toBe(0);
+    } finally {
+      await admin.end();
+    }
+  });
 });
 
 describe('the real migrations, each judged as new against the ones before it', () => {
@@ -302,8 +350,23 @@ describe('the real migrations, each judged as new against the ones before it', (
     return folder;
   }
 
+  /** Applies the migrations in `folder` to a scratch database and reads the schema they build. */
+  function schemaOf(folder: string) {
+    return withScratchDatabase(sharedTestDatabase, async (url) => {
+      const { db, pool } = createDb(Redacted.make(url), 'roundtable-migration-check-test');
+
+      try {
+        await runMigrations(db, undefined, folder);
+
+        return await readSchema(pool);
+      } finally {
+        await closePool(pool);
+      }
+    });
+  }
+
   async function judgeReal(name: string, as = name) {
-    const schema = await schemaOf(before(name), sharedTestDatabase);
+    const schema = await schemaOf(before(name));
     const sql = readFileSync(join(migrationsFolder, name, 'migration.sql'), 'utf8');
 
     return judgeMigrations([{ name: as, sql }], schema);
@@ -391,7 +454,9 @@ describe('checkMigrations', () => {
 
     expect(await check(folder)).toEqual({
       code: 0,
-      output: "Migration check: 1 new migration, nothing the previous release can't live with.",
+      output:
+        "Migration check: 1 new migration, nothing the previous release can't live with, " +
+        'and the deploy applies them pre then post.',
     });
   });
 
@@ -426,6 +491,128 @@ describe('checkMigrations', () => {
     add('20270102000000_drop_legacy', 'ALTER TABLE "rounds" DROP COLUMN IF EXISTS "legacy";');
 
     expect((await check(folder)).code).toBe(1);
+  });
+
+  describe("the deploy's replay", () => {
+    const scratch = scratchDatabaseName(sharedTestDatabase);
+
+    const createRequired =
+      'CREATE TABLE "rounds" ("id" serial PRIMARY KEY, "required" text NOT NULL);';
+
+    it('fails a pre-deploy migration that depends on a pending post-deploy one', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+
+      add('20270102000000_drop_legacy_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "legacy";');
+      add('20270103000000_legacy_again', 'ALTER TABLE "rounds" ADD COLUMN "legacy" integer;');
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          '20270103000000_legacy_again:',
+          '  ALTER TABLE "rounds" ADD COLUMN "legacy" integer',
+          '  Fails in the pre phase of the deploy\'s replay: column "legacy" of relation "rounds" already exists.',
+        ].join('\n'),
+      );
+      expect(result.output).toContain('make it post-deploy too');
+      expect(result.output).toContain('stop reusing a name a post-deploy migration drops');
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('names every pending migration with the failed statement, not just the first', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+      const addNotes = 'ALTER TABLE "rounds" ADD COLUMN "notes" integer;';
+
+      // Pre runs add_notes, then notes_again, which fails: the same statement is in both.
+      add('20270102000000_add_notes', addNotes);
+      add('20270103000000_drop_notes_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "notes";');
+      add('20270104000000_notes_again', addNotes);
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          'one of 20270102000000_add_notes, 20270104000000_notes_again:',
+          '  ALTER TABLE "rounds" ADD COLUMN "notes" integer',
+          '  Fails in the pre phase of the deploy\'s replay: column "notes" of relation "rounds" already exists.',
+        ].join('\n'),
+      );
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('fails a post-deploy drop of a column still NOT NULL without a default after pre', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRequired });
+
+      add(
+        '20270102000000_drop_required_postdeploy',
+        'ALTER TABLE "rounds" DROP COLUMN "required";',
+      );
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          '20270102000000_drop_required_postdeploy:',
+          '  ALTER TABLE "rounds" DROP COLUMN "required"',
+          '  Drops column rounds.required, which after the pre phase is still NOT NULL without a default',
+        ].join('\n'),
+      );
+      expect(result.output).toContain(
+        'Make it nullable (DROP NOT NULL) or give it a default in a pre-deploy migration first.',
+      );
+    });
+
+    it.each([
+      ['drops its NOT NULL', 'ALTER TABLE "rounds" ALTER COLUMN "required" DROP NOT NULL;'],
+      ['gives it a default', 'ALTER TABLE "rounds" ALTER COLUMN "required" SET DEFAULT \'\';'],
+    ])('passes that drop when a pre-deploy migration %s first', async (_, sql) => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRequired });
+
+      add('20270102000000_relax_required', sql);
+      add(
+        '20270103000000_drop_required_postdeploy',
+        'ALTER TABLE "rounds" DROP COLUMN "required";',
+      );
+
+      expect(await check(folder)).toEqual({
+        code: 0,
+        output:
+          "Migration check: 2 new migrations, nothing the previous release can't live with, " +
+          'and the deploy applies them pre then post.',
+      });
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('fails an error in the post phase, naming the migration and the phase', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+
+      add('20270102000000_drop_missing_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "missing";');
+
+      const result = await check(folder);
+
+      expect(result.code).toBe(1);
+      expect(result.output).toContain(
+        [
+          '20270102000000_drop_missing_postdeploy:',
+          '  ALTER TABLE "rounds" DROP COLUMN "missing"',
+          '  Fails in the post phase of the deploy\'s replay: column "missing" of relation "rounds" does not exist.',
+        ].join('\n'),
+      );
+      expect(await databaseExists(scratch)).toBe(false);
+    });
+
+    it('runs post after pre, so a post-deploy migration sees what pre added', async () => {
+      const { folder, add } = repository({ '20270101000000_create_rounds': createRounds });
+
+      // Sorted by name, the post-deploy migration comes first; the deploy still runs it last.
+      add('20270102000000_drop_notes_postdeploy', 'ALTER TABLE "rounds" DROP COLUMN "notes";');
+      add('20270103000000_add_notes', 'ALTER TABLE "rounds" ADD COLUMN "notes" text;');
+
+      expect((await check(folder)).code).toBe(0);
+    });
   });
 
   it('fails, saying to fetch it, when the ref can not be read', async () => {
