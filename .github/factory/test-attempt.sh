@@ -19,13 +19,16 @@ said() { grep -qF -- "$1" "$work/comments"; }
 
 # --- next ---
 
-# pr [labels JSON] [fork] [state]: pull request #7 at commit abc, whose last human commit (o's) is
-# from 10:00; the factory's own commits after it don't reset the count.
+# pr [labels JSON] [fork] [state] [later commits' authors JSON]: pull request #7 at commit abc,
+# whose last human commit (o's) is from 10:00; the factory's own commits after it don't reset the
+# count. Each later commit is from 12:30, after the late comments.
 pr() {
   jq -n --argjson l "${1:-[\"factory\"]}" --argjson f "${2:-false}" --arg s "${3:-OPEN}" \
+    --argjson later "${4:-[]}" \
     '{state: $s, headRefOid: "abc", isCrossRepository: $f, labels: ($l | map({name: .})),
-      commits: [{committedDate: "2026-11-20T10:00:00Z", authors: [{login: "o"}]},
-                {committedDate: "2026-11-20T11:00:00Z", authors: [{login: "claude[bot]"}]}]}' >"$work/pr.json"
+      commits: ([{committedDate: "2026-11-20T10:00:00Z", authors: [{login: "o"}]},
+                 {committedDate: "2026-11-20T11:00:00Z", authors: [{login: "claude[bot]"}]}]
+                + ($later | map({committedDate: "2026-11-20T12:30:00Z", authors: .})))}' >"$work/pr.json"
 }
 # comments <marker@time>...: the bot's marked comments on #7; "someone:" before one makes it another
 # user's.
@@ -74,6 +77,14 @@ comments "$ci@$early" "$ci@$early"
 expect "fixes before the owner's last push don't count" 1 "$(next ci-fix)"
 comments "someone:$ci@$late" "someone:$ci@$late"
 expect "nor anyone else's comments" 1 "$(next ci-fix)"
+comments "$ci@$late"
+pr '["factory"]' false OPEN '[[{"login":""}]]'
+expect "merge-main's commit (an author with no login) doesn't reset the count" 2 "$(next ci-fix)"
+pr '["factory"]' false OPEN '[[{"login":"github-actions[bot]"}]]'
+expect "nor does another bot's" 2 "$(next ci-fix)"
+pr '["factory"]' false OPEN '[[{"login":"o"},{"login":""}]]'
+expect "the owner's commit with a co-author who has no login does" 1 "$(next ci-fix)"
+pr
 comments "$ci@$late" "$ci@$late"
 expect "two fixes: over to a human" limit "$(next ci-fix)"
 labeled || fail "two fixes label the pull request needs-human"

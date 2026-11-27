@@ -81,7 +81,9 @@ next() {
 
   # The kind's marked comments that count: since the last commit a human pushed (a push from the
   # owner resets the count), or naming the main commit (conflict). Others' comments never count.
-  since=$(jq -r '[(.commits // [])[] | select(all(.authors[]; (.login // "") | test("^(claude|dependabot)") | not)) | .committedDate] | max // "1970-01-01T00:00:00Z"' <<<"$info")
+  # A human commit has an author with a GitHub login that isn't a bot's. An author without one
+  # isn't a person on GitHub: merge-main.sh's `factory` commit, or a `Co-Authored-By: Claude`.
+  since=$(jq -r '[(.commits // [])[] | select(any(.authors[]; (.login // "") | . != "" and (test("^(claude|dependabot)|\\[bot\\]$") | not))) | .committedDate] | max // "1970-01-01T00:00:00Z"' <<<"$info")
   comments=$("$GH" api "repos/$repo/issues/$pr/comments" --paginate \
     --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | {created_at, body}]" |
     jq -sc 'add // []')
