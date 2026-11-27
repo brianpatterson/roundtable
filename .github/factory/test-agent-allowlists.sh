@@ -41,9 +41,12 @@ for file in "$workflows"/*.yml; do
     [[ "$text" == *"Bash(git grep:*)"* ]] || fail "$(basename "$file"):$line lets the agent change code but not search it with \`git grep\`"
     # Typechecking one package is the same read-only check as `pnpm typecheck`, and listing tracked
     # files is as harmless as `git grep`: both were refused in the Personas batch (retro #265).
-    for package in api web contract; do
+    for package in api web contract conductor; do
       [[ "$text" == *"Bash(pnpm --filter @roundtable/$package typecheck)"* ]] || fail "$(basename "$file"):$line lets the agent run \`pnpm typecheck\` but not \`pnpm --filter @roundtable/$package typecheck\`"
     done
+    # The Conductor's package (ADR-0076) has its own tests, run by `node --test`: an agent building
+    # it runs them alone, not every package's.
+    [[ "$text" == *"Bash(pnpm --filter @roundtable/conductor test:*)"* ]] || fail "$(basename "$file"):$line lets the agent run \`pnpm test\` but not \`pnpm --filter @roundtable/conductor test\`"
     [[ "$text" == *"Bash(git ls-files:*)"* ]] || fail "$(basename "$file"):$line lets the agent search code with \`git grep\` but not list it with \`git ls-files\`"
   done < <(grep -n -- '--allowedTools .*Bash(pnpm check:boundaries)' "$file" || true)
 done
