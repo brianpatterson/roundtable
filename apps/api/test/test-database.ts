@@ -3,7 +3,8 @@ import { createDb } from '../src/platform/database/promise.js';
 import { runMigrations } from '../src/platform/database/migrate.js';
 import { Redacted } from 'effect';
 
-const sharedTestDatabase =
+/** The tests' database, shared by every test file (and next to which the migration check works). */
+export const sharedTestDatabase =
   process.env.TEST_DATABASE_URL ?? 'postgres://app:app@localhost:5432/app_test';
 
 /**
