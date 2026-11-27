@@ -165,13 +165,24 @@ function answerRest(path: string, search: URLSearchParams): Answer {
         workflow_runs: [
           {
             display_title: 'build #10 -',
+            event: 'workflow_dispatch',
             status: 'completed',
             created_at: time(-60),
             run_started_at: time(-60),
             updated_at: time(-50),
           },
+          // A stranger's pull request titled like an Executor run: its CI runs carry the title.
+          {
+            display_title: 'build #10 -',
+            event: 'pull_request',
+            status: 'queued',
+            created_at: time(-30),
+            run_started_at: null,
+            updated_at: time(-30),
+          },
           {
             display_title: 'CI',
+            event: 'workflow_dispatch',
             status: 'completed',
             created_at: time(-60),
             run_started_at: time(-60),
@@ -365,12 +376,13 @@ test('one Work item is read whole, following every page, and trimmed to what obs
   assert.deepEqual(raw.field('inclusions').json(), [
     { commit: 'm3', deploy: 'd1', status: 'ahead' },
   ]);
+  // Only runs a collaborator started: not a pull request's CI titled like an Executor run.
   assert.deepEqual(
     raw
       .field('runs')
       .items()
-      .map((run) => run.field('display_title').text()),
-    ['build #10 -'],
+      .map((run) => [run.field('display_title').text(), run.field('event').text()]),
+    [['build #10 -', 'workflow_dispatch']],
   );
 
   // Fields observe doesn't read are left out.

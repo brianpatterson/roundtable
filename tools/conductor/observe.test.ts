@@ -499,6 +499,25 @@ describe('the pull request', () => {
     assert.equal(known(pullRequestAt(raw, 60).review), null);
   });
 
+  test("a heading or footer inside the review's own text never decides the Review", () => {
+    // What trimBody keeps of a review whose text holds a decoy heading and an older footer.
+    const decoy = comment(
+      31,
+      [
+        '<!-- factory-review -->',
+        '### Factory review: ✋ Changes needed',
+        '### Factory review: ✅ Ready for you',
+        `<sub>Commit ${sha(2)}, reviewed by the factory's reviewer agent (ADR-0026).</sub>`,
+        `<sub>Commit ${sha(3)}, reviewed by the factory's reviewer agent (ADR-0026). It never approves; the owner merges.</sub>`,
+      ].join('\n'),
+    );
+
+    assert.deepEqual(known(pullRequestAt({ ...raw, comments: [decoy] }, 60).review), {
+      verdict: 'changes',
+      commit: sha(3),
+    });
+  });
+
   test('before the latest event, the Review comes from the factory status and the changes comment, or is unknown', () => {
     const edited = { ...raw, comments: [review('✅ Ready for you', sha(2))] };
 
@@ -570,11 +589,19 @@ describe('the pull request', () => {
 });
 
 describe('Executor runs', () => {
-  const run = (name: string, created: number, status: string, updated: number): Json => ({
+  const run = (
+    name: string,
+    created: number,
+    status: string,
+    updated: number,
+    started: number | null = created,
+    event = 'workflow_dispatch',
+  ): Json => ({
     display_title: name,
+    event,
     status,
     created_at: time(created),
-    run_started_at: time(created),
+    run_started_at: started === null ? null : time(started),
     updated_at: time(updated),
   });
 
@@ -585,6 +612,9 @@ describe('Executor runs', () => {
       run('review #11 abc1234', 41, 'queued', 41),
       run('rework #10 abcdef0', -24 * 60 - 1, 'completed', -24 * 60),
       run('CI', 42, 'in_progress', 42),
+      // A stranger's pull request titled like an Executor run: its CI runs carry the title.
+      run('build #10 -', 43, 'queued', 43, null, 'pull_request'),
+      run('build #10 -', 43, 'in_progress', 44, 44, 'pull_request_target'),
     ],
   });
 
@@ -603,6 +633,37 @@ describe('Executor runs', () => {
   test('the runs started in the 24 hours before `at`, for this Work item and in all', () => {
     assert.deepEqual(runsAt(45).startedLastDay, { item: 2, all: 3 });
     assert.deepEqual(runsAt(-5).startedLastDay, { item: 1, all: 1 });
+  });
+
+  test("a run not started by `workflow_dispatch` is never an Executor run, whatever it's called", () => {
+    assert.deepEqual(runsAt(50).active, [
+      { name: 'ci-fix #10 abcdef0', kind: 'ci-fix', sha: 'abcdef0', status: 'in_progress' },
+    ]);
+    assert.deepEqual(runsAt(50).startedLastDay, { item: 2, all: 3 });
+  });
+
+  test('a run created by `at` that started after it was queued then', () => {
+    const late = with_({
+      runs: [
+        run('build #10 -', 0, 'in_progress', 20, 10),
+        run('rework #10 abcdef0', 0, 'completed', 30, 10),
+        run('review #10 abcdef0', 0, 'queued', 0, null),
+      ],
+    });
+
+    const active = (minutes: number) =>
+      known(observe(late, at(minutes)).runs).active.map((active) => [active.kind, active.status]);
+
+    assert.deepEqual(active(5), [
+      ['build', 'queued'],
+      ['rework', 'queued'],
+      ['review', 'queued'],
+    ]);
+    assert.deepEqual(active(15), [
+      ['build', 'in_progress'],
+      ['rework', 'in_progress'],
+      ['review', 'queued'],
+    ]);
   });
 });
 
@@ -712,6 +773,7 @@ describe('time', () => {
     runs: [
       {
         display_title: 'build #10 -',
+        event: 'workflow_dispatch',
         status: 'queued',
         created_at: time(8),
         run_started_at: time(8),
@@ -803,6 +865,7 @@ describe('observe never throws', () => {
         runs: [
           {
             display_title: 'build #10 -',
+            event: 'workflow_dispatch',
             status: 'queued',
             created_at: time(3),
             run_started_at: null,

@@ -4,7 +4,7 @@
 
 import { type Json, Missing, Read } from './json.ts';
 import { REVIEW, REVIEW_CHANGES, CI_FIX, CONFLICT, REWORK, REWORK_MINOR } from './markers.ts';
-import type { RawWorkItem } from './raw.ts';
+import { type RawWorkItem, closerCommit, isExecutorRun } from './raw.ts';
 import { parseRunName } from './run-name.ts';
 import type {
   ActiveRun,
@@ -144,12 +144,7 @@ function closureOf(events: readonly Event[], deploys: Fact<Deploys>, when: numbe
     return { merged: false, commit: null, deployed: { known: true, value: false } };
   }
 
-  const commit =
-    closer.field('__typename').text() === 'PullRequest'
-      ? closer.field('merged').boolean()
-        ? closer.field('mergeCommit').field('oid').text()
-        : null
-      : closer.field('oid').text();
+  const commit = closerCommit(closer);
 
   if (commit === null)
     return { merged: false, commit: null, deployed: { known: true, value: false } };
@@ -436,14 +431,20 @@ function reviewNow(comments: readonly Comment[]): Review | null {
 
   if (comment === undefined) return null;
 
-  const commit = /<sub>Commit ([0-9a-f]{7,40}),/.exec(comment.body)?.[1];
+  // `post-review.sh` writes the heading right after the marker and its footer last; the review
+  // between them is the reviewer's own text, which could hold a line like either.
+  const lines = comment.body.split('\n');
+  const heading = lines[1] ?? '';
+
+  const footer = lines.filter((line) => line.startsWith('<sub>Commit ')).at(-1) ?? '';
+  const commit = /^<sub>Commit ([0-9a-f]{7,40}),/.exec(footer)?.[1];
 
   if (commit === undefined) throw new Missing("the reviewer's comment names no commit");
 
-  if (comment.body.includes('### Factory review: ✅ Ready for you'))
+  if (heading.startsWith('### Factory review: ✅ Ready for you'))
     return { verdict: 'ready', commit };
 
-  if (comment.body.includes('### Factory review: ✋ Changes needed'))
+  if (heading.startsWith('### Factory review: ✋ Changes needed'))
     return { verdict: 'changes', commit };
 
   throw new Missing("the reviewer's comment has no verdict heading");
@@ -568,6 +569,10 @@ function runsAt(raw: RawWorkItem, when: number): RunsState {
   let all = 0;
 
   for (const run of new Read(raw.runs, 'runs').items()) {
+    // Only a collaborator can start a `workflow_dispatch` run: anyone can title a pull request, and
+    // so its CI runs, like an Executor run.
+    if (!isExecutorRun(run)) continue;
+
     const name = run.field('display_title').text();
     const parsed = parseRunName(name);
 
@@ -589,13 +594,19 @@ function runsAt(raw: RawWorkItem, when: number): RunsState {
     const finished = status === 'completed' && run.field('updated_at').time() <= when;
 
     if (mine && !finished) {
+      // A run that hadn't started by `at` was queued then, whatever it is now.
+      const started = run.field('run_started_at').optionalTime();
+
+      const queued =
+        ['queued', 'waiting', 'pending', 'requested'].includes(status) ||
+        started === null ||
+        started > when;
+
       active.push({
         name,
         kind: parsed.kind,
         sha: parsed.sha,
-        status: ['queued', 'waiting', 'pending', 'requested'].includes(status)
-          ? 'queued'
-          : 'in_progress',
+        status: queued ? 'queued' : 'in_progress',
       });
     }
   }

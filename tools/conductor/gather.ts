@@ -4,7 +4,13 @@
 
 import { type Json, type JsonObject, Missing, Read, parseJson } from './json.ts';
 import { isMarked } from './markers.ts';
-import type { GatheredWorkItem, RawWorkItem, WorkItemRef } from './raw.ts';
+import {
+  type GatheredWorkItem,
+  type RawWorkItem,
+  type WorkItemRef,
+  closerCommit,
+  isExecutorRun,
+} from './raw.ts';
 import { parseRunName } from './run-name.ts';
 
 export interface GitHub {
@@ -351,10 +357,7 @@ function closingCommit(issue: Read): { commit: string; at: number } | null {
 
   if (closer.absent()) return null;
 
-  const commit =
-    closer.field('__typename').text() === 'PullRequest'
-      ? closer.field('mergeCommit').field('oid').optionalText()
-      : closer.field('oid').optionalText();
+  const commit = closerCommit(closer);
 
   return commit === null ? null : { commit, at: last.field('createdAt').time() };
 }
@@ -580,9 +583,14 @@ async function readShared(github: GitHub, options: GatherOptions): Promise<Share
   const runs = (
     await rest(github, `/repos/${repo}/actions/runs?created=${since}&per_page=100`, 'workflow_runs')
   )
-    .filter((run) => parseRunName(run.field('display_title').optionalText() ?? '') !== null)
+    .filter(
+      (run) =>
+        isExecutorRun(run) &&
+        parseRunName(run.field('display_title').optionalText() ?? '') !== null,
+    )
     .map((run) => ({
       display_title: run.field('display_title').text(),
+      event: run.field('event').text(),
       status: run.field('status').text(),
       created_at: run.field('created_at').text(),
       run_started_at: run.field('run_started_at').optionalText(),
@@ -620,20 +628,4 @@ export async function gather(github: GitHub, options: GatherOptions): Promise<Ga
   }
 
   return gathered;
-}
-
-/** Reads one Work item, as `gather` would: for `why` and the recorder. */
-export async function gatherOne(
-  github: GitHub,
-  ref: WorkItemRef,
-  options: GatherOptions,
-): Promise<GatheredWorkItem> {
-  try {
-    return await readWorkItem(github, ref, options, await readShared(github, options));
-  } catch (error) {
-    return {
-      number: ref.number,
-      unreadable: error instanceof Error ? reason(error) : String(error),
-    };
-  }
 }

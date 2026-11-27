@@ -68,17 +68,17 @@ than one does); any other is a Work item of its own.
 
 **For each Work item**, every connection and list followed through all its pages:
 
-| Part          | From GitHub                                                                                                                                                                    | `observe` reads it for                                                  |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `ticket`      | the issue's `number`, `createdAt`, author; its timeline's labeled, unlabeled, renamed, closed (and what closed it) and reopened events; its `userContentEdits`                 | labels, Approval, held, `building`, open or closed at `at`              |
-| `blockers`    | each issue in `blockedBy`, with the same timeline                                                                                                                              | each Blocker open, merged or closed unmerged, Deployed and held at `at` |
-| `pullRequest` | `number`, `createdAt`, author, `mergeable`, merge commit; each commit's `oid`, `committedDate` and authors' logins; its labeled, unlabeled, closed, reopened and merged events | head, labels, merged, Attempts' human commits, mergeability             |
-| `checks`      | each check run's `name`, `status`, `conclusion`, `started_at`, `completed_at`, on the head (or, for a history fixture, every commit)                                           | each check's status at `at`                                             |
-| `statuses`    | each commit status's `context`, `state`, `description`, `created_at`, on the same commits                                                                                      | statuses at `at`, and a past Review from the `factory` status           |
-| `comments`    | the workflow's (`github-actions[bot]`) comments that start with a marker (`markers.ts`), cut to their marker, heading and footer lines                                         | Attempts, and the Review                                                |
-| `deploys`     | the latest 100 successful Deploy runs' `head_sha` and `updated_at`                                                                                                             | when a deploy completed                                                 |
-| `inclusions`  | GitHub's compare of each merge commit with the deploys after it, oldest first, until one includes it                                                                           | Deployed                                                                |
-| `runs`        | every Executor run (named as below) created in the 24 hours before `at`: `display_title`, `status`, `created_at`, `run_started_at`, `updated_at`                               | runs queued or running, and the budget's counts                         |
+| Part          | From GitHub                                                                                                                                                                               | `observe` reads it for                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `ticket`      | the issue's `number`, `createdAt`, author; its timeline's labeled, unlabeled, renamed, closed (and what closed it) and reopened events; its `userContentEdits`                            | labels, Approval, held, `building`, open or closed at `at`              |
+| `blockers`    | each issue in `blockedBy`, with the same timeline                                                                                                                                         | each Blocker open, merged or closed unmerged, Deployed and held at `at` |
+| `pullRequest` | `number`, `createdAt`, author, `mergeable`, merge commit; each commit's `oid`, `committedDate` and authors' logins; its labeled, unlabeled, closed, reopened and merged events            | head, labels, merged, Attempts' human commits, mergeability             |
+| `checks`      | each check run's `name`, `status`, `conclusion`, `started_at`, `completed_at`, on the head (or, for a history fixture, every commit)                                                      | each check's status at `at`                                             |
+| `statuses`    | each commit status's `context`, `state`, `description`, `created_at`, on the same commits                                                                                                 | statuses at `at`, and a past Review from the `factory` status           |
+| `comments`    | the workflow's (`github-actions[bot]`) comments that start with a marker (`markers.ts`), cut to their marker, heading and footer lines                                                    | Attempts, and the Review                                                |
+| `deploys`     | the latest 100 successful Deploy runs' `head_sha` and `updated_at`                                                                                                                        | when a deploy completed                                                 |
+| `inclusions`  | GitHub's compare of each merge commit with the deploys after it, oldest first, until one includes it                                                                                      | Deployed                                                                |
+| `runs`        | every Executor run (named as below, started by `workflow_dispatch`) created in the 24 hours before `at`: `display_title`, `event`, `status`, `created_at`, `run_started_at`, `updated_at` | runs queued or running, and the budget's counts                         |
 
 **What a past `at` can't know exactly**, because GitHub doesn't keep it:
 
@@ -97,7 +97,9 @@ Every Executor run is named `<kind> #<item> <sha7>`: the kind (`build`, `ci-fix`
 `rework`, `conflict`, `mention`), the Work item's number (the Ticket's, or the pull request's when
 there's no Ticket), and the first 7 characters of the head commit it was started for (`-` before
 there's a pull request). `gather` lists recent runs and reads these names to see what is queued or
-running for each Work item. The run's name exists from the moment it's queued, so two decisions
+running for each Work item. Only runs started by `workflow_dispatch` count, which only a
+collaborator can start: a pull request's CI runs carry its title, which anyone can make look like
+an Executor run's name. The run's name exists from the moment it's queued, so two decisions
 can't both start one. `run-name.ts` makes and parses them, one function each.
 
 ## The dispatch budget
