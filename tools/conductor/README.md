@@ -51,10 +51,9 @@ fetch (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state, 
   nothing) and the reason in a sentence.
 
 - **`policy.ts`** holds every number: two Attempts per kind, two builds, a build stale after 90
-  minutes, a merge not Deployed after 3 hours, the sweeper's thresholds, and the dispatch budget:
-  at most **20 Executor starts per Work item, and 60 in all, in any 24 hours**. Past either, the
-  Conductor starts nothing more, hands the Work item over, and fails its run so the Owner is
-  emailed.
+  minutes, a merge not Deployed after 3 hours, and the sweeper's thresholds. `decide` also
+  starts nothing for a Work item past the dispatch budget (below), and says so, but it isn't
+  what enforces it.
 - **`act`** carries the decisions out: labels, the one `<!-- factory-state -->` comment on each
   Ticket (edited only when the state changes), the `factory` status on the pull request's head,
   and `workflow_dispatch` of Executors. With `--dry-run` it prints each write instead.
@@ -65,8 +64,25 @@ Every Executor run is named `<kind> #<item> <sha7>`: the kind (`build`, `ci-fix`
 `rework`, `conflict`, `mention`), the Work item's number (the Ticket's, or the pull request's when
 there's no Ticket), and the first 7 characters of the head commit it was started for (`-` before
 there's a pull request). `fetch` lists recent runs and reads these names to see what is queued or
-running for each Work item, and to count the budget. The run's name exists from the moment it's
-queued, so two decisions can't both start one.
+running for each Work item. The run's name exists from the moment it's queued, so two decisions
+can't both start one.
+
+## The dispatch budget
+
+At most **20 Executor starts per Work item, and 60 in all, in any 24 hours**, counted from
+GitHub's list of runs by their names. A busy Ticket uses about 15. The budget is there for one
+failure: a Conductor that misreads the evidence of a step (a marker comment, a run name) starts
+it again every time it wakes, and every Executor that finishes wakes it, so a loop would run an
+agent every few minutes until someone noticed. The Attempt limits can't stop that, because they
+are counted from the same evidence.
+
+It is a refusal, so the Executors enforce it, in their guards under `.github/` (the Owner's
+wiring), not this package: the factory writes the Conductor, and an agent may change what
+decides but not what refuses harm (ADR-0075). Before it acts, each Executor counts the runs
+named for its Work item, and all Executor runs, in the last 24 hours; past either limit it does
+nothing, hands the Work item over with the reason, and fails, so the Owner is emailed. The
+numbers live in one file there. `decide` reads the same count to stop asking, and to show how
+close a Work item is in `why`.
 
 ## The history test
 
@@ -95,6 +111,6 @@ Under `.github/`, which the factory can't write, and built after this package:
   events, the Executors and the factory clock, running `main.ts run`.
 - Each Executor gets a `workflow_dispatch` entry with its inputs, its run name, and its own
   guards: the Owner's Approval with no edit since, the head it was started for, no
-  `needs-human`, and a hard cap of Attempts.
+  `needs-human`, a hard cap of Attempts, and the dispatch budget.
 - The `FACTORY_CONDUCTOR` repository variable: `on` turns the Conductor on and today's deciding
   workflows off, `off` turns them back.
