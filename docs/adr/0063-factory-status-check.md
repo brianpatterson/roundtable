@@ -1,6 +1,6 @@
 # 0063. Show the factory's progress on a pull request as a `factory` commit status
 
-- **Status:** Accepted
+- **Status:** Accepted; the conductor sets the status, by [ADR-0075](0075-factory-conductor.md)
 - **Date:** 2026-11-23
 
 ## Context

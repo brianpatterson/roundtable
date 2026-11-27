@@ -1,6 +1,6 @@
 # 0074. Merge a spec's tickets into a batch branch automatically, and the batch into main by hand
 
-- **Status:** Accepted
+- **Status:** Accepted; `batch-merge.yml` is started by the conductor, by [ADR-0075](0075-factory-conductor.md)
 - **Date:** 2026-11-26
 
 ## Context

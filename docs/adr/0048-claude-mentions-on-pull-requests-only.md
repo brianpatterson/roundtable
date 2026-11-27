@@ -1,6 +1,6 @@
 # 0048. Answer the owner's `@claude` on pull requests only
 
-- **Status:** Accepted
+- **Status:** Accepted; the conductor starts the answer, in line with the pull request's other runs, by [ADR-0075](0075-factory-conductor.md)
 - **Date:** 2026-11-21
 
 ## Context
