@@ -96,6 +96,12 @@ Option 4.
   The check enforces only what it lists. Anything else that the previous release's code can't
   live with is left to the reviewer, and the list grows when one is found.
 
+  **Where it lives:** the check and the replay are a script under `scripts/`, an owner path
+  ([ADR-0074](0074-batch-merges.md)), not a test file a ticket could edit. CI runs the pull
+  request's copy, so `batch-merge.yml` also runs `main`'s copy of the check itself, alongside
+  the drizzle-kit-only rule below, before it merges a pull request into a batch. A ticket that
+  weakens the check is caught by `main`'s copy and sent to the owner as an owner path.
+
 - **Rehearsing on real data:** the checks above see only the schema. A migration can still fail
   on the data (`SET NOT NULL` over existing nulls, a unique index over duplicates, a cast that one
   row breaks) or take minutes rewriting a table. So every pull request that adds a migration is
@@ -148,7 +154,8 @@ Option 4.
   indexes, constraints, types and sequences). A migration with anything else (`INSERT`, `UPDATE`,
   `DELETE`, `GRANT`, `REVOKE`, functions, triggers, extensions, `DO` blocks, `COPY`), or one that
   touches identity's tables, is labeled `needs-human` and waits for the owner's merge into the
-  batch. A data backfill, such as a rename's copy, therefore always goes to the owner.
+  batch. A data backfill, such as a rename's copy, therefore always goes to the owner. Like the
+  check above, `batch-merge.yml` runs this rule from `main`'s copy, never the pull request's.
 
 - **Writing them:** a ticket that both adds and removes schema generates twice: the additions
   first, then the removals as `_postdeploy`. A column dropped post-deploy is first made nullable

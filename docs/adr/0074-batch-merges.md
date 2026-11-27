@@ -85,7 +85,8 @@ Option 3.
     lists every one for the owner. The code that runs them, `platform/database/`, stays on it.
     A migration with anything `drizzle-kit generate` doesn't write (data changes, grants,
     functions, triggers), or one that touches identity's tables, goes to the owner like the paths
-    above (ADR-0073).
+    above (ADR-0073). The workflow runs ADR-0073's migration check and that rule from `main`'s
+    copy itself, so a ticket can't loosen either and pass it in one diff.
 
   A pull request that fails only the last two is labeled `needs-human`, saying which; the owner
   merges it into the batch by hand. Each gate is read from GitHub, never from what an agent
