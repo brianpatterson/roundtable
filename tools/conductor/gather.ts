@@ -3,7 +3,7 @@
 // GitHub (README.md); it decides nothing and reads no clock.
 
 import { type Json, type JsonObject, Missing, Read, parseJson } from './json.ts';
-import { MINOR_FINDING, isMarked } from './markers.ts';
+import { DISPATCH, MINOR_FINDING, isMarked } from './markers.ts';
 import {
   type GatheredWorkItem,
   type RawWorkItem,
@@ -29,6 +29,13 @@ export interface GatherOptions {
    */
   readonly commits: 'head' | 'all';
 }
+
+/**
+ * The version of what `gather` reads and how it trims it. A history fixture states the one it was
+ * recorded with, and the history test refuses another: raise it whenever a change here would make
+ * a fixture recorded before it read differently.
+ */
+export const GATHER_VERSION = 1;
 
 /** Labels that make an open issue a Work item. */
 export const TICKET_LABELS = ['ready', 'building', 'needs-info', 'needs-human'];
@@ -436,7 +443,23 @@ async function readWorkItem(
     const issue = await readIssue(github, number);
     const edits = await connection(github, ISSUE_EDITS, { number }, ['issue', 'userContentEdits']);
 
-    ticket = { ...issue, edits };
+    // Only the dispatcher's own comments, which say which Tickets were in flight when one waited:
+    // anyone can comment on an issue, and a User report's Ticket keeps none of its text.
+    const comments = (
+      await rest(github, `/repos/${repo}/issues/${number}/comments?per_page=100`, null)
+    )
+      .filter(
+        (comment) =>
+          comment.field('user').field('login').optionalText() === 'github-actions[bot]' &&
+          comment.field('body').text().startsWith(DISPATCH),
+      )
+      .map((comment) => ({
+        user: { login: 'github-actions[bot]' },
+        created_at: comment.field('created_at').text(),
+        body: comment.field('body').text().split('\n').slice(0, 2).join('\n'),
+      }));
+
+    ticket = { ...issue, edits, comments };
 
     const closing = closingCommit(new Read(issue, 'ticket'));
 
@@ -606,7 +629,11 @@ async function readShared(github: GitHub, options: GatherOptions): Promise<Share
   const since = encodeURIComponent(`>=${options.since.toISOString()}`);
 
   const runs = (
-    await rest(github, `/repos/${repo}/actions/runs?created=${since}&per_page=100`, 'workflow_runs')
+    await rest(
+      github,
+      `/repos/${repo}/actions/runs?event=workflow_dispatch&created=${since}&per_page=100`,
+      'workflow_runs',
+    )
   )
     .filter(
       (run) =>
@@ -639,6 +666,71 @@ const reason = (error: Error): string =>
     ? error.message
     : `reading it failed: ${error.message}`;
 
+const unreadable = (number: number, why: string): GatheredWorkItem => ({ number, unreadable: why });
+
+const DAY = 24 * 60 * 60 * 1000;
+
+const RESOLVE = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issueOrPullRequest(number: $number) {
+      __typename
+      ... on Issue { number createdAt closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number } } }
+      ... on PullRequest { number createdAt closingIssuesReferences(first: 10) { nodes { number } } }
+    }
+  }
+}`;
+
+/**
+ * Reads one Work item, open or closed, for a history fixture: the Ticket `number` with the latest
+ * pull request that closes it, or the pull request `number` that closes no issue. Every commit's
+ * checks and statuses are read, and the Executor runs from 24 hours before it was opened.
+ */
+export async function gatherWorkItem(github: GitHub, number: number): Promise<GatheredWorkItem> {
+  try {
+    const found = (
+      await graphql(github, RESOLVE, { number }, `issue or pull request #${number}`)
+    ).field('issueOrPullRequest');
+
+    const numbers = (connection: string): number[] =>
+      found
+        .field(connection)
+        .field('nodes')
+        .items()
+        .map((node) => node.field('number').number());
+
+    let ref: WorkItemRef;
+
+    if (found.field('__typename').text() === 'Issue') {
+      const pullRequests = numbers('closedByPullRequestsReferences');
+
+      ref = {
+        number,
+        ticket: number,
+        pullRequest: pullRequests.length === 0 ? null : Math.max(...pullRequests),
+      };
+    } else {
+      const closes = numbers('closingIssuesReferences');
+
+      if (closes.length > 0) {
+        throw new Refused(
+          `#${number} is the pull request of ${closes.map((n) => `#${n}`).join(', ')}: record its Ticket instead`,
+        );
+      }
+
+      ref = { number, ticket: null, pullRequest: number };
+    }
+
+    const options: GatherOptions = {
+      since: new Date(found.field('createdAt').time() - DAY),
+      commits: 'all',
+    };
+
+    return await readWorkItem(github, ref, options, await readShared(github, options));
+  } catch (error) {
+    return unreadable(number, error instanceof Error ? reason(error) : String(error));
+  }
+}
+
 /**
  * Reads every open Work item. One GitHub fails or refuses to answer about is returned as
  * unreadable, with the reason, and the rest are still read. Fails only when the list itself, or
@@ -653,10 +745,7 @@ export async function gather(github: GitHub, options: GatherOptions): Promise<Ga
     try {
       gathered.push(await readWorkItem(github, ref, options, shared));
     } catch (error) {
-      gathered.push({
-        number: ref.number,
-        unreadable: error instanceof Error ? reason(error) : String(error),
-      });
+      gathered.push(unreadable(ref.number, error instanceof Error ? reason(error) : String(error)));
     }
   }
 
