@@ -162,6 +162,7 @@ function answerRest(path: string, search: URLSearchParams): Answer {
   if (path === '/repos/o/r/actions/runs') {
     return {
       body: {
+        total_count: 3,
         workflow_runs: [
           {
             display_title: 'build #10 -',
@@ -342,7 +343,7 @@ function fakeGitHub(refuse: ReadonlySet<number> = new Set()): FakeGitHub {
   return { github: { fetch: fakeFetch, token: 'token', repository: 'o/r' }, requests };
 }
 
-const options = { since: new Date(time(-24 * 60)), commits: 'head' } as const;
+const options = { since: new Date(time(-24 * 60)), until: null, commits: 'head' } as const;
 
 function readable(items: readonly GatheredWorkItem[], number: number): RawWorkItem {
   const item = items.find((candidate) => candidate.number === number);

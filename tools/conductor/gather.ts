@@ -23,6 +23,8 @@ export interface GitHub {
 export interface GatherOptions {
   /** Executor runs created since then are read: 24 hours before the `at` it's gathered for. */
   readonly since: Date;
+  /** Executor runs created after then aren't read: when a recorded Work item closed; `null` for now. */
+  readonly until: Date | null;
   /**
    * Whose checks and statuses to read: the head's, enough for now, or every commit's, which a
    * history fixture needs to observe a past head.
@@ -107,6 +109,33 @@ async function rest(github: GitHub, path: string, key: string | null): Promise<R
   }
 
   return items;
+}
+
+/**
+ * Every workflow run a filtered list holds, following its pages. GitHub lists at most 1,000 runs
+ * for a filtered query, newest first, so a list its `total_count` says is longer is refused rather
+ * than read without its oldest runs.
+ */
+async function workflowRuns(github: GitHub, path: string): Promise<Read[]> {
+  const runs: Read[] = [];
+  let total = 0;
+  let url: string | null = `${API}${path}`;
+
+  while (url !== null) {
+    const page: Page = await call(github, url, { method: 'GET' }, `GET ${path}`);
+
+    total = page.body.field('total_count').number();
+    runs.push(...page.body.field('workflow_runs').items());
+    url = page.next;
+  }
+
+  if (runs.length < total) {
+    throw new Refused(
+      `GitHub listed ${runs.length} of the ${total} runs for GET ${path}: it lists at most 1,000, so the oldest are missing`,
+    );
+  }
+
+  return runs;
 }
 
 /** One REST answer. */
@@ -626,13 +655,16 @@ async function readShared(github: GitHub, options: GatherOptions): Promise<Share
       updated_at: run.field('updated_at').text(),
     }));
 
-  const since = encodeURIComponent(`>=${options.since.toISOString()}`);
+  const created = encodeURIComponent(
+    options.until === null
+      ? `>=${options.since.toISOString()}`
+      : `${options.since.toISOString()}..${options.until.toISOString()}`,
+  );
 
   const runs = (
-    await rest(
+    await workflowRuns(
       github,
-      `/repos/${repo}/actions/runs?event=workflow_dispatch&created=${since}&per_page=100`,
-      'workflow_runs',
+      `/repos/${repo}/actions/runs?event=workflow_dispatch&created=${created}&per_page=100`,
     )
   )
     .filter(
@@ -674,8 +706,8 @@ const RESOLVE = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     issueOrPullRequest(number: $number) {
       __typename
-      ... on Issue { number createdAt closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number } } }
-      ... on PullRequest { number createdAt closingIssuesReferences(first: 10) { nodes { number } } }
+      ... on Issue { number createdAt closedAt closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number } } }
+      ... on PullRequest { number createdAt closedAt closingIssuesReferences(first: 10) { nodes { number } } }
     }
   }
 }`;
@@ -683,7 +715,8 @@ const RESOLVE = `query($owner: String!, $name: String!, $number: Int!) {
 /**
  * Reads one Work item, open or closed, for a history fixture: the Ticket `number` with the latest
  * pull request that closes it, or the pull request `number` that closes no issue. Every commit's
- * checks and statuses are read, and the Executor runs from 24 hours before it was opened.
+ * checks and statuses are read, and the Executor runs from 24 hours before it was opened until it
+ * closed.
  */
 export async function gatherWorkItem(github: GitHub, number: number): Promise<GatheredWorkItem> {
   try {
@@ -720,8 +753,12 @@ export async function gatherWorkItem(github: GitHub, number: number): Promise<Ga
       ref = { number, ticket: null, pullRequest: number };
     }
 
+    // The runs of its life only: a list from then until now grows by every sweep's run.
+    const closed = found.field('closedAt').optionalTime();
+
     const options: GatherOptions = {
       since: new Date(found.field('createdAt').time() - DAY),
+      until: closed === null ? null : new Date(closed),
       commits: 'all',
     };
 

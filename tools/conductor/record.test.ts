@@ -19,7 +19,7 @@ import { GATHER_VERSION, type GitHub, gatherWorkItem } from './gather.ts';
 import { type Json, Read, parseJson } from './json.ts';
 import { type Io, main } from './main.ts';
 import type { RawWorkItem } from './raw.ts';
-import type { Checkpoint } from './record.ts';
+import { type Checkpoint, checkpoints as checkpointsOf } from './record.ts';
 
 const time = (minutes: number): string =>
   new Date(Date.UTC(2026, 10, 20, 10, 0) + minutes * 60_000).toISOString();
@@ -67,6 +67,7 @@ const comment = (login: string, minutes: number, body: string, updated = minutes
 
 interface Issue {
   readonly createdAt: number;
+  readonly closedAt: number | null;
   readonly author: string;
   readonly timeline: Json[];
   readonly edits: Json[];
@@ -76,6 +77,7 @@ interface Issue {
 
 interface PullRequest {
   readonly createdAt: number;
+  readonly closedAt: number | null;
   readonly author: string;
   readonly head: string;
   readonly mergeCommit: string | null;
@@ -92,6 +94,7 @@ const ISSUES = new Map<number, Issue>([
     40,
     {
       createdAt: -600,
+      closedAt: 200,
       author: 'o',
       timeline: [
         labelEvent(true, 0, 'ready', 'o'),
@@ -123,6 +126,7 @@ const ISSUES = new Map<number, Issue>([
     60,
     {
       createdAt: -100,
+      closedAt: null,
       author: 'github-actions',
       timeline: [
         labelEvent(true, -100, 'user-report', 'github-actions'),
@@ -144,6 +148,7 @@ const PULL_REQUESTS = new Map<number, PullRequest>([
     41,
     {
       createdAt: 55,
+      closedAt: 200,
       author: 'claude',
       head: C2,
       mergeCommit: MERGE,
@@ -194,6 +199,7 @@ const PULL_REQUESTS = new Map<number, PullRequest>([
     50,
     {
       createdAt: 0,
+      closedAt: null,
       author: 'claude',
       head: F1,
       mergeCommit: null,
@@ -233,6 +239,7 @@ function answerGraphql(query: string, number: number): Answer {
           __typename: 'Issue',
           number,
           createdAt: time(issue.createdAt),
+          closedAt: issue.closedAt === null ? null : time(issue.closedAt),
           closedByPullRequestsReferences: page(issue.closedBy.map((n) => ({ number: n }))),
         },
       });
@@ -244,6 +251,7 @@ function answerGraphql(query: string, number: number): Answer {
           __typename: 'PullRequest',
           number,
           createdAt: time(pr.createdAt),
+          closedAt: pr.closedAt === null ? null : time(pr.closedAt),
           closingIssuesReferences: page(pr.closes.map((n) => ({ number: n }))),
         },
       });
@@ -297,7 +305,7 @@ function answerGraphql(query: string, number: number): Answer {
   return NOT_FOUND;
 }
 
-function answerRest(path: string, reverse: boolean): Answer {
+function answerRest(path: string, reverse: boolean, runsTotal: number): Answer {
   const order = (list: Json[]): Json[] => (reverse ? [...list].reverse() : list);
 
   if (path === '/repos/o/r/actions/workflows/deploy.yml/runs')
@@ -306,6 +314,7 @@ function answerRest(path: string, reverse: boolean): Answer {
   if (path === '/repos/o/r/actions/runs') {
     return {
       body: {
+        total_count: runsTotal,
         workflow_runs: order([
           {
             display_title: 'CI',
@@ -361,13 +370,18 @@ function answerRest(path: string, reverse: boolean): Answer {
   return NOT_FOUND;
 }
 
-/** A stand-in GitHub; `reverse` answers every list GitHub doesn't order in the other order. */
-function fakeGitHub(reverse = false): GitHub {
+/**
+ * A stand-in GitHub; `reverse` answers every list GitHub doesn't order in the other order,
+ * `runsTotal` is the `total_count` of the runs list, and every request's URL goes in `requests`.
+ */
+function fakeGitHub(reverse = false, runsTotal = 2, requests: URL[] = []): GitHub {
   const fakeFetch = async (
     input: string | URL | Request,
     init?: RequestInit,
   ): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : input);
+
+    requests.push(url);
 
     assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer token');
 
@@ -381,7 +395,7 @@ function fakeGitHub(reverse = false): GitHub {
         request.field('variables').field('number').number(),
       );
     } else {
-      answer = answerRest(url.pathname, reverse);
+      answer = answerRest(url.pathname, reverse, runsTotal);
     }
 
     return new Response(JSON.stringify(answer.body), { status: answer.status ?? 200 });
@@ -592,6 +606,48 @@ test("a checkpoint the events don't settle is unknown, with why", async () => {
   for (const checkpoint of checkpoints) {
     if ('unknown' in checkpoint.next) assert.notEqual(checkpoint.next.unknown, '');
   }
+});
+
+test("a mention is answered only by a mention run after it, not by another Executor's", async () => {
+  const raw = await gathered(40);
+
+  const executorRun = (title: string, minutes: number): Json => ({
+    display_title: title,
+    event: 'workflow_dispatch',
+    status: 'completed',
+    created_at: time(minutes),
+    run_started_at: time(minutes),
+    updated_at: time(minutes + 5),
+  });
+
+  const review = executorRun('review #40 bbbbbbb', 130);
+
+  assert.equal(actionAt(checkpointsOf({ ...raw, runs: [review] }), 120), 'unknown');
+
+  assert.deepEqual(
+    actionAt(
+      checkpointsOf({ ...raw, runs: [executorRun('mention #40 bbbbbbb', 121), review] }),
+      120,
+    ),
+    { type: 'start', executor: 'mention', item: 40, head: C2, attempt: null, minor: false },
+  );
+});
+
+test("the runs read are those of the Work item's life, from the day before it opened until it closed", async () => {
+  const requests: URL[] = [];
+
+  await gathered(40, fakeGitHub(false, 2, requests));
+
+  const runs = requests.find((url) => url.pathname === '/repos/o/r/actions/runs');
+
+  assert.equal(runs?.searchParams.get('created'), `${time(-600 - 24 * 60)}..${time(200)}`);
+});
+
+test('a run list GitHub cut short is refused, not recorded without its oldest runs', async () => {
+  const item = await gatherWorkItem(fakeGitHub(false, 1001), 40);
+
+  assert.ok('unreadable' in item);
+  assert.match(item.unreadable, /listed 2 of the 1001 runs .+ the oldest are missing/);
 });
 
 test("a User report's Ticket keeps only its labels and events, not its text", async () => {

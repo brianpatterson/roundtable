@@ -177,7 +177,8 @@ GITHUB_REPOSITORY=<owner>/roundtable GH_TOKEN=$(gh auth token) node tools/conduc
 For each number it runs `gatherWorkItem` (`gather.ts`), which reads one Work item, open or closed,
 as `gather` reads an open one: the Ticket with the latest pull request that closes it (a pull
 request that closes a Ticket is recorded as that Ticket), every commit's checks and statuses, and
-the Executor runs from 24 hours before it was opened. It writes `history/<n>.json` (`fixture.ts`):
+the Executor runs from 24 hours before it was opened until it closed (GitHub lists at most 1,000
+runs for a query, so a longer list is refused rather than read without its oldest). It writes `history/<n>.json` (`fixture.ts`):
 
 - **`gather`**: the `GATHER_VERSION` it was recorded with. The history test refuses a fixture from
   another version and says to record it again; raise the version whenever a change to `gather`

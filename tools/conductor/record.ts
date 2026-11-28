@@ -13,6 +13,7 @@ import {
   REWORK,
   REWORK_MINOR,
 } from './markers.ts';
+import { isHuman } from './observe.ts';
 import { type RawWorkItem, isExecutorRun } from './raw.ts';
 import { type RunKind, parseRunName } from './run-name.ts';
 
@@ -63,6 +64,7 @@ interface Happening {
 /** A named Executor run of this Work item: what `decide` itself sees as queued or running. */
 interface NamedRun {
   readonly name: string;
+  readonly kind: RunKind;
   readonly from: number;
   readonly to: number;
 }
@@ -70,10 +72,6 @@ interface NamedRun {
 const iso = (time: number): string => new Date(time).toISOString();
 
 const short = (sha: string): string => sha.slice(0, 7);
-
-/** A login a person has, not a bot's: `observe`'s rule, as `attempt.sh` tells a human commit. */
-const isHuman = (login: string | null): boolean =>
-  login !== null && login !== '' && !/^(claude|dependabot)|\[bot\]$/.test(login);
 
 const MENTIONED = 'comment: the Owner mentioned `@claude`';
 
@@ -591,7 +589,7 @@ function namedRuns(raw: Raw): NamedRuns {
     const to =
       run.field('status').text() === 'completed' ? run.field('updated_at').time() : Infinity;
 
-    runs.push({ name: run.field('display_title').text(), from, to });
+    runs.push({ name: run.field('display_title').text(), kind: parsed.kind, from, to });
 
     const head = parsed.sha === null ? null : raw.full(parsed.sha);
     let attempt: number | null = null;
@@ -885,12 +883,14 @@ export function checkpoints(rawItem: RawWorkItem): Checkpoint[] {
     at: iso(at),
     events,
     building: queueAt(raw, at).filter((number) => number !== rawItem.number),
-    // The mention Executor answers without a marker comment: only its named run shows it.
+    // The mention Executor answers without a marker comment: only its named run shows it, and
+    // another Executor's run after the mention isn't its answer.
     next:
-      events.includes(MENTIONED) && named.runs.length === 0
+      events.includes(MENTIONED) &&
+      !named.runs.some((run) => run.kind === 'mention' && run.from >= at)
         ? {
             unknown:
-              "The Owner's `@claude` is answered by a mention run, which leaves no comment the recorder can read, and no Executor run is recorded for it.",
+              "The Owner's `@claude` is answered by a mention run, which leaves no comment the recorder can read, and no mention run is recorded after it.",
           }
         : nextAfter(at, happenings, named.runs, running),
   }));

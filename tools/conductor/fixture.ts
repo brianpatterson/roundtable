@@ -18,7 +18,7 @@ export interface Fixture {
   readonly checkpoints: readonly Checkpoint[];
 }
 
-/** `.github/factory/guard-secrets.sh`'s patterns, the same strings (`fixture.test.ts` checks). */
+/** `.github/factory/guard-secrets.sh`'s patterns, the same strings (`record.test.ts` checks). */
 export const CREDENTIAL_PATTERNS: readonly RegExp[] = [
   /sk-ant-[A-Za-z0-9_-]{20,}/,
   /gh[pousr]_[A-Za-z0-9]{30,}/,

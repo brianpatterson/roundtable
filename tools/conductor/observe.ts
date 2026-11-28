@@ -296,7 +296,7 @@ interface Commit {
  * A human author has a GitHub login that isn't a bot's (`attempt.sh`): an author without one isn't
  * a person on GitHub, like merge-main.sh's `factory` commit or a `Co-Authored-By: Claude`.
  */
-const isHuman = (login: string | null): boolean =>
+export const isHuman = (login: string | null): boolean =>
   login !== null && login !== '' && !/^(claude|dependabot)|\[bot\]$/.test(login);
 
 function commitsUntil(pr: Read, when: number): Commit[] {
