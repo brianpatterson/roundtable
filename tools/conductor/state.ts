@@ -23,6 +23,8 @@ export interface WorkItemState {
   /** `null` when the Work item has no pull request, or it wasn't opened yet at `at`. */
   readonly pullRequest: Fact<PullRequestState | null>;
   readonly runs: Fact<RunsState>;
+  /** The head of `main` at `at`: the latest commit of it committed by then. Conflicts count per commit of it. */
+  readonly main: Fact<string>;
 }
 
 /** How an issue was closed, the last time it was: by a merged change, or without one. */
@@ -30,6 +32,8 @@ export interface Closure {
   readonly merged: boolean;
   /** The merge commit, or the commit that closed it; `null` when nothing merged closed it. */
   readonly commit: string | null;
+  /** When it was closed. */
+  readonly at: string;
   /** Whether a successful deploy that completed by `at` includes `commit`. */
   readonly deployed: Fact<boolean>;
 }
@@ -93,6 +97,15 @@ export interface PullRequestState {
   readonly labels: readonly string[];
   /** The head commit at `at`: the latest commit committed by then. */
   readonly head: Fact<string>;
+  /** When the head was committed: CI that hasn't started long after it never will. */
+  readonly headAt: Fact<string>;
+  /**
+   * Opened by Dependabot, and every commit is Dependabot's: the reviewer skips it (`review.yml`,
+   * ADR-0033) until anyone else pushes to it.
+   */
+  readonly dependabotOnly: boolean;
+  /** The Owner's latest comment that mentions `@claude`, in the 24 hours before `at`; `null` without one. */
+  readonly mention: Fact<string | null>;
   /** GitHub's `mergeable`, which it only shows as it is now. */
   readonly mergeable: Fact<'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'>;
   /** The check runs on the head at `at`, the latest of each name. */
@@ -110,6 +123,11 @@ export interface CheckState {
   readonly status: 'queued' | 'in_progress' | 'completed';
   /** Set once it's completed. */
   readonly conclusion: string | null;
+  readonly startedAt: string;
+  /** When it completed; `null` while it runs. */
+  readonly completedAt: string | null;
+  /** How many runs of this name started on the head by `at`: more than one means it was rerun. */
+  readonly runs: number;
 }
 
 export interface CommitStatus {
@@ -135,11 +153,17 @@ export interface Review {
   readonly verdict: 'ready' | 'changes';
   /** The commit reviewed. Only a Review of the head says the pull request is reviewed. */
   readonly commit: string;
+  /** When the verdict was given. */
+  readonly at: string;
+  /** Its minor findings, which Rework's Minor pass fixes (ADR-0053); `null` when it can't be told. */
+  readonly minor: number | null;
 }
 
 export interface RunsState {
   /** This Work item's Executor runs queued or running at `at`. */
   readonly active: readonly ActiveRun[];
+  /** This Work item's Executor runs that had finished by `at`, of those created in the 24 hours before it. */
+  readonly finished: readonly FinishedRun[];
   /** Executor runs started in the 24 hours before `at`: this Work item's, and all of them. */
   readonly startedLastDay: { readonly item: number; readonly all: number };
 }
@@ -149,4 +173,12 @@ export interface ActiveRun {
   readonly kind: RunKind;
   readonly sha: string | null;
   readonly status: 'queued' | 'in_progress';
+}
+
+export interface FinishedRun {
+  readonly name: string;
+  readonly kind: RunKind;
+  readonly sha: string | null;
+  /** When it was created: a run created after the evidence it answers has taken that step. */
+  readonly createdAt: string;
 }

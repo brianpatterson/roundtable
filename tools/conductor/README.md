@@ -39,7 +39,9 @@ gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state,
   is before the Work item's latest event, and `decide` handles `unknown` anyway: GitHub answers
   mergeability only a while after every push. It never throws: a field it can't read makes that
   part of the state `unknown`, with what was missing.
-- **`decide(state, policy)`** is pure. It names the state, one of:
+- **`decide(states, policy)`** (`decide.ts`) is pure: it takes every open Work item's state, since
+  one Ticket's build waits on the others', and returns `{number, state, action, reason}` for each.
+  It names the state, one of:
   - before the pull request: `waiting` (no Approval, a Blocker not Deployed, or another Ticket
     building), `building`, `needs-info`;
   - on the pull request: `checking`, `fixing`, `reviewing`, `reworking`, `resolving`, `reviewed`
@@ -48,13 +50,46 @@ gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state,
   - after: `merged`, then `deployed`;
   - anywhere: `needs-human`, a Hand-over, with the reason.
 
-  It returns the action to take from that state (start an Executor, hand over, set a status,
-  nothing) and the reason in a sentence.
+  It returns the action to take from that state, one of: nothing; **start** an Executor (its
+  kind, the Work item, the head and which Attempt, or Rework's Minor pass); **hand over**
+  (label `needs-human`, and take `building` off a Ticket, with the reason); **withdraw** the
+  Approval (take the Owner's `ready` off a Ticket edited since, with the reason); or **rerun** the
+  checks on the head that ended cancelled or timed out. The reason is one plain sentence: what the
+  Work item waits for, and what the Owner can do when it waits on them. `act` sets the `factory`
+  status and the `<!-- factory-state -->` comment from the state and reason on every run.
 
-- **`policy.ts`** holds every number: two Attempts per kind, two builds, a build stale after 90
-  minutes, a merge not Deployed after 3 hours, and the sweeper's thresholds. `decide` also
-  starts nothing for a Work item past the dispatch budget (below), and says so, but it isn't
-  what enforces it.
+  The rules, in the order `decide` applies them:
+  - **An Executor queued or running** for the Work item: nothing more starts, and the state names
+    it (`building`, `fixing`, `reviewing`, `reworking`, `resolving`; a mention keeps the state).
+  - **The Owner's `@claude`** on the pull request, after the last mention run: start the
+    `mention` Executor, except on one handed over, which every Executor's guard refuses: remove
+    `needs-human` to have it answered.
+  - **Merged:** `deployed` once a deploy includes the merge; handed over when it isn't Deployed
+    3 hours after it merged, naming the merge commit.
+  - **Before the pull request,** as `dispatch.sh` decides, except that `needs-human` and
+    `needs-info` hold no slot: one Ticket builds at a time, from its build until its merge is
+    Deployed, and a Work item that couldn't be read holds the slot until it can be; the Owner's Tickets before the nightly run's, each oldest Approval first. A build
+    that ended without a pull request is started again, and handed over after two. A Ticket
+    `building` with no build run and no pull request after 90 minutes is handed over.
+  - **On the pull request,** as `attempt.sh next` and `sweep-prs.sh` decide: a conflict goes to
+    the resolver (the factory's own pull requests, two Attempts per commit of `main`), and
+    mergeability `UNKNOWN` waits for GitHub; CI not started after 30 minutes or running after 90
+    is handed over; a failure goes to the CI fixer (labeled `factory` or `autofix`, two Attempts
+    since the last human push); a cancelled check is rerun once; a pass goes to the reviewer,
+    except on a pull request with only Dependabot's commits; `changes` go to Rework (the factory's
+    own, two Attempts), and a ready Review with minor findings gets one Minor pass. A pull request
+    labeled neither `factory` nor `autofix` is reviewed, but, as the sweeper leaves it, never
+    handed over or rerun: its reason says what the Owner can do. Where an
+    Executor has already answered the evidence (its run was asked for after it) and nothing
+    changed, `decide` waits, then hands over after the sweeper's threshold for it.
+  - **The dispatch budget** (below): where a start would pass it, `decide` starts nothing and says
+    so, without handing over.
+
+- **`policy.ts`** holds every number: two Attempts per kind, one Minor pass, two builds, a build
+  stale after 90 minutes, a merge not Deployed after 3 hours, the sweeper's thresholds (30 minutes
+  for CI to start, 90 to run, 60 for a Review after CI passes, 120 for a fix or a rework to land),
+  one rerun, and the budget's limits. `decide` has no number of its own. It starts nothing for a
+  Work item past the dispatch budget (below), and says so, but it isn't what enforces it.
 - **`act`** carries the decisions out: labels, the one `<!-- factory-state -->` comment on each
   Ticket (edited only when the state changes), the `factory` status on the pull request's head,
   and `workflow_dispatch` of Executors. With `--dry-run` it prints each write instead.
@@ -75,10 +110,12 @@ than one does); any other is a Work item of its own.
 | `pullRequest` | `number`, `createdAt`, author, `mergeable`, merge commit; each commit's `oid`, `committedDate` and authors' logins; its labeled, unlabeled, closed, reopened and merged events            | head, labels, merged, Attempts' human commits, mergeability             |
 | `checks`      | each check run's `name`, `status`, `conclusion`, `started_at`, `completed_at`, on the head (or, for a history fixture, every commit)                                                      | each check's status at `at`                                             |
 | `statuses`    | each commit status's `context`, `state`, `description`, `created_at`, on the same commits                                                                                                 | statuses at `at`, and a past Review from the `factory` status           |
-| `comments`    | the workflow's (`github-actions[bot]`) comments that start with a marker (`markers.ts`), cut to their marker, heading and footer lines                                                    | Attempts, and the Review                                                |
+| `comments`    | the workflow's (`github-actions[bot]`) comments that start with a marker (`markers.ts`), cut to their marker, heading and footer lines, and each minor finding's mark without its text    | Attempts, and the Review with its minor findings                        |
+| `mentions`    | when the Owner commented `@claude` on the pull request, without the text                                                                                                                  | a mention to answer                                                     |
+| `main`        | the latest 100 commits of `main`: `sha` and committer date                                                                                                                                | the head of `main`, which conflicts count against                       |
 | `deploys`     | the latest 100 successful Deploy runs' `head_sha` and `updated_at`                                                                                                                        | when a deploy completed                                                 |
 | `inclusions`  | GitHub's compare of each merge commit with the deploys after it, oldest first, until one includes it                                                                                      | Deployed                                                                |
-| `runs`        | every Executor run (named as below, started by `workflow_dispatch`) created in the 24 hours before `at`: `display_title`, `event`, `status`, `created_at`, `run_started_at`, `updated_at` | runs queued or running, and the budget's counts                         |
+| `runs`        | every Executor run (named as below, started by `workflow_dispatch`) created in the 24 hours before `at`: `display_title`, `event`, `status`, `created_at`, `run_started_at`, `updated_at` | runs queued, running and finished, and the budget's counts              |
 
 **What a past `at` can't know exactly**, because GitHub doesn't keep it:
 
