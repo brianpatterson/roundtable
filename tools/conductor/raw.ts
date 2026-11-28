@@ -74,6 +74,25 @@ export interface RawWorkItem {
   readonly runs: Json;
 }
 
+/**
+ * An open Work item as `gather` reads it for `run` and `why`: the raw answers `observe` reads, and
+ * the `surface` `act` reads before it writes, as GitHub shows it now. A history fixture never holds
+ * the surface: `observe` doesn't read it, and the recorder doesn't gather it.
+ */
+export interface OpenWorkItem extends RawWorkItem {
+  /**
+   * `{target, stateComment, said, checkRuns, runs}`: the issue or pull request `act` comments on
+   * (the Ticket, or the pull request without one); the workflow's `<!-- factory-state -->` comment
+   * on it as `{id, body}`, or `null`; the body of the workflow's latest `<!-- factory-conductor -->`
+   * comment on it, or `null`; the head's check runs as `{name, started_at, run}`, where `run` is the
+   * Actions run that made it, or `null`; and this Work item's finished Executor runs as
+   * `{display_title, id, conclusion, created_at}`.
+   */
+  readonly surface: Json;
+}
+
+export type GatheredOpenWorkItem = OpenWorkItem | UnreadableWorkItem;
+
 /** A Work item GitHub failed or refused to answer about, and why. */
 export interface UnreadableWorkItem {
   readonly number: number;

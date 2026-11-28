@@ -425,6 +425,7 @@ async function run(
   const code = await main(args, {
     fetch: github.fetch,
     env,
+    now: () => new Date(time(300)),
     save: async (number, text) => {
       saved.set(number, text);
     },
@@ -465,6 +466,8 @@ test('record writes history/<n>.json for each Work item: the raw answers and the
   const fixture = parseFixture(saved.get(40) ?? '', '40.json');
 
   assert.equal(fixture.gather, GATHER_VERSION);
+  // What act reads now isn't history.
+  assert.equal(saved.get(40)?.includes('"surface"'), false);
   assert.deepEqual(fixture.raw, JSON.parse(JSON.stringify(fixtureOf(await gathered(40)).raw)));
 });
 
