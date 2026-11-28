@@ -36,9 +36,10 @@ export interface RawWorkItem {
   /** The repository owner's login: the Owner, whose labels count as Approval. */
   readonly owner: string;
   /**
-   * The Ticket, or `null`: `{number, createdAt, author: {login}, timeline: [...], edits: [...]}`,
-   * where the timeline holds its labeled, unlabeled, renamed, closed and reopened events, and edits
-   * its description's `userContentEdits`.
+   * The Ticket, or `null`: `{number, createdAt, author: {login}, timeline: [...], edits: [...],
+   * comments: [...]}`, where the timeline holds its labeled, unlabeled, renamed, closed and reopened
+   * events, edits its description's `userContentEdits`, and comments the dispatcher's
+   * (`<!-- factory-dispatch -->`) as `{user, created_at, body}`, cut to the marker and one line.
    */
   readonly ticket: Json;
   /** The Ticket's Blockers: `[{number, createdAt, timeline: [...]}]`, the same events. */
