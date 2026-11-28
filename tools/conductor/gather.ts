@@ -3,10 +3,12 @@
 // GitHub (README.md); it decides nothing and reads no clock.
 
 import { type Json, type JsonObject, Missing, Read, parseJson } from './json.ts';
-import { DISPATCH, MINOR_FINDING, isMarked } from './markers.ts';
+import { CONDUCTOR, DISPATCH, MINOR_FINDING, STATE, isMarked } from './markers.ts';
 import {
+  type GatheredOpenWorkItem,
   type GatheredWorkItem,
-  type RawWorkItem,
+  type OpenWorkItem,
+  type UnreadableWorkItem,
   type WorkItemRef,
   closerCommit,
   isExecutorRun,
@@ -412,6 +414,8 @@ interface Shared {
   readonly main: Json[];
   readonly deploys: Json[];
   readonly runs: Json[];
+  /** The same Executor runs as `act` reads them: `{display_title, id, conclusion, created_at}`. */
+  readonly executorRuns: Json[];
   /** Compare results already read, by `commit...deploy`. */
   readonly compared: Map<string, string>;
 }
@@ -461,22 +465,30 @@ async function readWorkItem(
   ref: WorkItemRef,
   options: GatherOptions,
   shared: Shared,
-): Promise<RawWorkItem> {
+): Promise<OpenWorkItem> {
   const repo = github.repository;
   let ticket: Json = null;
   const blockers: Json[] = [];
   const merges: { commit: string; at: number }[] = [];
+  // The comments on the issue or pull request `act` comments on, for the surface.
+  let targetComments: Read[] = [];
 
   if (ref.ticket !== null) {
     const number = ref.ticket;
     const issue = await readIssue(github, number);
     const edits = await connection(github, ISSUE_EDITS, { number }, ['issue', 'userContentEdits']);
 
+    const ticketComments = await rest(
+      github,
+      `/repos/${repo}/issues/${number}/comments?per_page=100`,
+      null,
+    );
+
+    targetComments = ticketComments;
+
     // Only the dispatcher's own comments, which say which Tickets were in flight when one waited:
     // anyone can comment on an issue, and a User report's Ticket keeps none of its text.
-    const comments = (
-      await rest(github, `/repos/${repo}/issues/${number}/comments?per_page=100`, null)
-    )
+    const comments = ticketComments
       .filter(
         (comment) =>
           comment.field('user').field('login').optionalText() === 'github-actions[bot]' &&
@@ -512,6 +524,7 @@ async function readWorkItem(
   const statuses: Json[] = [];
   let comments: Json[] = [];
   let mentions: Json[] = [];
+  let headChecks: Read[] = [];
 
   if (ref.pullRequest !== null) {
     const number = ref.pullRequest;
@@ -567,6 +580,8 @@ async function readWorkItem(
         'check_runs',
       );
 
+      if (sha === head) headChecks = runs;
+
       checks.push({
         sha,
         checkRuns: runs.map((run) => ({
@@ -597,6 +612,8 @@ async function readWorkItem(
 
     const all = await rest(github, `/repos/${repo}/issues/${number}/comments?per_page=100`, null);
     const owner = repo.split('/')[0] ?? '';
+
+    if (ref.ticket === null) targetComments = all;
 
     // The Owner's `@claude`, when it was asked: not what it says, which the mention Executor reads.
     mentions = all
@@ -635,6 +652,63 @@ async function readWorkItem(
     deploys: shared.deploys,
     inclusions: await readInclusions(github, shared, merges),
     runs: shared.runs,
+    surface: surfaceOf(ref, targetComments, headChecks, shared),
+  };
+}
+
+/** The Actions run a check run belongs to, from its `details_url`; `null` for another app's check. */
+function actionsRun(check: Read): number | null {
+  const run = /\/actions\/runs\/([0-9]+)/.exec(
+    check.field('details_url').optionalText() ?? '',
+  )?.[1];
+
+  return run === undefined ? null : Number(run);
+}
+
+/** What `act` reads before it writes (`OpenWorkItem`), from answers already read. */
+function surfaceOf(
+  ref: WorkItemRef,
+  targetComments: readonly Read[],
+  headChecks: readonly Read[],
+  shared: Shared,
+): Json {
+  // Only the workflow's own: anyone can comment, and a stranger's look-alike isn't ours to edit.
+  const own = targetComments.filter(
+    (comment) => comment.field('user').field('login').optionalText() === 'github-actions[bot]',
+  );
+
+  const stateComment = own.find((comment) => comment.field('body').text().startsWith(STATE));
+
+  const said = own
+    .flatMap((comment) => {
+      const body = comment.field('body').text();
+
+      return body.startsWith(CONDUCTOR) ? [{ at: comment.field('created_at').time(), body }] : [];
+    })
+    .sort((a, b) => a.at - b.at)
+    .at(-1);
+
+  return {
+    target: ref.ticket ?? ref.pullRequest ?? ref.number,
+    stateComment:
+      stateComment === undefined
+        ? null
+        : {
+            id: stateComment.field('id').number(),
+            body: stateComment.field('body').text(),
+          },
+    said: said?.body ?? null,
+    checkRuns: headChecks.map((check) => ({
+      name: check.field('name').text(),
+      started_at: check.field('started_at').optionalText(),
+      run: actionsRun(check),
+    })),
+    runs: shared.executorRuns.filter((run) => {
+      const read = new Read(run, 'run');
+      const name = parseRunName(read.field('display_title').text());
+
+      return name !== null && name.item === ref.number && !read.field('conclusion').absent();
+    }),
   };
 }
 
@@ -661,25 +735,31 @@ async function readShared(github: GitHub, options: GatherOptions): Promise<Share
       : `${options.since.toISOString()}..${options.until.toISOString()}`,
   );
 
-  const runs = (
+  const executor = (
     await workflowRuns(
       github,
       `/repos/${repo}/actions/runs?event=workflow_dispatch&created=${created}&per_page=100`,
     )
-  )
-    .filter(
-      (run) =>
-        isExecutorRun(run) &&
-        parseRunName(run.field('display_title').optionalText() ?? '') !== null,
-    )
-    .map((run) => ({
-      display_title: run.field('display_title').text(),
-      event: run.field('event').text(),
-      status: run.field('status').text(),
-      created_at: run.field('created_at').text(),
-      run_started_at: run.field('run_started_at').optionalText(),
-      updated_at: run.field('updated_at').text(),
-    }));
+  ).filter(
+    (run) =>
+      isExecutorRun(run) && parseRunName(run.field('display_title').optionalText() ?? '') !== null,
+  );
+
+  const executorRuns = executor.map((run) => ({
+    display_title: run.field('display_title').text(),
+    id: run.field('id').number(),
+    conclusion: run.field('conclusion').optionalText(),
+    created_at: run.field('created_at').text(),
+  }));
+
+  const runs = executor.map((run) => ({
+    display_title: run.field('display_title').text(),
+    event: run.field('event').text(),
+    status: run.field('status').text(),
+    created_at: run.field('created_at').text(),
+    run_started_at: run.field('run_started_at').optionalText(),
+    updated_at: run.field('updated_at').text(),
+  }));
 
   // The latest 100 commits of main: conflict Attempts count per commit of it.
   const main = (await restOne(github, `/repos/${repo}/commits?sha=main&per_page=100`))
@@ -689,7 +769,7 @@ async function readShared(github: GitHub, options: GatherOptions): Promise<Share
       committed_at: commit.field('commit').field('committer').field('date').text(),
     }));
 
-  return { main, deploys, runs, compared: new Map() };
+  return { main, deploys, runs, executorRuns, compared: new Map() };
 }
 
 /** Why a Work item couldn't be read: GitHub's answer, or what it lacked. */
@@ -698,7 +778,10 @@ const reason = (error: Error): string =>
     ? error.message
     : `reading it failed: ${error.message}`;
 
-const unreadable = (number: number, why: string): GatheredWorkItem => ({ number, unreadable: why });
+const unreadable = (number: number, why: string): UnreadableWorkItem => ({
+  number,
+  unreadable: why,
+});
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -762,7 +845,15 @@ export async function gatherWorkItem(github: GitHub, number: number): Promise<Ga
       commits: 'all',
     };
 
-    return await readWorkItem(github, ref, options, await readShared(github, options));
+    // A fixture holds what `observe` reads, not the surface `act` reads now.
+    const { surface: _surface, ...raw } = await readWorkItem(
+      github,
+      ref,
+      options,
+      await readShared(github, options),
+    );
+
+    return raw;
   } catch (error) {
     return unreadable(number, error instanceof Error ? reason(error) : String(error));
   }
@@ -773,10 +864,13 @@ export async function gatherWorkItem(github: GitHub, number: number): Promise<Ga
  * unreadable, with the reason, and the rest are still read. Fails only when the list itself, or
  * what every Work item shares (deploys, Executor runs), can't be read.
  */
-export async function gather(github: GitHub, options: GatherOptions): Promise<GatheredWorkItem[]> {
+export async function gather(
+  github: GitHub,
+  options: GatherOptions,
+): Promise<GatheredOpenWorkItem[]> {
   const refs = await listWorkItems(github);
   const shared = await readShared(github, options);
-  const gathered: GatheredWorkItem[] = [];
+  const gathered: GatheredOpenWorkItem[] = [];
 
   for (const ref of refs) {
     try {

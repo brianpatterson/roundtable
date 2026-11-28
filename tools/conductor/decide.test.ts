@@ -149,6 +149,7 @@ function checked(decisions: readonly Decision[]): Decision[] {
 
     if (
       OWNERS_TURN.includes(decision.state) ||
+      decision.ownersTurn === true ||
       decision.action.type === 'hand-over' ||
       decision.action.type === 'withdraw'
     ) {
@@ -762,6 +763,33 @@ describe("Dependabot's pull requests", () => {
       ),
       'reviewing: nothing',
     );
+  });
+
+  test("labeled neither factory nor autofix: a wait on the Owner is marked the Owner's turn, a wait on CI isn't", () => {
+    const unswept = (patch: Partial<PullRequestState>) => one(alone({ labels: [], ...patch }));
+
+    const running = (minutes: number) =>
+      known([
+        passed({
+          status: 'in_progress',
+          conclusion: null,
+          completedAt: null,
+          startedAt: ago(minutes),
+        }),
+      ]);
+
+    for (const decision of [
+      unswept({ mergeable: known('CONFLICTING') }),
+      unswept({ checks: known([]), headAt: known(ago(31)) }),
+      unswept({ checks: running(91) }),
+      unswept({ checks: known([passed({ conclusion: 'failure' })]) }),
+      unswept({ checks: known([passed({ conclusion: 'cancelled' })]) }),
+    ]) {
+      assert.equal(decision.ownersTurn, true, decision.reason);
+    }
+
+    assert.equal(unswept({ checks: running(1) }).ownersTurn, undefined);
+    assert.equal(one(alone({ checks: running(91) })).ownersTurn, undefined);
   });
 
   test("changes asked on one the factory doesn't rework: the Owner's turn", () => {

@@ -90,9 +90,59 @@ gather (GitHub)  →  raw  →  observe(raw, at)  →  state  →  decide(state,
   for CI to start, 90 to run, 60 for a Review after CI passes, 120 for a fix or a rework to land),
   one rerun, and the budget's limits. `decide` has no number of its own. It starts nothing for a
   Work item past the dispatch budget (below), and says so, but it isn't what enforces it.
-- **`act`** carries the decisions out: labels, the one `<!-- factory-state -->` comment on each
-  Ticket (edited only when the state changes), the `factory` status on the pull request's head,
-  and `workflow_dispatch` of Executors. With `--dry-run` it prints each write instead.
+- **`act`** (`act.ts`) carries the decisions out (below). With `--dry-run` it prints each write
+  instead.
+
+## What `act` writes
+
+`act` is the only code that writes to GitHub, through the `fetch` it's given, with the token in
+`GH_TOKEN`. A pure `plan` turns each decision into the writes that make GitHub show it, and leaves
+out every write GitHub already shows, so a second `run` with nothing changed writes nothing. It
+reads what it would write over from the `surface` `gather` reads beside the raw answers (`raw.ts`'s
+`OpenWorkItem`): the comments it keeps, the head's check runs, and how this Work item's Executor
+runs ended. A history fixture never holds it.
+
+| Decision or state                                            | Writes                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **start** an Executor                                        | `workflow_dispatch` of its kind's workflow (below) on `main`. A build first labels the Ticket `building` and takes off an answered `needs-info`, as `dispatch.sh` does, and takes `building` back off if the dispatch fails                                                                                                                               |
+| **hand over**                                                | label `needs-human` (the Ticket, or the pull request without one), take `building` off the Ticket, and comment the reason                                                                                                                                                                                                                                 |
+| **withdraw**                                                 | take `ready` off the Ticket, and comment the reason                                                                                                                                                                                                                                                                                                       |
+| **rerun**                                                    | rerun the failed jobs of each Actions run that made one of the checks, once per run                                                                                                                                                                                                                                                                       |
+| a Ticket from its build until it's Deployed (or handed over) | the `building` label, for people to see: `decide` never reads it to decide whether a Ticket builds. `deployed` and `needs-human` take it off                                                                                                                                                                                                              |
+| every Work item                                              | one `<!-- factory-state -->` comment on the Ticket (or the pull request without one): the state, the reason and the time. Posted the first time, edited only when the state or the reason changes (a minute count moving on isn't a change). Once handed over it keeps the hand-over's reason                                                             |
+| a Work item with an open pull request                        | the `factory` status on its head ([ADR-0063](../../docs/adr/0063-factory-status-check.md)), only when it changes: success when it's the Owner's turn (`reviewed`, `needs-human`, or a wait on them for a pull request the factory doesn't look after), error when the Executor run of the head that finished last stopped (linking it), pending otherwise |
+
+The reasons for a hand-over or a withdrawal go in a `<!-- factory-conductor -->` comment, and like
+`dispatch.sh`, `act` doesn't post the same one twice in a row. Both markers are in `markers.ts`;
+`observe` reads neither, and `gather` keeps only the workflow's own (`github-actions[bot]`), so the
+Conductor's comments must be posted with the workflow's `GITHUB_TOKEN`.
+
+A write that fails doesn't stop the others: `run` makes the rest, then exits 1 naming each failed
+write.
+
+### Executors' workflows and inputs
+
+`act` starts each kind of Executor by `workflow_dispatch` of one workflow, on `main`. The table is
+`WORKFLOWS` in `act.ts`, and the Owner's wiring must match it:
+
+| Kind       | Workflow                |
+| ---------- | ----------------------- |
+| `build`    | `factory.yml`           |
+| `ci-fix`   | `factory.yml`           |
+| `review`   | `review.yml`            |
+| `rework`   | `rework.yml`            |
+| `conflict` | `resolve-conflicts.yml` |
+| `mention`  | `factory.yml`           |
+
+Every start sends four string inputs:
+
+- `item`: the Work item's number (the Ticket's, or the pull request's when there's no Ticket);
+- `kind`: one of the kinds above, so a workflow with more than one tells them apart;
+- `sha`: the head commit it was started for, empty before there's a pull request;
+- `attempt`: which Attempt of its kind it is, `minor` for Rework's Minor pass, or empty for a run
+  that isn't an Attempt (a review, a mention).
+
+The Executor names its run from them (`<kind> #<item> <sha7>`, above).
 
 ## What `gather` reads
 
@@ -218,12 +268,20 @@ the factory's.
 
 ## The command line
 
-- `node tools/conductor/main.ts run [--dry-run]`: one pass over every open Work item.
-- `node tools/conductor/main.ts why <n>`: one Work item's state, action, reason and evidence,
-  without acting. `scripts/factory-why.sh <n>` runs it with `gh auth token`.
-- `node tools/conductor/main.ts record <n>…`: records Work items as history fixtures (above),
-  with the token in `GH_TOKEN` and the repository in `GITHUB_REPOSITORY`. Built; `run` and `why`
-  aren't yet.
+Each command takes the token in `GH_TOKEN` and the repository in `GITHUB_REPOSITORY`, and reads the
+time once, at its start.
+
+- `node tools/conductor/main.ts run [--dry-run]`: one pass over every open Work item: `gather`,
+  `observe` at the time it read, `decide`, and `act` on each decision. It prints each decision,
+  then each write as it makes it; `--dry-run` prints each write it would make, one per line, and
+  makes none. It exits 1 naming each write that failed, and without `GH_TOKEN` before reading
+  anything. Without `--dry-run` it's meant for `conductor.yml` (the Owner's wiring), whose
+  `GITHUB_TOKEN` posts the comments `act` keeps.
+- `node tools/conductor/main.ts why <n>`: one Work item (by its number, or its pull request's):
+  its state, action and reason, the facts they came from (Approval, Blockers, head, checks,
+  Review, Attempts, Executor runs), its dispatch budget count, and the writes `run` would make. It
+  writes nothing. `scripts/factory-why.sh <n>` runs it for this repository with `gh auth token`.
+- `node tools/conductor/main.ts record <n>…`: records Work items as history fixtures (above).
 
 ## The Owner's wiring
 

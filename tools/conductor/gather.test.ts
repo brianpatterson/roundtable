@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { type GitHub, gather, listWorkItems } from './gather.ts';
 import { type Json, Read, parseJson } from './json.ts';
 import { observe } from './observe.ts';
-import type { GatheredWorkItem, RawWorkItem } from './raw.ts';
+import type { GatheredOpenWorkItem, OpenWorkItem } from './raw.ts';
 
 const time = (minutes: number): string =>
   new Date(Date.UTC(2026, 10, 20, 10, minutes)).toISOString();
@@ -166,8 +166,10 @@ function answerRest(path: string, search: URLSearchParams): Answer {
         workflow_runs: [
           {
             display_title: 'build #10 -',
+            id: 501,
             event: 'workflow_dispatch',
             status: 'completed',
+            conclusion: 'failure',
             created_at: time(-60),
             run_started_at: time(-60),
             updated_at: time(-50),
@@ -231,6 +233,7 @@ function answerRest(path: string, search: URLSearchParams): Answer {
                 conclusion: 'success',
                 started_at: time(5),
                 completed_at: time(6),
+                details_url: 'https://github.com/o/r/actions/runs/700/job/7001',
                 app: {},
               },
             ],
@@ -285,6 +288,38 @@ function answerRest(path: string, search: URLSearchParams): Answer {
           created_at: time(9),
           updated_at: time(9),
           body: '@claude what the Owner asked',
+        },
+        {
+          id: 900,
+          user: { login: 'github-actions[bot]' },
+          created_at: time(1),
+          updated_at: time(2),
+          body: '<!-- factory-state -->\n**State:** `checking`',
+        },
+        {
+          id: 901,
+          user: { login: 'stranger' },
+          created_at: time(2),
+          updated_at: time(2),
+          body: '<!-- factory-state -->\n**State:** `reviewed`',
+        },
+        {
+          user: { login: 'github-actions[bot]' },
+          created_at: time(3),
+          updated_at: time(3),
+          body: '<!-- factory-conductor -->\nThe second reason.',
+        },
+        {
+          user: { login: 'github-actions[bot]' },
+          created_at: time(1),
+          updated_at: time(1),
+          body: '<!-- factory-conductor -->\nThe first reason.',
+        },
+        {
+          user: { login: 'stranger' },
+          created_at: time(4),
+          updated_at: time(4),
+          body: '<!-- factory-conductor -->\nA stranger says.',
         },
         {
           user: { login: 'stranger' },
@@ -345,7 +380,7 @@ function fakeGitHub(refuse: ReadonlySet<number> = new Set()): FakeGitHub {
 
 const options = { since: new Date(time(-24 * 60)), until: null, commits: 'head' } as const;
 
-function readable(items: readonly GatheredWorkItem[], number: number): RawWorkItem {
+function readable(items: readonly GatheredOpenWorkItem[], number: number): OpenWorkItem {
   const item = items.find((candidate) => candidate.number === number);
 
   assert.ok(item !== undefined && !('unreadable' in item), `#${number} should be readable`);
@@ -431,6 +466,28 @@ test('one Work item is read whole, following every page, and trimmed to what obs
   assert.equal(JSON.stringify(item).includes('secret plan'), false);
   assert.equal(JSON.stringify(item).includes('private detail'), false);
   assert.equal(JSON.stringify(item).includes('what the Owner asked'), false);
+});
+
+test("the surface act reads: the workflow's own state comment and latest reason, the head's check runs with their Actions run, and finished Executor runs", async () => {
+  const items = await gather(fakeGitHub().github, options);
+  const item = readable(items, 10);
+
+  assert.deepEqual(item.surface, {
+    target: 10,
+    stateComment: { id: 900, body: '<!-- factory-state -->\n**State:** `checking`' },
+    said: '<!-- factory-conductor -->\nThe second reason.',
+    checkRuns: [
+      { name: 'check', started_at: time(5), run: 700 },
+      { name: 'CodeQL', started_at: time(6), run: null },
+    ],
+    runs: [{ display_title: 'build #10 -', id: 501, conclusion: 'failure', created_at: time(-60) }],
+  });
+
+  // A pull request with no Ticket is its own target.
+  const pr = readable(items, 13);
+
+  assert.equal(new Read(pr.surface, 'surface').field('target').number(), 13);
+  assert.deepEqual(new Read(pr.surface, 'surface').field('runs').json(), []);
 });
 
 test('what gather reads, observe reads', async () => {

@@ -25,6 +25,15 @@ export const DISPATCH = '<!-- factory-dispatch -->';
 
 export const MARKERS = [CI_FIX, REWORK, REWORK_MINOR, CONFLICT, REVIEW, REVIEW_CHANGES, DISPATCH];
 
+// The Conductor's own comments (`act.ts`), which no script in `.github/factory/` writes, so they
+// aren't in `MARKERS`, and `observe` reads neither: they report, and decide nothing.
+
+/** The one comment on each Ticket (or pull request without one) with its state, reason and time (ADR-0075). */
+export const STATE = '<!-- factory-state -->';
+
+/** The Conductor's comment when it hands a Work item over or withdraws an Approval, with the reason. */
+export const CONDUCTOR = '<!-- factory-conductor -->';
+
 /** A minor finding's line in the reviewer's comment, as `post-review.sh` counts them (`1. **minor**:`). */
 export const MINOR_FINDING = /^\s*([0-9]+\.|[-*]) \*\*minor\*\*/;
 
