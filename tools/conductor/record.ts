@@ -454,7 +454,7 @@ function statusHappenings(raw: Raw): Happening[] {
   return happenings;
 }
 
-/** Checks run again on the same commit: the sweeper's rerun, unless the CI fixer's. */
+/** Checks run again on the same commit, not skipped: the sweeper's rerun, unless the CI fixer's. */
 function rerunHappenings(raw: Raw, fixerComments: readonly number[]): Happening[] {
   const happenings: Happening[] = [];
 
@@ -465,7 +465,9 @@ function rerunHappenings(raw: Raw, fixerComments: readonly number[]): Happening[
     for (const run of entry.field('checkRuns').items()) {
       const started = run.field('started_at').optionalTime();
 
-      if (started === null) continue;
+      // A skipped run is a workflow some other event started, whose job didn't apply: a label
+      // added several times in seconds starts Review that many times. Nothing reran it.
+      if (started === null || run.field('conclusion').optionalText() === 'skipped') continue;
 
       const name = run.field('name').text();
 

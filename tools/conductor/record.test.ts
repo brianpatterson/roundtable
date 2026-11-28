@@ -212,7 +212,13 @@ const PULL_REQUESTS = new Map<number, PullRequest>([
       ],
       comments: [],
       checks: {
-        [F1]: [checkRun('check', 1, 10, 'cancelled'), checkRun('check', 30, 40, 'cancelled')],
+        [F1]: [
+          checkRun('check', 1, 10, 'cancelled'),
+          checkRun('check', 30, 40, 'cancelled'),
+          // Label events start a workflow whose job is skipped, again and again: not a rerun.
+          checkRun('review', 2, 2, 'skipped'),
+          checkRun('review', 3, 3, 'skipped'),
+        ],
       },
       statuses: { [F1]: [] },
     },
@@ -461,7 +467,7 @@ test('record writes history/<n>.json for each Work item: the raw answers and the
 
   assert.equal(code, 0);
   assert.deepEqual([...saved.keys()], [40, 50]);
-  assert.deepEqual(out, ['#40: recorded, 15 checkpoints', '#50: recorded, 6 checkpoints']);
+  assert.deepEqual(out, ['#40: recorded, 15 checkpoints', '#50: recorded, 8 checkpoints']);
 
   const fixture = parseFixture(saved.get(40) ?? '', '40.json');
 
@@ -564,6 +570,9 @@ test("a hand-over is the factory's `needs-human`, and a rerun is a check run aga
   const { checkpoints } = fixtureOf(await gathered(50));
 
   assert.deepEqual(actionAt(checkpoints, 10), { type: 'rerun', head: F1, checks: ['check'] });
+  // A skipped check started again is another event's workflow skipping its job, not a rerun.
+  assert.deepEqual(actionAt(checkpoints, 2), { type: 'nothing' });
+  assert.deepEqual(actionAt(checkpoints, 3), { type: 'nothing' });
   assert.deepEqual(actionAt(checkpoints, 40), {
     type: 'hand-over',
     reason: `pull request: \`needs-human\` added by github-actions at ${time(60)}`,

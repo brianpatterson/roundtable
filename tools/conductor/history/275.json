@@ -1,0 +1,1869 @@
+{
+  "checkpoints": [
+    {
+      "at": "2026-11-27T10:22:39.000Z",
+      "building": [],
+      "events": [
+        "Ticket: `bug` added by brianpatterson"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory did nothing until the Owner acted: Ticket: `ready` added by brianpatterson at 2026-11-27T10:27:14.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T10:27:14.000Z",
+      "building": [],
+      "events": [
+        "Ticket: `ready` added by brianpatterson"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before Ticket: the dispatcher commented at 2026-11-27T10:27:25.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T10:27:25.000Z",
+      "building": [
+        271
+      ],
+      "events": [
+        "Ticket: the dispatcher commented"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before Blocker #271: closed at 2026-11-27T10:32:46.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T10:32:46.000Z",
+      "building": [
+        271
+      ],
+      "events": [
+        "Blocker #271: closed"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before Ticket: the dispatcher commented at 2026-11-27T10:33:01.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T10:33:01.000Z",
+      "building": [],
+      "events": [
+        "Ticket: the dispatcher commented"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before deploy: 8098186 includes 8098186 at 2026-11-27T10:37:31.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T10:37:31.000Z",
+      "building": [],
+      "events": [
+        "deploy: 8098186 includes 8098186"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before Ticket: the dispatcher commented at 2026-11-27T10:37:56.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T10:37:56.000Z",
+      "building": [
+        272
+      ],
+      "events": [
+        "Ticket: the dispatcher commented"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before Ticket: the dispatcher commented at 2026-11-27T11:14:41.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T11:14:41.000Z",
+      "building": [
+        273
+      ],
+      "events": [
+        "Ticket: the dispatcher commented"
+      ],
+      "next": {
+        "action": {
+          "attempt": 1,
+          "executor": "build",
+          "head": null,
+          "item": 275,
+          "minor": false,
+          "type": "start"
+        },
+        "evidence": "It started: Ticket: `building` added by github-actions at 2026-11-27T12:14:37.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:14:37.000Z",
+      "building": [
+        273
+      ],
+      "events": [
+        "Ticket: `building` added by github-actions"
+      ],
+      "next": {
+        "unknown": "The build was running then (from 2026-11-27T12:14:37.000Z to 2026-11-27T12:20:54.000Z), and no Executor run recorded shows it to decide."
+      }
+    },
+    {
+      "at": "2026-11-27T12:14:40.000Z",
+      "building": [],
+      "events": [
+        "Ticket: the dispatcher commented"
+      ],
+      "next": {
+        "unknown": "The build was running then (from 2026-11-27T12:14:37.000Z to 2026-11-27T12:20:54.000Z), and no Executor run recorded shows it to decide."
+      }
+    },
+    {
+      "at": "2026-11-27T12:20:35.000Z",
+      "building": [],
+      "events": [
+        "push: b9dea71 by github-actions[bot], claude"
+      ],
+      "next": {
+        "unknown": "The build was running then (from 2026-11-27T12:14:37.000Z to 2026-11-27T12:20:54.000Z), and no Executor run recorded shows it to decide."
+      }
+    },
+    {
+      "at": "2026-11-27T12:20:54.000Z",
+      "building": [],
+      "events": [
+        "pull request #279 opened by claude"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before pull request: `factory` added by claude at 2026-11-27T12:20:55.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:20:55.000Z",
+      "building": [],
+      "events": [
+        "pull request: `factory` added by claude"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: review ended skipped on b9dea71 at 2026-11-27T12:20:59.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:20:59.000Z",
+      "building": [],
+      "events": [
+        "check: review ended skipped on b9dea71",
+        "check: select ended skipped on b9dea71",
+        "check: status ended skipped on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: dependency-review ended success on b9dea71 at 2026-11-27T12:21:05.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:21:05.000Z",
+      "building": [],
+      "events": [
+        "check: dependency-review ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: mutation ended success on b9dea71 at 2026-11-27T12:21:16.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:21:16.000Z",
+      "building": [],
+      "events": [
+        "check: mutation ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: images (web) ended success on b9dea71 at 2026-11-27T12:21:21.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:21:21.000Z",
+      "building": [],
+      "events": [
+        "check: images (web) ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: CodeQL ended success on b9dea71 at 2026-11-27T12:21:29.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:21:29.000Z",
+      "building": [],
+      "events": [
+        "check: CodeQL ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: analyze (actions) ended success on b9dea71 at 2026-11-27T12:21:34.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:21:34.000Z",
+      "building": [],
+      "events": [
+        "check: analyze (actions) ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: images (api) ended success on b9dea71 at 2026-11-27T12:21:45.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:21:45.000Z",
+      "building": [],
+      "events": [
+        "check: images (api) ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: analyze (javascript-typescript) ended success on b9dea71 at 2026-11-27T12:22:16.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:22:16.000Z",
+      "building": [],
+      "events": [
+        "check: analyze (javascript-typescript) ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: browser ended success on b9dea71 at 2026-11-27T12:23:15.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:23:15.000Z",
+      "building": [],
+      "events": [
+        "check: browser ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: infra ended success on b9dea71 at 2026-11-27T12:23:50.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:23:50.000Z",
+      "building": [],
+      "events": [
+        "check: infra ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: check ended success on b9dea71 at 2026-11-27T12:24:41.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:24:41.000Z",
+      "building": [],
+      "events": [
+        "check: check ended success on b9dea71"
+      ],
+      "next": {
+        "action": {
+          "attempt": null,
+          "executor": "review",
+          "head": "b9dea71d488222703022c15440651360aca15847",
+          "item": 275,
+          "minor": false,
+          "type": "start"
+        },
+        "evidence": "It started: the factory at 2026-11-27T12:24:58.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:26:31.000Z",
+      "building": [],
+      "events": [
+        "comment: <!-- factory-review -->"
+      ],
+      "next": {
+        "action": {
+          "attempt": null,
+          "executor": "rework",
+          "head": "b9dea71d488222703022c15440651360aca15847",
+          "item": 275,
+          "minor": true,
+          "type": "start"
+        },
+        "evidence": "It started: the factory at 2026-11-27T12:26:57.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:30:57.000Z",
+      "building": [],
+      "events": [
+        "push: b16628d by github-actions[bot], claude"
+      ],
+      "next": {
+        "unknown": "The Rework was running then (from 2026-11-27T12:26:57.000Z to 2026-11-27T12:31:07.000Z), and no Executor run recorded shows it to decide."
+      }
+    },
+    {
+      "at": "2026-11-27T12:31:07.000Z",
+      "building": [],
+      "events": [
+        "comment: <!-- factory-rework -->"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: dependency-review ended success on b16628d at 2026-11-27T12:31:16.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:31:16.000Z",
+      "building": [],
+      "events": [
+        "check: dependency-review ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: mutation ended success on b16628d at 2026-11-27T12:31:21.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:31:21.000Z",
+      "building": [],
+      "events": [
+        "check: mutation ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: images (web) ended success on b16628d at 2026-11-27T12:31:27.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:31:27.000Z",
+      "building": [],
+      "events": [
+        "check: images (web) ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: CodeQL ended success on b16628d at 2026-11-27T12:31:42.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:31:42.000Z",
+      "building": [],
+      "events": [
+        "check: CodeQL ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: analyze (actions) ended success on b16628d at 2026-11-27T12:31:47.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:31:47.000Z",
+      "building": [],
+      "events": [
+        "check: analyze (actions) ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: infra ended success on b16628d at 2026-11-27T12:32:12.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:32:12.000Z",
+      "building": [],
+      "events": [
+        "check: infra ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: analyze (javascript-typescript) ended success on b16628d at 2026-11-27T12:32:30.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:32:30.000Z",
+      "building": [],
+      "events": [
+        "check: analyze (javascript-typescript) ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: images (api) ended success on b16628d at 2026-11-27T12:32:33.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:32:33.000Z",
+      "building": [],
+      "events": [
+        "check: images (api) ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: browser ended success on b16628d at 2026-11-27T12:33:18.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:33:18.000Z",
+      "building": [],
+      "events": [
+        "check: browser ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory took no step before check: check ended success on b16628d at 2026-11-27T12:34:23.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:34:23.000Z",
+      "building": [],
+      "events": [
+        "check: check ended success on b16628d"
+      ],
+      "next": {
+        "action": {
+          "attempt": null,
+          "executor": "review",
+          "head": "b16628ddaf7119bb3df70a10f4d020aec8d46960",
+          "item": 275,
+          "minor": false,
+          "type": "start"
+        },
+        "evidence": "It started: the factory at 2026-11-27T12:34:32.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T12:35:33.000Z",
+      "building": [],
+      "events": [
+        "comment: <!-- factory-review --> edited"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "The factory did nothing until the Owner acted: pull request: merged at 2026-11-27T15:46:44.000Z."
+      }
+    },
+    {
+      "at": "2026-11-27T15:46:44.000Z",
+      "building": [],
+      "events": [
+        "pull request: merged",
+        "pull request: closed"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "Nothing the factory or the Owner did followed, by the time it was recorded."
+      }
+    },
+    {
+      "at": "2026-11-27T15:46:47.000Z",
+      "building": [],
+      "events": [
+        "Ticket: closed"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "Nothing the factory or the Owner did followed, by the time it was recorded."
+      }
+    },
+    {
+      "at": "2026-11-27T15:50:34.000Z",
+      "building": [],
+      "events": [
+        "deploy: a4b42aa includes a4b42aa"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "Nothing the factory or the Owner did followed, by the time it was recorded."
+      }
+    },
+    {
+      "at": "2026-11-27T15:50:48.000Z",
+      "building": [],
+      "events": [
+        "Ticket: `building` removed by github-actions"
+      ],
+      "next": {
+        "action": {
+          "type": "nothing"
+        },
+        "evidence": "Nothing the factory or the Owner did followed, by the time it was recorded."
+      }
+    }
+  ],
+  "gather": 1,
+  "number": 275,
+  "raw": {
+    "blockers": [
+      {
+        "author": {
+          "login": "brianpatterson"
+        },
+        "createdAt": "2026-11-27T06:24:31Z",
+        "number": 271,
+        "timeline": [
+          {
+            "__typename": "LabeledEvent",
+            "actor": {
+              "login": "brianpatterson"
+            },
+            "createdAt": "2026-11-27T06:24:32Z",
+            "label": {
+              "name": "enhancement"
+            }
+          },
+          {
+            "__typename": "LabeledEvent",
+            "actor": {
+              "login": "brianpatterson"
+            },
+            "createdAt": "2026-11-27T06:28:29Z",
+            "label": {
+              "name": "ready"
+            }
+          },
+          {
+            "__typename": "LabeledEvent",
+            "actor": {
+              "login": "github-actions"
+            },
+            "createdAt": "2026-11-27T06:28:40Z",
+            "label": {
+              "name": "building"
+            }
+          },
+          {
+            "__typename": "ClosedEvent",
+            "closer": {
+              "__typename": "PullRequest",
+              "mergeCommit": {
+                "oid": "80981869e62615015eb7cc00eda16cb864c74a47"
+              },
+              "merged": true
+            },
+            "createdAt": "2026-11-27T10:32:46Z"
+          },
+          {
+            "__typename": "UnlabeledEvent",
+            "actor": {
+              "login": "github-actions"
+            },
+            "createdAt": "2026-11-27T10:37:48Z",
+            "label": {
+              "name": "building"
+            }
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "checkRuns": [
+          {
+            "completed_at": "2026-11-27T12:20:59Z",
+            "conclusion": "skipped",
+            "name": "review",
+            "started_at": "2026-11-27T12:20:59Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:20:59Z",
+            "conclusion": "skipped",
+            "name": "select",
+            "started_at": "2026-11-27T12:20:59Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:20:59Z",
+            "conclusion": "skipped",
+            "name": "status",
+            "started_at": "2026-11-27T12:21:06Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:21:05Z",
+            "conclusion": "success",
+            "name": "dependency-review",
+            "started_at": "2026-11-27T12:21:00Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:21:16Z",
+            "conclusion": "success",
+            "name": "mutation",
+            "started_at": "2026-11-27T12:21:00Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:21:21Z",
+            "conclusion": "success",
+            "name": "images (web)",
+            "started_at": "2026-11-27T12:21:00Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:21:29Z",
+            "conclusion": "success",
+            "name": "CodeQL",
+            "started_at": "2026-11-27T12:21:25Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:21:34Z",
+            "conclusion": "success",
+            "name": "analyze (actions)",
+            "started_at": "2026-11-27T12:21:00Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:21:45Z",
+            "conclusion": "success",
+            "name": "images (api)",
+            "started_at": "2026-11-27T12:21:00Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:22:16Z",
+            "conclusion": "success",
+            "name": "analyze (javascript-typescript)",
+            "started_at": "2026-11-27T12:21:01Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:23:15Z",
+            "conclusion": "success",
+            "name": "browser",
+            "started_at": "2026-11-27T12:21:01Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:23:50Z",
+            "conclusion": "success",
+            "name": "infra",
+            "started_at": "2026-11-27T12:21:00Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:24:41Z",
+            "conclusion": "success",
+            "name": "check",
+            "started_at": "2026-11-27T12:21:01Z",
+            "status": "completed"
+          }
+        ],
+        "sha": "b9dea71d488222703022c15440651360aca15847"
+      },
+      {
+        "checkRuns": [
+          {
+            "completed_at": "2026-11-27T12:31:16Z",
+            "conclusion": "success",
+            "name": "dependency-review",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:31:21Z",
+            "conclusion": "success",
+            "name": "mutation",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:31:27Z",
+            "conclusion": "success",
+            "name": "images (web)",
+            "started_at": "2026-11-27T12:31:07Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:31:42Z",
+            "conclusion": "success",
+            "name": "CodeQL",
+            "started_at": "2026-11-27T12:31:37Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:31:47Z",
+            "conclusion": "success",
+            "name": "analyze (actions)",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:32:12Z",
+            "conclusion": "success",
+            "name": "infra",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:32:30Z",
+            "conclusion": "success",
+            "name": "analyze (javascript-typescript)",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:32:33Z",
+            "conclusion": "success",
+            "name": "images (api)",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:33:18Z",
+            "conclusion": "success",
+            "name": "browser",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          },
+          {
+            "completed_at": "2026-11-27T12:34:23Z",
+            "conclusion": "success",
+            "name": "check",
+            "started_at": "2026-11-27T12:31:08Z",
+            "status": "completed"
+          }
+        ],
+        "sha": "b16628ddaf7119bb3df70a10f4d020aec8d46960"
+      }
+    ],
+    "comments": [
+      {
+        "body": "<!-- factory-review -->\n### Factory review: ✅ Ready for you\n<sub>Commit b16628ddaf7119bb3df70a10f4d020aec8d46960, reviewed by the factory's reviewer agent (ADR-0026). It never approves; the owner merges.</sub>",
+        "created_at": "2026-11-27T12:26:31Z",
+        "updated_at": "2026-11-27T12:35:33Z",
+        "user": {
+          "login": "github-actions[bot]"
+        }
+      },
+      {
+        "body": "<!-- factory-rework -->\n<!-- factory-rework-minor -->\n### Rework, minor findings: pushed changes; CI and the reviewer run again\n<sub>[Run](https://github.com/brianpatterson/roundtable/actions/runs/45998707247), answering the review of commit b9dea71d488222703022c15440651360aca15847. ADR-0037, ADR-0053.</sub>",
+        "created_at": "2026-11-27T12:31:07Z",
+        "updated_at": "2026-11-27T12:31:07Z",
+        "user": {
+          "login": "github-actions[bot]"
+        }
+      }
+    ],
+    "deploys": [
+      {
+        "head_sha": "8618d15e6ae66b52f7607fb16e7cb175a2724166",
+        "updated_at": "2026-11-28T05:13:04Z"
+      },
+      {
+        "head_sha": "15c785bba5091f20033ad2e3b14a9d576b7b5b9c",
+        "updated_at": "2026-11-28T02:12:31Z"
+      },
+      {
+        "head_sha": "a887c81c99c3327622d88a25ef319726c9011b00",
+        "updated_at": "2026-11-28T01:01:19Z"
+      },
+      {
+        "head_sha": "83565ba8f19a1b2b0e032d836786ebfb9f60512a",
+        "updated_at": "2026-11-27T22:40:09Z"
+      },
+      {
+        "head_sha": "f44e795f50f781c96c6d660f06196ff9fb558e93",
+        "updated_at": "2026-11-27T20:46:48Z"
+      },
+      {
+        "head_sha": "ab4e998b042282446604b864378a84ef142cdf1c",
+        "updated_at": "2026-11-27T20:15:25Z"
+      },
+      {
+        "head_sha": "e58801b3e3f4a564b0e68d411640184bd902592b",
+        "updated_at": "2026-11-27T18:05:00Z"
+      },
+      {
+        "head_sha": "62fe83534cad3410d2bc31c0e44709a380fd8c12",
+        "updated_at": "2026-11-27T17:26:45Z"
+      },
+      {
+        "head_sha": "36336861340a6eb32d49cbfbdc7a58905e52ddcf",
+        "updated_at": "2026-11-27T17:11:41Z"
+      },
+      {
+        "head_sha": "65dca0cdd09ed983073eae6698b5de7e9c1afd5c",
+        "updated_at": "2026-11-27T16:12:21Z"
+      },
+      {
+        "head_sha": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00",
+        "updated_at": "2026-11-27T15:50:34Z"
+      },
+      {
+        "head_sha": "ac3203800c54ef2dd5488cb6f56e6355fe758596",
+        "updated_at": "2026-11-27T12:14:18Z"
+      },
+      {
+        "head_sha": "1e10e362da9ef868e0a745a6c3cc42af9091e604",
+        "updated_at": "2026-11-27T11:14:21Z"
+      },
+      {
+        "head_sha": "80981869e62615015eb7cc00eda16cb864c74a47",
+        "updated_at": "2026-11-27T10:37:31Z"
+      },
+      {
+        "head_sha": "3c02370da19d483d3a4b0a89384c5d4aa941fad7",
+        "updated_at": "2026-11-27T05:50:22Z"
+      },
+      {
+        "head_sha": "1087c73d427dad33758f172bc86c30751300204c",
+        "updated_at": "2026-11-27T00:57:14Z"
+      },
+      {
+        "head_sha": "ba23d81b0cbeab8fc9c8bcb2e5a2099be79ecd19",
+        "updated_at": "2026-11-26T23:51:11Z"
+      },
+      {
+        "head_sha": "d56dce1938c4da8c6dc54975b7b5dc0ba7bda2ab",
+        "updated_at": "2026-11-26T22:16:09Z"
+      },
+      {
+        "head_sha": "ae9dce0db235d6bda1a12adbe83fe50f4ba0463c",
+        "updated_at": "2026-11-26T21:29:14Z"
+      },
+      {
+        "head_sha": "a52098e7e8d3050863eb663b02e363ef5daf78c9",
+        "updated_at": "2026-11-26T20:51:35Z"
+      },
+      {
+        "head_sha": "89b15fbbb63f4bcc95e372b2515bb30e2d17cac3",
+        "updated_at": "2026-11-26T19:02:31Z"
+      },
+      {
+        "head_sha": "a82afe3348a3fa82d8b867e1fce154ae83e298e8",
+        "updated_at": "2026-11-26T18:17:04Z"
+      },
+      {
+        "head_sha": "b977ac1afb52ce58ae828e4f493b5babdf5c1dc3",
+        "updated_at": "2026-11-26T17:56:00Z"
+      },
+      {
+        "head_sha": "a330b6f6dc96ddee97e775e9ed546035ae9381e7",
+        "updated_at": "2026-11-26T15:54:09Z"
+      },
+      {
+        "head_sha": "718deacfb6051c723a53e84f913cfb5c20566e31",
+        "updated_at": "2026-11-26T15:17:37Z"
+      },
+      {
+        "head_sha": "6e9dc6b3a5da58470bdf6248e660a4776efe33c1",
+        "updated_at": "2026-11-26T05:24:28Z"
+      },
+      {
+        "head_sha": "5c6f8c74c9750309226069b44fa72efac7c1a1c5",
+        "updated_at": "2026-11-26T05:13:42Z"
+      },
+      {
+        "head_sha": "2989896e4c0a6a9835686339ccc8b1e8377835b5",
+        "updated_at": "2026-11-26T05:03:23Z"
+      },
+      {
+        "head_sha": "aab3228a2d6db6de34e2fdbb4fb6dab70dd82578",
+        "updated_at": "2026-11-26T04:48:42Z"
+      },
+      {
+        "head_sha": "03f6fc3b4d00b11dc06df3589c234009d377c778",
+        "updated_at": "2026-11-26T04:04:25Z"
+      },
+      {
+        "head_sha": "e3e1d3e31aecc39991cce8e5495e2a747d47ce3b",
+        "updated_at": "2026-11-26T03:34:50Z"
+      },
+      {
+        "head_sha": "ff812a369671f9003afa26925ae788ad38e45ce4",
+        "updated_at": "2026-11-26T03:17:20Z"
+      },
+      {
+        "head_sha": "eb9233e8a8d51902bb61e779104664bc37bfb025",
+        "updated_at": "2026-11-26T02:32:00Z"
+      },
+      {
+        "head_sha": "61f484378d0329b565c686d6ab40fc7d4d3de351",
+        "updated_at": "2026-11-26T01:20:58Z"
+      },
+      {
+        "head_sha": "52599745a74600c67111983ef131f5982fb8ca36",
+        "updated_at": "2026-11-25T23:27:53Z"
+      },
+      {
+        "head_sha": "57bcb2b5ed5fa83b4f8ff0c5c47ca1f53cc3370c",
+        "updated_at": "2026-11-25T23:04:57Z"
+      },
+      {
+        "head_sha": "20a54ff40471bc6d1e2ad4e831542642eb5622ac",
+        "updated_at": "2026-11-25T22:44:11Z"
+      },
+      {
+        "head_sha": "6297aace0b0c82e58b84746fe5a5207bd0e35ced",
+        "updated_at": "2026-11-25T22:14:14Z"
+      },
+      {
+        "head_sha": "d8e8be3b4f6903bfc9ceec08edc08e3c8273d055",
+        "updated_at": "2026-11-25T22:00:11Z"
+      },
+      {
+        "head_sha": "5777eef39358b74586df0b00c3cc970b623e5896",
+        "updated_at": "2026-11-25T21:28:55Z"
+      },
+      {
+        "head_sha": "02b4acd7c2def796e56a140c17324c55bcdc3046",
+        "updated_at": "2026-11-25T20:59:28Z"
+      },
+      {
+        "head_sha": "467c2eadeba1d29b0450f5c20dfb321063503f45",
+        "updated_at": "2026-11-25T20:54:17Z"
+      },
+      {
+        "head_sha": "d5109a1da4418e93c71be9340a5c8d13a9b445c5",
+        "updated_at": "2026-11-25T18:39:54Z"
+      },
+      {
+        "head_sha": "ec224f1581021621f49a938b8a3dbe8b9bcb6036",
+        "updated_at": "2026-11-25T18:04:02Z"
+      },
+      {
+        "head_sha": "b5929599708cb1cfbae82a7e826a683953e4071f",
+        "updated_at": "2026-11-25T17:19:39Z"
+      },
+      {
+        "head_sha": "a069ca543089d5c3d581b224be80ab9d8d76e79b",
+        "updated_at": "2026-11-25T16:52:12Z"
+      },
+      {
+        "head_sha": "5c2f00b18bf21c7e5fc76784fc80f52246ae6e6a",
+        "updated_at": "2026-11-25T06:39:31Z"
+      },
+      {
+        "head_sha": "10850df4d1c13846bcba03af1fa0c4f4b7baf16d",
+        "updated_at": "2026-11-25T05:37:55Z"
+      },
+      {
+        "head_sha": "239e0441f0f972b711a0ae426c4673beb76b6ad3",
+        "updated_at": "2026-11-25T04:56:10Z"
+      },
+      {
+        "head_sha": "af4ec5798b85bb1609e86333365f7d21dcaef8e7",
+        "updated_at": "2026-11-25T02:57:36Z"
+      },
+      {
+        "head_sha": "1c98961b36b15655664d7d1d7fa0b6308b08055b",
+        "updated_at": "2026-11-25T02:50:51Z"
+      },
+      {
+        "head_sha": "0d8b17df7128f740309bf0687f360590376db447",
+        "updated_at": "2026-11-25T02:01:34Z"
+      },
+      {
+        "head_sha": "84fcb1ce7047b21f9de947c780d6d9339d5cf2b9",
+        "updated_at": "2026-11-25T00:51:29Z"
+      },
+      {
+        "head_sha": "86c0e203b4284bbb3fd0e7152c492b1740661ac7",
+        "updated_at": "2026-11-25T00:35:00Z"
+      },
+      {
+        "head_sha": "7ec9a96cff7afb52b2bf42fa10221b36d2a8b466",
+        "updated_at": "2026-11-24T23:41:07Z"
+      },
+      {
+        "head_sha": "a84195ea44d3a55b464a0e6f35293201a93304b8",
+        "updated_at": "2026-11-24T22:55:48Z"
+      },
+      {
+        "head_sha": "697b276989c98f579b0b12a9c4097a25f5df65ed",
+        "updated_at": "2026-11-24T21:31:48Z"
+      },
+      {
+        "head_sha": "737e12785cb7ba76527bfef2c9eec6f5c6f006e0",
+        "updated_at": "2026-11-24T21:13:17Z"
+      },
+      {
+        "head_sha": "4954f6dbe651b4f7ba40944f999ae66609d364b6",
+        "updated_at": "2026-11-24T20:51:33Z"
+      },
+      {
+        "head_sha": "b3701daa42b25e0f75fd88fc30de9ea6425b0f9b",
+        "updated_at": "2026-11-24T20:38:26Z"
+      },
+      {
+        "head_sha": "78ef04d33e3c36a47c902c8152c8529565a5d3f5",
+        "updated_at": "2026-11-24T19:46:15Z"
+      },
+      {
+        "head_sha": "80d3f4133e501d7810d3781d6cc61b7f0e0020ff",
+        "updated_at": "2026-11-24T19:39:11Z"
+      },
+      {
+        "head_sha": "38bdb145d0c2a30dad61e0a4b18ebb7801ae04d0",
+        "updated_at": "2026-11-24T14:56:14Z"
+      },
+      {
+        "head_sha": "27fe47e5466d5e768406766315acd81162231d1b",
+        "updated_at": "2026-11-24T14:20:03Z"
+      },
+      {
+        "head_sha": "5106446bb3e21e88db2155d1e5055fcde39dc2d1",
+        "updated_at": "2026-11-24T05:50:45Z"
+      },
+      {
+        "head_sha": "bd10c1c4a2b31aaa047f283d4db6709f8c1c2963",
+        "updated_at": "2026-11-24T05:31:52Z"
+      },
+      {
+        "head_sha": "f56dbbff62a1ccfefb86268940e4cd5e652e6fed",
+        "updated_at": "2026-11-24T05:21:10Z"
+      },
+      {
+        "head_sha": "8e930aa462df6086a5c2a04dc4148c3ba9d2982c",
+        "updated_at": "2026-11-24T05:19:09Z"
+      },
+      {
+        "head_sha": "50581fedabde5cca338736fae0e3cb7320b16d3d",
+        "updated_at": "2026-11-24T04:40:26Z"
+      },
+      {
+        "head_sha": "f1e42b5e6f7b96d9e19c8f8ae9dfeb586b38d97b",
+        "updated_at": "2026-11-23T23:54:30Z"
+      },
+      {
+        "head_sha": "8f92772db8b3b92796371058d29b2d96f87209c7",
+        "updated_at": "2026-11-23T22:31:01Z"
+      },
+      {
+        "head_sha": "fed3f1953529cb4ee141f19053cdf1fbb2a991f9",
+        "updated_at": "2026-11-23T21:47:15Z"
+      },
+      {
+        "head_sha": "8c4424f58c255485435682faaeaf325e40c5fe7d",
+        "updated_at": "2026-11-23T21:33:17Z"
+      },
+      {
+        "head_sha": "6a3b44bf55df6af79f3b5bd193c8a0f493d2cb3c",
+        "updated_at": "2026-11-23T21:11:58Z"
+      },
+      {
+        "head_sha": "27fbd2df6dbd42bf47180764ffa8452f7ebf44e8",
+        "updated_at": "2026-11-23T21:02:12Z"
+      },
+      {
+        "head_sha": "a2777c97e0a60057f3cf002ca758fd7312ea46c6",
+        "updated_at": "2026-11-23T20:41:15Z"
+      },
+      {
+        "head_sha": "2204898823e9311de508a86f08493dd00df8298f",
+        "updated_at": "2026-11-23T19:51:17Z"
+      },
+      {
+        "head_sha": "f7a75d0ede9305e05bd96e334bee9481bf220c29",
+        "updated_at": "2026-11-23T19:28:25Z"
+      },
+      {
+        "head_sha": "10f9490dc182fcc0603f04e448308ecace587a6f",
+        "updated_at": "2026-11-23T06:42:36Z"
+      },
+      {
+        "head_sha": "3b731148d444dee93c0d5c83ed447b78c0bfd739",
+        "updated_at": "2026-11-23T06:22:16Z"
+      },
+      {
+        "head_sha": "476c51c0c078681480032dba729127385900f738",
+        "updated_at": "2026-11-23T04:22:44Z"
+      },
+      {
+        "head_sha": "998a090833f4a6e9a3aa61173b080220808ca1cc",
+        "updated_at": "2026-11-23T04:12:35Z"
+      },
+      {
+        "head_sha": "21d4d4c46e01a14905cab46dc88ec3c42a010802",
+        "updated_at": "2026-11-23T03:51:49Z"
+      },
+      {
+        "head_sha": "fe5ffe497aa0756593a847deb1fe1dd8d9d821d7",
+        "updated_at": "2026-11-23T00:46:28Z"
+      },
+      {
+        "head_sha": "826a80ac442619f56161986aeeceb40eb81d046e",
+        "updated_at": "2026-11-23T00:12:31Z"
+      },
+      {
+        "head_sha": "674774d4a2b99d40ff83682daa369aa1335856a1",
+        "updated_at": "2026-11-22T23:28:13Z"
+      },
+      {
+        "head_sha": "075688abfc8bd7ddbce3e85bcfa63ce97ec60af4",
+        "updated_at": "2026-11-22T23:21:00Z"
+      },
+      {
+        "head_sha": "7811072e4b767bbc1044558510c1d5b0c3d58363",
+        "updated_at": "2026-11-22T23:16:14Z"
+      },
+      {
+        "head_sha": "17a5b36ce5ecf59c79f9396d407417cbd07846f6",
+        "updated_at": "2026-11-22T22:50:33Z"
+      },
+      {
+        "head_sha": "7ddb23ff1c24b5e7dc279b4d2db82e556e96cfdd",
+        "updated_at": "2026-11-22T18:21:57Z"
+      },
+      {
+        "head_sha": "a0382c79b888dbd747dc933413d692c9e6cce867",
+        "updated_at": "2026-11-22T18:15:49Z"
+      },
+      {
+        "head_sha": "20dd7de8bd35e7715f48be4d9dd7f58cfe839ede",
+        "updated_at": "2026-11-22T17:57:48Z"
+      },
+      {
+        "head_sha": "84f2bc5b31470caec8da533eaa5b7895edb7ebe9",
+        "updated_at": "2026-11-22T17:38:56Z"
+      },
+      {
+        "head_sha": "26d24aa3dde565f008bdf621e61afd96a0fc8773",
+        "updated_at": "2026-11-22T17:21:16Z"
+      },
+      {
+        "head_sha": "8098ff627eb87eaf5adf3d62226876e3385f8f59",
+        "updated_at": "2026-11-22T17:08:51Z"
+      },
+      {
+        "head_sha": "be8d5b9837ac83d0e2a53425ab157704003d34c6",
+        "updated_at": "2026-11-22T16:22:59Z"
+      },
+      {
+        "head_sha": "c90bfbc2a39b48db3267aad0380f8f8a12ed8289",
+        "updated_at": "2026-11-22T14:54:23Z"
+      },
+      {
+        "head_sha": "8ff8a4b426f004ccc36e29c7efbb3fd3d363f118",
+        "updated_at": "2026-11-22T14:51:15Z"
+      },
+      {
+        "head_sha": "726fb679a8595c1ffc4ab2ad0f9c2f98cf4d592b",
+        "updated_at": "2026-11-22T14:07:34Z"
+      },
+      {
+        "head_sha": "f0dfa3e8a70c459ae815016088d0ade572d606ab",
+        "updated_at": "2026-11-22T13:46:53Z"
+      }
+    ],
+    "inclusions": [
+      {
+        "commit": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00",
+        "deploy": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00",
+        "status": "identical"
+      },
+      {
+        "commit": "80981869e62615015eb7cc00eda16cb864c74a47",
+        "deploy": "80981869e62615015eb7cc00eda16cb864c74a47",
+        "status": "identical"
+      },
+      {
+        "commit": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00",
+        "deploy": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00",
+        "status": "identical"
+      }
+    ],
+    "main": [
+      {
+        "committed_at": "2026-11-28T05:08:39Z",
+        "sha": "8618d15e6ae66b52f7607fb16e7cb175a2724166"
+      },
+      {
+        "committed_at": "2026-11-28T02:07:52Z",
+        "sha": "15c785bba5091f20033ad2e3b14a9d576b7b5b9c"
+      },
+      {
+        "committed_at": "2026-11-28T00:56:57Z",
+        "sha": "a887c81c99c3327622d88a25ef319726c9011b00"
+      },
+      {
+        "committed_at": "2026-11-27T22:35:09Z",
+        "sha": "83565ba8f19a1b2b0e032d836786ebfb9f60512a"
+      },
+      {
+        "committed_at": "2026-11-27T20:41:58Z",
+        "sha": "f44e795f50f781c96c6d660f06196ff9fb558e93"
+      },
+      {
+        "committed_at": "2026-11-27T20:11:00Z",
+        "sha": "ab4e998b042282446604b864378a84ef142cdf1c"
+      },
+      {
+        "committed_at": "2026-11-27T18:00:46Z",
+        "sha": "e58801b3e3f4a564b0e68d411640184bd902592b"
+      },
+      {
+        "committed_at": "2026-11-27T17:21:55Z",
+        "sha": "62fe83534cad3410d2bc31c0e44709a380fd8c12"
+      },
+      {
+        "committed_at": "2026-11-27T17:07:12Z",
+        "sha": "36336861340a6eb32d49cbfbdc7a58905e52ddcf"
+      },
+      {
+        "committed_at": "2026-11-27T17:06:54Z",
+        "sha": "4f97080c6eb2e109844c230be7b76f3a633ef11b"
+      },
+      {
+        "committed_at": "2026-11-27T16:07:27Z",
+        "sha": "65dca0cdd09ed983073eae6698b5de7e9c1afd5c"
+      },
+      {
+        "committed_at": "2026-11-27T15:46:43Z",
+        "sha": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00"
+      },
+      {
+        "committed_at": "2026-11-27T12:09:22Z",
+        "sha": "ac3203800c54ef2dd5488cb6f56e6355fe758596"
+      },
+      {
+        "committed_at": "2026-11-27T11:09:42Z",
+        "sha": "1e10e362da9ef868e0a745a6c3cc42af9091e604"
+      },
+      {
+        "committed_at": "2026-11-27T10:32:43Z",
+        "sha": "80981869e62615015eb7cc00eda16cb864c74a47"
+      },
+      {
+        "committed_at": "2026-11-27T05:47:27Z",
+        "sha": "3c02370da19d483d3a4b0a89384c5d4aa941fad7"
+      },
+      {
+        "committed_at": "2026-11-27T00:52:35Z",
+        "sha": "1087c73d427dad33758f172bc86c30751300204c"
+      },
+      {
+        "committed_at": "2026-11-26T23:47:30Z",
+        "sha": "ba23d81b0cbeab8fc9c8bcb2e5a2099be79ecd19"
+      },
+      {
+        "committed_at": "2026-11-26T22:11:23Z",
+        "sha": "d56dce1938c4da8c6dc54975b7b5dc0ba7bda2ab"
+      },
+      {
+        "committed_at": "2026-11-26T21:25:44Z",
+        "sha": "ae9dce0db235d6bda1a12adbe83fe50f4ba0463c"
+      },
+      {
+        "committed_at": "2026-11-26T20:48:09Z",
+        "sha": "a52098e7e8d3050863eb663b02e363ef5daf78c9"
+      },
+      {
+        "committed_at": "2026-11-26T18:57:53Z",
+        "sha": "89b15fbbb63f4bcc95e372b2515bb30e2d17cac3"
+      },
+      {
+        "committed_at": "2026-11-26T18:13:28Z",
+        "sha": "a82afe3348a3fa82d8b867e1fce154ae83e298e8"
+      },
+      {
+        "committed_at": "2026-11-26T17:52:22Z",
+        "sha": "b977ac1afb52ce58ae828e4f493b5babdf5c1dc3"
+      },
+      {
+        "committed_at": "2026-11-26T15:51:00Z",
+        "sha": "a330b6f6dc96ddee97e775e9ed546035ae9381e7"
+      },
+      {
+        "committed_at": "2026-11-26T15:13:59Z",
+        "sha": "718deacfb6051c723a53e84f913cfb5c20566e31"
+      },
+      {
+        "committed_at": "2026-11-26T05:20:16Z",
+        "sha": "6e9dc6b3a5da58470bdf6248e660a4776efe33c1"
+      },
+      {
+        "committed_at": "2026-11-26T05:10:59Z",
+        "sha": "5c6f8c74c9750309226069b44fa72efac7c1a1c5"
+      },
+      {
+        "committed_at": "2026-11-26T04:58:55Z",
+        "sha": "2989896e4c0a6a9835686339ccc8b1e8377835b5"
+      },
+      {
+        "committed_at": "2026-11-26T04:44:24Z",
+        "sha": "aab3228a2d6db6de34e2fdbb4fb6dab70dd82578"
+      },
+      {
+        "committed_at": "2026-11-26T04:00:49Z",
+        "sha": "03f6fc3b4d00b11dc06df3589c234009d377c778"
+      },
+      {
+        "committed_at": "2026-11-26T03:28:00Z",
+        "sha": "e3e1d3e31aecc39991cce8e5495e2a747d47ce3b"
+      },
+      {
+        "committed_at": "2026-11-26T03:12:57Z",
+        "sha": "ff812a369671f9003afa26925ae788ad38e45ce4"
+      },
+      {
+        "committed_at": "2026-11-26T03:12:25Z",
+        "sha": "c4345be6004ce250836f45fe945e3485c9bcb490"
+      },
+      {
+        "committed_at": "2026-11-26T02:27:59Z",
+        "sha": "eb9233e8a8d51902bb61e779104664bc37bfb025"
+      },
+      {
+        "committed_at": "2026-11-26T01:17:36Z",
+        "sha": "61f484378d0329b565c686d6ab40fc7d4d3de351"
+      },
+      {
+        "committed_at": "2026-11-25T23:23:47Z",
+        "sha": "52599745a74600c67111983ef131f5982fb8ca36"
+      },
+      {
+        "committed_at": "2026-11-25T23:01:04Z",
+        "sha": "57bcb2b5ed5fa83b4f8ff0c5c47ca1f53cc3370c"
+      },
+      {
+        "committed_at": "2026-11-25T22:40:08Z",
+        "sha": "20a54ff40471bc6d1e2ad4e831542642eb5622ac"
+      },
+      {
+        "committed_at": "2026-11-25T22:10:19Z",
+        "sha": "6297aace0b0c82e58b84746fe5a5207bd0e35ced"
+      },
+      {
+        "committed_at": "2026-11-25T21:56:21Z",
+        "sha": "d8e8be3b4f6903bfc9ceec08edc08e3c8273d055"
+      },
+      {
+        "committed_at": "2026-11-25T21:24:50Z",
+        "sha": "5777eef39358b74586df0b00c3cc970b623e5896"
+      },
+      {
+        "committed_at": "2026-11-25T20:57:02Z",
+        "sha": "02b4acd7c2def796e56a140c17324c55bcdc3046"
+      },
+      {
+        "committed_at": "2026-11-25T20:50:04Z",
+        "sha": "467c2eadeba1d29b0450f5c20dfb321063503f45"
+      },
+      {
+        "committed_at": "2026-11-25T18:36:14Z",
+        "sha": "d5109a1da4418e93c71be9340a5c8d13a9b445c5"
+      },
+      {
+        "committed_at": "2026-11-25T17:59:50Z",
+        "sha": "ec224f1581021621f49a938b8a3dbe8b9bcb6036"
+      },
+      {
+        "committed_at": "2026-11-25T17:59:17Z",
+        "sha": "71204f2ec37be83b248571c4ba8e52b49f9f5c7a"
+      },
+      {
+        "committed_at": "2026-11-25T17:15:48Z",
+        "sha": "b5929599708cb1cfbae82a7e826a683953e4071f"
+      },
+      {
+        "committed_at": "2026-11-25T16:48:08Z",
+        "sha": "a069ca543089d5c3d581b224be80ab9d8d76e79b"
+      },
+      {
+        "committed_at": "2026-11-25T06:35:37Z",
+        "sha": "5c2f00b18bf21c7e5fc76784fc80f52246ae6e6a"
+      },
+      {
+        "committed_at": "2026-11-25T05:33:53Z",
+        "sha": "10850df4d1c13846bcba03af1fa0c4f4b7baf16d"
+      },
+      {
+        "committed_at": "2026-11-25T04:53:04Z",
+        "sha": "239e0441f0f972b711a0ae426c4673beb76b6ad3"
+      },
+      {
+        "committed_at": "2026-11-25T02:54:06Z",
+        "sha": "af4ec5798b85bb1609e86333365f7d21dcaef8e7"
+      },
+      {
+        "committed_at": "2026-11-25T02:47:37Z",
+        "sha": "1c98961b36b15655664d7d1d7fa0b6308b08055b"
+      },
+      {
+        "committed_at": "2026-11-25T01:57:37Z",
+        "sha": "0d8b17df7128f740309bf0687f360590376db447"
+      },
+      {
+        "committed_at": "2026-11-25T00:48:45Z",
+        "sha": "84fcb1ce7047b21f9de947c780d6d9339d5cf2b9"
+      },
+      {
+        "committed_at": "2026-11-25T00:30:58Z",
+        "sha": "86c0e203b4284bbb3fd0e7152c492b1740661ac7"
+      },
+      {
+        "committed_at": "2026-11-24T23:37:21Z",
+        "sha": "7ec9a96cff7afb52b2bf42fa10221b36d2a8b466"
+      },
+      {
+        "committed_at": "2026-11-24T22:52:24Z",
+        "sha": "a84195ea44d3a55b464a0e6f35293201a93304b8"
+      },
+      {
+        "committed_at": "2026-11-24T21:28:13Z",
+        "sha": "697b276989c98f579b0b12a9c4097a25f5df65ed"
+      },
+      {
+        "committed_at": "2026-11-24T21:09:37Z",
+        "sha": "737e12785cb7ba76527bfef2c9eec6f5c6f006e0"
+      },
+      {
+        "committed_at": "2026-11-24T20:48:34Z",
+        "sha": "4954f6dbe651b4f7ba40944f999ae66609d364b6"
+      },
+      {
+        "committed_at": "2026-11-24T20:35:04Z",
+        "sha": "b3701daa42b25e0f75fd88fc30de9ea6425b0f9b"
+      },
+      {
+        "committed_at": "2026-11-24T20:34:49Z",
+        "sha": "8bd2c0fd16965921bac39f8007a78333f961db84"
+      },
+      {
+        "committed_at": "2026-11-24T19:43:33Z",
+        "sha": "78ef04d33e3c36a47c902c8152c8529565a5d3f5"
+      },
+      {
+        "committed_at": "2026-11-24T19:35:32Z",
+        "sha": "80d3f4133e501d7810d3781d6cc61b7f0e0020ff"
+      },
+      {
+        "committed_at": "2026-11-24T14:52:08Z",
+        "sha": "38bdb145d0c2a30dad61e0a4b18ebb7801ae04d0"
+      },
+      {
+        "committed_at": "2026-11-24T14:16:38Z",
+        "sha": "27fe47e5466d5e768406766315acd81162231d1b"
+      },
+      {
+        "committed_at": "2026-11-24T05:46:35Z",
+        "sha": "5106446bb3e21e88db2155d1e5055fcde39dc2d1"
+      },
+      {
+        "committed_at": "2026-11-24T05:29:34Z",
+        "sha": "bd10c1c4a2b31aaa047f283d4db6709f8c1c2963"
+      },
+      {
+        "committed_at": "2026-11-24T05:18:00Z",
+        "sha": "f56dbbff62a1ccfefb86268940e4cd5e652e6fed"
+      },
+      {
+        "committed_at": "2026-11-24T05:15:37Z",
+        "sha": "8e930aa462df6086a5c2a04dc4148c3ba9d2982c"
+      },
+      {
+        "committed_at": "2026-11-24T04:37:20Z",
+        "sha": "50581fedabde5cca338736fae0e3cb7320b16d3d"
+      },
+      {
+        "committed_at": "2026-11-23T23:50:44Z",
+        "sha": "f1e42b5e6f7b96d9e19c8f8ae9dfeb586b38d97b"
+      },
+      {
+        "committed_at": "2026-11-23T23:45:40Z",
+        "sha": "b7ad133418ecc2815a1bc9a036d551b9f783f169"
+      },
+      {
+        "committed_at": "2026-11-23T23:34:14Z",
+        "sha": "26b1b7caf9f1a4ea028ee83e3348d3876f498e94"
+      },
+      {
+        "committed_at": "2026-11-23T22:27:17Z",
+        "sha": "8f92772db8b3b92796371058d29b2d96f87209c7"
+      },
+      {
+        "committed_at": "2026-11-23T21:43:45Z",
+        "sha": "fed3f1953529cb4ee141f19053cdf1fbb2a991f9"
+      },
+      {
+        "committed_at": "2026-11-23T21:30:36Z",
+        "sha": "8c4424f58c255485435682faaeaf325e40c5fe7d"
+      },
+      {
+        "committed_at": "2026-11-23T21:08:36Z",
+        "sha": "6a3b44bf55df6af79f3b5bd193c8a0f493d2cb3c"
+      },
+      {
+        "committed_at": "2026-11-23T20:58:15Z",
+        "sha": "27fbd2df6dbd42bf47180764ffa8452f7ebf44e8"
+      },
+      {
+        "committed_at": "2026-11-23T20:38:08Z",
+        "sha": "a2777c97e0a60057f3cf002ca758fd7312ea46c6"
+      },
+      {
+        "committed_at": "2026-11-23T20:37:14Z",
+        "sha": "fe784667b8d52e2da712b6b75c6d7280863e24b5"
+      },
+      {
+        "committed_at": "2026-11-23T19:48:15Z",
+        "sha": "2204898823e9311de508a86f08493dd00df8298f"
+      },
+      {
+        "committed_at": "2026-11-23T19:25:06Z",
+        "sha": "f7a75d0ede9305e05bd96e334bee9481bf220c29"
+      },
+      {
+        "committed_at": "2026-11-23T19:25:01Z",
+        "sha": "c3be71ada926ba4b91bce15cd8ce3d22665b2c4a"
+      },
+      {
+        "committed_at": "2026-11-23T06:39:17Z",
+        "sha": "10f9490dc182fcc0603f04e448308ecace587a6f"
+      },
+      {
+        "committed_at": "2026-11-23T06:38:21Z",
+        "sha": "70dec3f5d0db25cf9234a5231d74862c56e9718c"
+      },
+      {
+        "committed_at": "2026-11-23T06:19:08Z",
+        "sha": "3b731148d444dee93c0d5c83ed447b78c0bfd739"
+      },
+      {
+        "committed_at": "2026-11-23T04:20:03Z",
+        "sha": "476c51c0c078681480032dba729127385900f738"
+      },
+      {
+        "committed_at": "2026-11-23T04:09:28Z",
+        "sha": "998a090833f4a6e9a3aa61173b080220808ca1cc"
+      },
+      {
+        "committed_at": "2026-11-23T03:48:37Z",
+        "sha": "21d4d4c46e01a14905cab46dc88ec3c42a010802"
+      },
+      {
+        "committed_at": "2026-11-23T00:44:36Z",
+        "sha": "fe5ffe497aa0756593a847deb1fe1dd8d9d821d7"
+      },
+      {
+        "committed_at": "2026-11-23T00:09:11Z",
+        "sha": "826a80ac442619f56161986aeeceb40eb81d046e"
+      },
+      {
+        "committed_at": "2026-11-22T23:25:31Z",
+        "sha": "674774d4a2b99d40ff83682daa369aa1335856a1"
+      },
+      {
+        "committed_at": "2026-11-22T23:17:52Z",
+        "sha": "075688abfc8bd7ddbce3e85bcfa63ce97ec60af4"
+      },
+      {
+        "committed_at": "2026-11-22T23:13:04Z",
+        "sha": "7811072e4b767bbc1044558510c1d5b0c3d58363"
+      },
+      {
+        "committed_at": "2026-11-22T22:47:26Z",
+        "sha": "17a5b36ce5ecf59c79f9396d407417cbd07846f6"
+      },
+      {
+        "committed_at": "2026-11-22T18:19:20Z",
+        "sha": "7ddb23ff1c24b5e7dc279b4d2db82e556e96cfdd"
+      },
+      {
+        "committed_at": "2026-11-22T18:12:48Z",
+        "sha": "a0382c79b888dbd747dc933413d692c9e6cce867"
+      }
+    ],
+    "mentions": [],
+    "number": 275,
+    "owner": "brianpatterson",
+    "pullRequest": {
+      "author": {
+        "login": "claude"
+      },
+      "commits": [
+        {
+          "commit": {
+            "authors": {
+              "nodes": [
+                {
+                  "user": {
+                    "login": "github-actions[bot]"
+                  }
+                },
+                {
+                  "user": {
+                    "login": "claude"
+                  }
+                }
+              ]
+            },
+            "committedDate": "2026-11-27T12:20:35Z",
+            "oid": "b9dea71d488222703022c15440651360aca15847"
+          }
+        },
+        {
+          "commit": {
+            "authors": {
+              "nodes": [
+                {
+                  "user": {
+                    "login": "github-actions[bot]"
+                  }
+                },
+                {
+                  "user": {
+                    "login": "claude"
+                  }
+                }
+              ]
+            },
+            "committedDate": "2026-11-27T12:30:57Z",
+            "oid": "b16628ddaf7119bb3df70a10f4d020aec8d46960"
+          }
+        }
+      ],
+      "createdAt": "2026-11-27T12:20:54Z",
+      "mergeCommit": {
+        "oid": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00"
+      },
+      "mergeable": "UNKNOWN",
+      "number": 279,
+      "timeline": [
+        {
+          "__typename": "LabeledEvent",
+          "actor": {
+            "login": "claude"
+          },
+          "createdAt": "2026-11-27T12:20:55Z",
+          "label": {
+            "name": "factory"
+          }
+        },
+        {
+          "__typename": "MergedEvent",
+          "commit": {
+            "oid": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00"
+          },
+          "createdAt": "2026-11-27T15:46:44Z"
+        },
+        {
+          "__typename": "ClosedEvent",
+          "createdAt": "2026-11-27T15:46:44Z"
+        }
+      ]
+    },
+    "runs": [],
+    "statuses": [
+      {
+        "sha": "b9dea71d488222703022c15440651360aca15847",
+        "statuses": [
+          {
+            "context": "factory",
+            "created_at": "2026-11-27T12:24:58Z",
+            "description": "Working: reviewing",
+            "state": "pending"
+          },
+          {
+            "context": "factory",
+            "created_at": "2026-11-27T12:26:43Z",
+            "description": "Working: reviewed; deciding on a rework",
+            "state": "pending"
+          },
+          {
+            "context": "factory",
+            "created_at": "2026-11-27T12:26:57Z",
+            "description": "Working: fixing the minor findings",
+            "state": "pending"
+          }
+        ]
+      },
+      {
+        "sha": "b16628ddaf7119bb3df70a10f4d020aec8d46960",
+        "statuses": [
+          {
+            "context": "factory",
+            "created_at": "2026-11-27T12:34:32Z",
+            "description": "Working: reviewing",
+            "state": "pending"
+          },
+          {
+            "context": "factory",
+            "created_at": "2026-11-27T12:35:42Z",
+            "description": "Done: ready for you",
+            "state": "success"
+          }
+        ]
+      }
+    ],
+    "ticket": {
+      "author": {
+        "login": "brianpatterson"
+      },
+      "comments": [
+        {
+          "body": "<!-- factory-dispatch -->\nThe factory will build this later: the factory builds one ticket at a time, and #271 is in flight until it is deployed. It says here when it starts. ADR-0047.",
+          "created_at": "2026-11-27T10:27:25Z",
+          "user": {
+            "login": "github-actions[bot]"
+          }
+        },
+        {
+          "body": "<!-- factory-dispatch -->\nThe factory will build this later: it is blocked by #271, until each is merged and deployed. It says here when it starts. ADR-0047.",
+          "created_at": "2026-11-27T10:33:01Z",
+          "user": {
+            "login": "github-actions[bot]"
+          }
+        },
+        {
+          "body": "<!-- factory-dispatch -->\nThe factory will build this later: the factory builds one ticket at a time, and #272 is in flight until it is deployed. It says here when it starts. ADR-0047.",
+          "created_at": "2026-11-27T10:37:56Z",
+          "user": {
+            "login": "github-actions[bot]"
+          }
+        },
+        {
+          "body": "<!-- factory-dispatch -->\nThe factory will build this later: the factory builds one ticket at a time, and #273 is in flight until it is deployed. It says here when it starts. ADR-0047.",
+          "created_at": "2026-11-27T11:14:41Z",
+          "user": {
+            "login": "github-actions[bot]"
+          }
+        },
+        {
+          "body": "<!-- factory-dispatch -->\nThe factory started building this: nothing blocks it any more. ADR-0047.",
+          "created_at": "2026-11-27T12:14:40Z",
+          "user": {
+            "login": "github-actions[bot]"
+          }
+        }
+      ],
+      "createdAt": "2026-11-27T10:22:38Z",
+      "edits": [],
+      "number": 275,
+      "timeline": [
+        {
+          "__typename": "LabeledEvent",
+          "actor": {
+            "login": "brianpatterson"
+          },
+          "createdAt": "2026-11-27T10:22:39Z",
+          "label": {
+            "name": "bug"
+          }
+        },
+        {
+          "__typename": "LabeledEvent",
+          "actor": {
+            "login": "brianpatterson"
+          },
+          "createdAt": "2026-11-27T10:27:14Z",
+          "label": {
+            "name": "ready"
+          }
+        },
+        {
+          "__typename": "LabeledEvent",
+          "actor": {
+            "login": "github-actions"
+          },
+          "createdAt": "2026-11-27T12:14:37Z",
+          "label": {
+            "name": "building"
+          }
+        },
+        {
+          "__typename": "ClosedEvent",
+          "closer": {
+            "__typename": "PullRequest",
+            "mergeCommit": {
+              "oid": "a4b42aaaa0b8bf64c8153caecb9a4126b10b3b00"
+            },
+            "merged": true
+          },
+          "createdAt": "2026-11-27T15:46:47Z"
+        },
+        {
+          "__typename": "UnlabeledEvent",
+          "actor": {
+            "login": "github-actions"
+          },
+          "createdAt": "2026-11-27T15:50:48Z",
+          "label": {
+            "name": "building"
+          }
+        }
+      ]
+    }
+  }
+}
