@@ -265,6 +265,24 @@ describe('the state comment', () => {
       ]);
     }
   });
+
+  test('left alone when only a minute count in the reason has moved on, since nothing on GitHub has', () => {
+    const later = decision(11, 'checking', NOTHING, 'CI has been running on abc for 36 minutes.');
+
+    assert.deepEqual(
+      requests(
+        planned(
+          later,
+          state(null, pullRequest({ labels: [] })),
+          surface({
+            target: 11,
+            stateComment: showing('checking', 'CI has been running on abc for 31 minutes.'),
+          }),
+        ),
+      ).filter((request) => request.includes('/comments')),
+      [],
+    );
+  });
 });
 
 describe('the factory status', () => {
@@ -295,6 +313,26 @@ describe('the factory status', () => {
         context: 'factory',
         state: 'success',
         description: 'Done: needs-human, your turn',
+        target_url: null,
+      },
+    );
+  });
+
+  test("success on a pull request the factory doesn't look after, once it waits on the Owner", () => {
+    const yours: Decision = { ...decision(11, 'checking', NOTHING), ownersTurn: true };
+
+    assert.deepEqual(
+      status(
+        planned(
+          yours,
+          state(null, pullRequest({ labels: [] })),
+          surface({ target: 11, stateComment: showing('checking', 'Why.') }),
+        ),
+      ),
+      {
+        context: 'factory',
+        state: 'success',
+        description: 'Done: checking, your turn',
         target_url: null,
       },
     );

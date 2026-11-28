@@ -83,11 +83,17 @@ function addIssue(w: World, number: number, events: Json[], blockedBy: number[] 
   w.issues.set(number, { number, createdAt: ago(600), events, comments: [], blockedBy });
 }
 
-function addPull(w: World, number: number, closes: number[], labels: string[]): void {
+function addPull(
+  w: World,
+  number: number,
+  closes: number[],
+  labels: string[],
+  author = 'claude',
+): void {
   w.pulls.set(number, {
     number,
     createdAt: ago(60),
-    author: 'claude',
+    author,
     head: HEAD,
     events: labels.map((label) => labeled(60, label, 'github-actions')),
     comments: [],
@@ -391,6 +397,7 @@ async function conductor(
   w: World,
   args: string[],
   env: Io['env'] = { GH_TOKEN: 'token', GITHUB_REPOSITORY: 'o/r' },
+  at = AT,
 ): Promise<Ran> {
   const out: string[] = [];
   const err: string[] = [];
@@ -398,7 +405,7 @@ async function conductor(
   const code = await main(args, {
     fetch: fetchFor(w),
     env,
-    now: () => new Date(AT),
+    now: () => new Date(at),
     save: async () => {
       throw new Error('run and why save nothing');
     },
@@ -509,6 +516,44 @@ describe('run', () => {
     w.writes.length = 0;
 
     assert.equal((await conductor(w, ['run'])).code, 0);
+    assert.deepEqual(w.writes, []);
+  });
+
+  test("a run minutes later writes nothing while only a wait's minute count has moved on, and a pull request the factory doesn't look after shows the Owner's turn", async () => {
+    const w = world();
+
+    // Dependabot's, labeled neither `factory` nor `autofix`, with CI stuck for two hours.
+    addPull(w, 60, [], [], 'dependabot[bot]');
+    w.checks.set(HEAD, [
+      {
+        name: 'check',
+        status: 'in_progress',
+        conclusion: null,
+        started_at: ago(120),
+        completed_at: null,
+      },
+    ]);
+
+    assert.equal((await conductor(w, ['run'])).code, 0);
+    assert.deepEqual(writesOf(w), [
+      `POST /repos/o/r/statuses/${HEAD}`,
+      'POST /repos/o/r/issues/60/comments',
+    ]);
+    assert.deepEqual(w.writes[0]?.body, {
+      context: 'factory',
+      state: 'success',
+      description: 'Done: checking, your turn',
+      target_url: null,
+    });
+
+    w.writes.length = 0;
+
+    const later = new Date(Date.parse(AT) + 5 * 60_000).toISOString();
+
+    assert.equal(
+      (await conductor(w, ['run'], { GH_TOKEN: 'token', GITHUB_REPOSITORY: 'o/r' }, later)).code,
+      0,
+    );
     assert.deepEqual(w.writes, []);
   });
 

@@ -173,6 +173,10 @@ export function factoryStatus(
   if (decision.state === 'reviewed')
     return { state: 'success', description: reviewedDescription(pr, head), url: null };
 
+  // A pull request the factory doesn't look after, waiting on the Owner (Dependabot's, CI failed).
+  if (decision.ownersTurn === true)
+    return { state: 'success', description: `Done: ${decision.state}, your turn`, url: null };
+
   const working: FactoryStatus = {
     state: 'pending',
     description: `Working: ${decision.state}`,
@@ -479,6 +483,12 @@ function statusWrites(input: Plan, pr: PullRequestState): Write[] {
   ];
 }
 
+/**
+ * A reason with its minute counts taken out: a wait that counts minutes ("running for 31 minutes")
+ * reads differently every run while nothing on GitHub has changed, and isn't worth an edit.
+ */
+const withoutMinutes = (reason: string): string => reason.replaceAll(/\d+ minutes/g, 'N minutes');
+
 function stateCommentWrites(
   item: number,
   decision: Decision,
@@ -489,7 +499,12 @@ function stateCommentWrites(
   const existing = surface.stateComment;
   const now = existing === null ? null : shown(existing.body);
 
-  if (now !== null && now.state === decision.state && now.reason === decision.reason) return [];
+  if (
+    now !== null &&
+    now.state === decision.state &&
+    withoutMinutes(now.reason) === withoutMinutes(decision.reason)
+  )
+    return [];
 
   // Once handed over, the comment keeps the reason it was handed over for, not "it waits for you".
   if (

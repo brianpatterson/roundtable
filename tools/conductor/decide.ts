@@ -61,6 +61,11 @@ export interface Decision {
   readonly action: Action;
   /** One plain sentence: what it waits for, and what the Owner can do when it waits on them. */
   readonly reason: string;
+  /**
+   * Set when it waits on the Owner without being handed over: a pull request the factory doesn't
+   * look after (`UNSWEPT`), so its `factory` status says it's their turn (ADR-0063).
+   */
+  readonly ownersTurn?: true;
 }
 
 /** The state an Executor's run puts its Work item in while it's queued or running. */
@@ -115,6 +120,12 @@ const decision = (number: number, state: StateName, action: Action, reason: stri
 
 const wait = (number: number, state: StateName, reason: string): Decision =>
   decision(number, state, NOTHING, reason);
+
+/** A wait on the Owner for a pull request the factory doesn't look after (`UNSWEPT`). */
+const yours = (number: number, state: StateName, reason: string): Decision => ({
+  ...wait(number, state, reason),
+  ownersTurn: true,
+});
 
 const handOver = (number: number, reason: string): Decision =>
   decision(number, 'needs-human', { type: 'hand-over', reason }, reason);
@@ -399,7 +410,7 @@ function onPullRequest(
 
   if (pr.mergeable.known && pr.mergeable.value === 'CONFLICTING') {
     if (!fixable) {
-      return wait(
+      return yours(
         number,
         'checking',
         `It conflicts with main, ${UNSWEPT}: merge main into the branch and resolve it.`,
@@ -488,7 +499,7 @@ function checks(
 
     if (minutes > policy.stale.ciStart) {
       if (!fixable) {
-        return wait(
+        return yours(
           number,
           'checking',
           `No CI run has started on its head ${sha} in ${minutes} minutes, ${UNSWEPT}: push again or start CI.`,
@@ -511,7 +522,7 @@ function checks(
 
     if (minutes > policy.stale.ciRun) {
       if (!fixable) {
-        return wait(
+        return yours(
           number,
           'checking',
           `CI has been running on ${sha} for ${minutes} minutes, ${UNSWEPT}: cancel or rerun it.`,
@@ -531,7 +542,7 @@ function checks(
 
   if (failed.length > 0) {
     if (!fixable) {
-      return wait(
+      return yours(
         number,
         'checking',
         `CI failed on ${sha}, ${UNSWEPT}: push a fix, or label it \`autofix\` to have the factory fix it.`,
@@ -590,7 +601,7 @@ function checks(
     ].join(', ');
 
     if (!fixable) {
-      return wait(number, 'checking', `CI ended ${how} on ${sha}, ${UNSWEPT}: rerun it.`);
+      return yours(number, 'checking', `CI ended ${how} on ${sha}, ${UNSWEPT}: rerun it.`);
     }
 
     if (ended.some((check) => check.runs > policy.reruns)) {
@@ -649,7 +660,7 @@ function review(
 
       if (minutes > policy.stale.review) {
         if (!fixable) {
-          return wait(
+          return yours(
             number,
             'reviewing',
             `The reviewer ran on ${sha} and left no Review ${minutes} minutes after CI passed, ${UNSWEPT}: review it or rerun the reviewer.`,
